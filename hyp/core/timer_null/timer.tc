@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define TIMER_INVALID_TIMEOUT constant type ticks_t = -1;
+
+extend timer structure {
+	timeout		type ticks_t;
+	action		enumeration timer_action;
+	prev		pointer structure timer;
+	next		pointer structure timer;
+};

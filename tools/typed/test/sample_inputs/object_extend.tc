@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend ExecContext object module Machine {
+	e char;
+	f char;
+};
+/*
+extend EmbeddedExecContext object module Machine {
+	ee char;
+	ff char;
+};
+*/

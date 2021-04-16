@@ -1,0 +1,18 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define asm_ordering_dummy structure {
+	dummy char;
+};
+
+define AARCH64_INST_EXCEPTION_VAL constant = 0xd4000000;
+define AARCH64_INST_EXCEPTION_MASK constant = 0xff000000;
+
+define AARCH64_INST_EXCEPTION_IMM16_MASK constant = 0x001fffe0;
+define AARCH64_INST_EXCEPTION_IMM16_SHIFT constant = 5;
+
+define AARCH64_INST_EXCEPTION_SUBTYPE_HLT_VAL constant = 0x00400000;
+define AARCH64_INST_EXCEPTION_SUBTYPE_MASK constant = 0x00e0001f;

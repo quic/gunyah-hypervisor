@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <asm/cpu.h>
+
+define ipi_pending structure(aligned(1 << CPU_L1D_LINE_BITS)) {
+	bits	type register_t(atomic);
+};

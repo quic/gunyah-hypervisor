@@ -1,0 +1,373 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// FIXME: move this to the vm/address space module
+define vmid_t public newtype uint16;
+
+#if defined(ARCH_AARCH64_USE_S2FWB)
+#if !defined(ARCH_ARM_8_4_S2FWB)
+#error S2FWB requires ARCH_ARM_8_4_S2FWB
+#endif
+#error S2FWB support not implemented
+#else
+extend pgtable_vm_memtype enumeration {
+	DEVICE_nGnRnE	= 0;
+	DEVICE_nGnRE	= 1;
+	DEVICE_nGRE	= 2;
+	DEVICE_GRE	= 3;
+
+	NORMAL_NC	= 0b0101;
+	NORMAL_ONC_IWT	= 0b0110;
+	NORMAL_ONC_IWB	= 0b0111;
+	NORMAL_OWT_INC	= 0b1001;
+	NORMAL_WT	= 0b1010;
+	NORMAL_OWT_IWB	= 0b1011;
+	NORMAL_OWB_INC	= 0b1101;
+	NORMAL_OWB_IWT	= 0b1110;
+	NORMAL_WB	= 0b1111;
+};
+#endif
+
+// FIXME: define these as a stronger types
+define vmsa_upper_attrs_t newtype uint16;
+define vmsa_lower_attrs_t newtype uint16;
+
+// FIXME: assume LPA is no defined
+define vmsa_general_entry bitfield<64> {
+	0		is_valid		bool = 0;
+	1		is_table		bool = 0;
+	63:2		unknown = 0;
+};
+
+define vmsa_level_table_t newtype bitfield vmsa_general_entry(atomic);
+
+define vmsa_block_entry bitfield<64> {
+	1:0		type			uint8(const) = 0b1;
+	11:2		lower_attrs		type vmsa_lower_attrs_t = 0;
+	15:12		unknown = 0;
+	16		nT			bool = 0;
+	47:17		OutputAddress		type paddr_t lsl(17);
+	50:48		unknown = 0;
+	63:51		upper_attrs		type vmsa_upper_attrs_t = 0;
+};
+
+define vmsa_table_entry bitfield<64> {
+	1:0		type			uint8(const) = 0b11;
+	11:2		SW_Ignored1		uint16 = 0;
+	47:12		NextLevelTableAddress	type paddr_t lsl(12);
+	50:48		unknown = 0;
+	58:51		SW_Ignored2		uint16 = 0;
+	/* ignore the attributes for table entry */
+	63:59		unknown = 0;
+};
+
+// FIXME: assume LPA is not defined, or else for granule 64K,
+// layout is different
+define vmsa_page_entry bitfield<64> {
+	1:0		type			uint8(const) = 0b11;
+	11:2		lower_attrs		type vmsa_lower_attrs_t = 0;
+	47:12		OutputAddress		type paddr_t lsl(12);
+	50:48		unknown = 0;
+	63:51		upper_attrs		type vmsa_upper_attrs_t = 0;
+};
+
+// Common type for page/block entry attribute
+define vmsa_page_and_block_attrs_entry bitfield<64> {
+	1:0		type			uint8(const) = 0b11;
+	11:2		lower_attrs		type vmsa_lower_attrs_t = 0;
+	50:12		unknown = 0;
+	63:51		upper_attrs		type vmsa_upper_attrs_t = 0;
+};
+
+// common lower attribute structure
+define vmsa_common_lower_attrs bitfield<15> {
+	5:0		unknown;
+	7:6		SH		enumeration vmsa_shareability;
+	8		AF		bool(const);
+	13:9		unknown;
+	14		nT		bool = 0;
+};
+
+// common upper attribute structure
+define vmsa_common_upper_attrs bitfield<13> {
+	0		DBM		bool = 0;
+	1		cont		bool = 0;
+	3:2		unknown;
+	7:4		unknown = 0;
+	11:8		PHBA		uint8 = 0;
+	12		unknown = 0;
+};
+
+define vmsa_stg1_upper_attrs bitfield<13> {
+	0		DBM			bool = 0;
+	1		cont			bool = 0;
+#if ARCH_AARCH64_USE_VHE
+	2		PXN			bool = 1;
+	3		UXN			bool = 1;
+#else
+	2		unknown = 0;
+	3		XN			bool = 1;
+#endif
+	7:4		unknown = 0;
+	11:8		PHBA			uint8 = 0;
+	12		unknown = 0;
+};
+
+define vmsa_stg1_ap enumeration(explicit) {
+	EL0_NONE_UPPER_READ_WRITE = 0x0;
+	ALL_READ_WRITE = 0x1;
+	EL0_NONE_UPPER_READ_ONLY = 0x2;
+	ALL_READ_ONLY = 0x3;
+};
+
+define vmsa_shareability enumeration(explicit) {
+	NON_SHAREABLE = 0x0;
+	RESERVED = 0x1;
+	OUTER_SHAREABLE = 0x2;
+	INNER_SHAREABLE = 0x3;
+};
+
+define vmsa_stg1_lower_attrs bitfield<15> {
+	2:0		attr_idx		enumeration pgtable_hyp_memtype = 0;
+	3		NS			bool = 0;
+	// FIXME: could not accept enumeration as constant value, use
+	// actually value instead
+	5:4		AP			enumeration vmsa_stg1_ap = 2;
+	7:6		SH			enumeration vmsa_shareability = 3;
+	8		AF			bool(const) = 1;
+	9		nG			bool = 0;
+	// ignored since LPA is assumed not enabled, or else it's OutputAddress
+	13:10		unknown = 0;
+	14		nT			bool = 0;
+};
+
+define vmsa_stg2_upper_attrs bitfield<13> {
+	0		DBM			bool = 0;
+	1		cont			bool = 0;
+	// assume tts2uxn is not implemented
+	3:2		XN			uint8 = 2;
+	7:4		unknown = 0;
+	// assume ttpbha is not implemented
+	11:8		PBHA			uint8 = 0;
+	12		unknown = 0;
+};
+
+define vmsa_s2ap enumeration(explicit) {
+	NONE = 0x0;
+	READ_ONLY = 0x1;
+	WRITE_ONLY = 0x2;
+	READ_WRITE = 0x3;
+};
+
+define vmsa_stg2_lower_attrs bitfield<15> {
+	3:0		mem_attr		enumeration pgtable_vm_memtype;
+	5:4		S2AP			enumeration vmsa_s2ap = 0;
+	7:6		SH			enumeration vmsa_shareability = 3;
+	8		AF			bool(const) = 1;
+	9		unknown = 0;
+	// ignored since LPA is assumed not enabled, or else it's OutputAddress
+	13:10		unknown = 0;
+	14		nT			bool = 0;
+};
+
+define vmsa_tlbi_vae2_input bitfield<64> {
+	43:0		VA			type vmaddr_t lsl(12);
+	47:44		TTL			uint8 = 0;
+	63:48		ASID			uint16 = 0;
+};
+
+define vmsa_tlbi_ipas2e1is_input bitfield<64> {
+	35:0		IPA			type vmaddr_t lsl(12);
+	// without LPA implemented, or it's IPA
+	39:36		unknown = 0;
+	43:40		unknown = 0;
+	47:44		TTL			uint8 = 0;
+	62:48		unknown = 0;
+	// if in non-secure env, it's reserved.
+	63		NS			bool = 0;
+};
+
+// Gunyah extensions to table entries (software bit usage)
+extend vmsa_table_entry bitfield {
+	// Use the table entry ignore bits to hold a reference count, keeping
+	// track of the number of entries in the immediately lower level in
+	// addition to the number of modifier threads operating at or below
+	// this entry.
+	delete		SW_Ignored1;
+#if (PGTABLE_HYP_PAGE_SIZE > 4096) || (PGTABLE_VM_PAGE_SIZE > 4096)
+	// For large granules the lower 10 ignored bits are not enough to hold
+	// the reference count; use the upper ignored bits as well. For the
+	// largest granule size, 64KiB, we need 14 bits (max 8192 next level
+	// entries).
+	delete		SW_Ignored2;
+	54:51,11:2	refcount type count_t = 0;
+#else
+	// For 4KiB granules the reference count only needs 10 bits (max 512
+	// next level entries).
+	11:2		refcount type count_t = 0;
+#endif
+};
+
+define pgtable_stage_type enumeration(noprefix) {
+	PGTABLE_HYP_STAGE_1;
+	PGTABLE_VM_STAGE_2;
+};
+
+define pgtable_entry_types_t newtype uint32;
+
+define vmsa_entry_type enumeration(explicit) {
+	NEXT_LEVEL_TABLE = 0x1;
+	PAGE = 0x2;
+	BLOCK = 0x4;
+	INVALID = 0x8;
+	// Non-legal entry types
+	RESERVED = 0x10;
+	// Legal entry types in the wrong level (i.e. blocks in level 0 or 3,
+	// pages above level 3)
+	ERROR = 0x20;
+};
+
+// Alias for bitmap accepting no entry types
+define VMSA_ENTRY_TYPE_NONE constant enumeration vmsa_entry_type = 0;
+
+define pgtable_level enumeration(noprefix) {
+	PGTABLE_LEVEL_0 = 0;
+	PGTABLE_LEVEL_1;
+	PGTABLE_LEVEL_2;
+	PGTABLE_LEVEL_3;
+	PGTABLE_LEVEL_OFFSET;
+};
+
+define PGTABLE_INVALID_LEVEL constant = 0xFFFFFFFF;
+
+define pgtable_level_info structure {
+	// [msb:lsb], range identifies the index in the address
+	msb type index_t;
+	lsb type index_t;
+	// OutputAddress mask for next page entry, directly & to remove
+	// useless bits
+	table_mask type paddr_t;
+	// OutputAddress mask for block/page entry, directly & to remove
+	// useless bits
+	block_and_page_output_address_mask type paddr_t;
+	is_offset bool;
+	allowed_types type pgtable_entry_types_t;
+	// the address range size of each entry on this level
+	addr_size size;
+	entry_cnt size;
+	level enumeration pgtable_level;
+	contiguous_entry_cnt size;
+};
+
+// When on a cpu with ARMv8.2-LPA, and using a 52-bit VTCR_EL2.PS setting, the
+// VTTBR_EL2 has a minimum 64 byte alignment requirement 64KB granules with
+// ARMv8.2-LPA. To simplify, we always impose this alignment requirement.
+define VMSA_TABLE_MIN_ALIGN constant size = 64;
+
+define pgtable structure {
+	start_level uint8;
+	vmid type vmid_t;
+	granule_size size;
+	start_level_size size;
+
+	root_pgtable type paddr_t;
+	// root pointer type vmsa_level_table_t;
+	root pointer bitfield vmsa_general_entry(atomic);
+
+	address_bits type count_t;
+};
+
+extend pgtable_vm structure {
+	control		structure pgtable(contained);
+	vtcr_el2	bitfield VTCR_EL2;
+	vttbr_el2	bitfield VTTBR_EL2;
+};
+
+define pgtable_hyp object {
+	// use to distinguish whether this is top virtual address or bottom one
+	top_mask type vmaddr_t;
+
+	top_control structure pgtable;
+	bottom_control structure pgtable;
+	lock structure spinlock;
+};
+
+define pgtable_modifier_ret enumeration {
+	STOP = 0;
+	ERROR;
+	CONTINUE;
+};
+
+define pgtable_translation_table_walk_event enumeration {
+	MMAP;
+	UNMAP;
+	UNMAP_MATCH;
+	LOOKUP;
+	PREALLOC;
+#ifndef NDEBUG
+	DUMP;
+	EXTERNAL;
+#endif
+};
+
+define pgtable_map_modifier_args structure {
+	error enumeration error;
+	orig_virtual_address type vmaddr_t;
+	orig_size size;
+	phys type paddr_t;
+	partition pointer object partition;
+	upper_attrs type vmsa_upper_attrs_t;
+	lower_attrs type vmsa_lower_attrs_t;
+	// It needs to alloc new page table level during mapping, this start
+	// index records the last level whose sub level needs to alloc page
+	// table. Map modifier uses this index to map new physical address with
+	// roll back capability.
+	// With value == -1 means there's no new page table allocated since
+	// level 0 page table is always there.
+	new_page_start_level type index_t;
+	is_failed bool;
+	partially_mapped_size size;
+	try_map bool;
+	stage enumeration pgtable_stage_type;
+};
+
+define pgtable_lookup_modifier_args structure {
+	phys type paddr_t;
+	size size;
+	// must be a block/page entry
+	entry bitfield vmsa_general_entry;
+};
+
+define pgtable_remap_region structure {
+	is_valid bool;
+	virtual_address type vmaddr_t;
+	upper_attrs type vmsa_upper_attrs_t;
+	lower_attrs type vmsa_lower_attrs_t;
+	phys type paddr_t;
+	size size;
+};
+
+define pgtable_unmap_modifier_args structure {
+	partition pointer object partition;
+	// original virtual address, unchanged
+	preserved_size size;
+	stack array(maxof(enumeration pgtable_level) + 1) type paddr_t;
+	stage enumeration pgtable_stage_type;
+	// only head and tail may need remap due to break some big block entry
+	remap_regions array(2) structure pgtable_remap_region;
+	phys type paddr_t;
+	size size;
+};
+
+define pgtable_prealloc_modifier_args structure {
+	error enumeration error;
+	partition pointer object partition;
+	// It needs to alloc new page table level during mapping, this start
+	// index records the last level whose sub level needs to alloc page
+	// table. Map modifier uses this index to map new physical address with
+	// roll back capability.
+	// With value == -1 means there's no new page table allocated since
+	// level 0 page table is always there.
+	new_page_start_level type index_t;
+};

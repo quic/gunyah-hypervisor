@@ -1,0 +1,43 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module memextent
+
+subscribe object_create_memextent
+
+// This activate handler must be last, otherwise we would need an unwinder to
+// unmap on other handler failures.
+subscribe object_activate_memextent
+	priority last
+
+subscribe object_deactivate_memextent(memextent)
+
+subscribe object_cleanup_memextent(memextent)
+
+// BASIC memory extent
+
+subscribe memextent_activate_derive[MEMEXTENT_TYPE_BASIC]
+	handler memextent_activate_derive_basic(me)
+
+subscribe memextent_derive[MEMEXTENT_TYPE_BASIC]
+	handler memextent_derive_basic(me, parent, offsets, sizes, memtype, access)
+
+subscribe memextent_map[MEMEXTENT_TYPE_BASIC]
+	handler memextent_map_basic(extent, addrspace, vm_base, map_attrs)
+
+subscribe memextent_unmap[MEMEXTENT_TYPE_BASIC]
+	handler memextent_unmap_basic(extent, addrspace, vm_base)
+
+subscribe memextent_unmap_all[MEMEXTENT_TYPE_BASIC]
+	handler memextent_unmap_all_basic(extent)
+
+subscribe memextent_update_access[MEMEXTENT_TYPE_BASIC]
+	handler memextent_update_access_basic(extent, addrspace, vm_base,
+	access_attrs)
+
+subscribe memextent_deactivate[MEMEXTENT_TYPE_BASIC]
+	handler memextent_deactivate_basic(extent)
+
+subscribe memextent_cleanup[MEMEXTENT_TYPE_BASIC]
+	handler memextent_cleanup_basic(extent)

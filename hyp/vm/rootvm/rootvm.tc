@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend boot_env_data structure {
+	partition_capid		type cap_id_t;
+	cspace_capid		type cap_id_t;
+	vcpu_capid		type cap_id_t;
+	entry_ipa		type vmaddr_t;
+	env_ipa			type vmaddr_t;
+};

@@ -1,0 +1,86 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#if defined(HYPERCALLS)
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypcall_def.h>
+\#include <hypconstants.h>
+\#include <hyprights.h>
+
+\#include <compiler.h>
+\#include <cspace.h>
+\#include <cspace_lookup.h>
+\#include <object.h>
+\#include <partition_alloc.h>
+\#include <thread.h>
+
+\#include <events/object.h>
+
+#for obj in $object_list
+#set o = str(obj)
+#if o in ('hwirq','partition')
+#continue
+#end if
+
+hypercall_partition_create_${o}_result_t
+hypercall_partition_create_${o}(cap_id_t src_partition_cap,
+		cap_id_t cspace_cap)
+{
+	cspace_t *cspace = cspace_get_self();
+	hypercall_partition_create_${o}_result_t ret = { 0 };
+
+	partition_ptr_result_t p = cspace_lookup_partition(
+		cspace, src_partition_cap,
+		CAP_RIGHTS_PARTITION_OBJECT_CREATE);
+	if (compiler_unexpected(p.e != OK)) {
+		ret.error = p.e;
+		goto out;
+	}
+	partition_t *src_partition = p.r;
+
+	cspace_ptr_result_t c;
+	c = cspace_lookup_cspace(cspace, cspace_cap,
+		CAP_RIGHTS_CSPACE_CAP_CREATE);
+	if (compiler_unexpected(c.e != OK)) {
+		ret.error = c.e;
+		goto out_partition_release;
+	}
+	cspace_t *dest_cspace = c.r;
+
+	${o}_create_t params = { 0 };
+	trigger_object_get_defaults_${o}_event(&params);
+
+	${o}_ptr_result_t result =
+		partition_allocate_${o}(src_partition, params);
+	if (result.e != OK) {
+		ret.error = result.e;
+		goto out_cspace_release;
+	}
+	object_ptr_t obj_ptr;
+
+	obj_ptr.${o} = result.r;
+	cap_id_result_t capid_ret = cspace_create_master_cap(
+		dest_cspace, obj_ptr, OBJECT_TYPE_${o.upper()});
+	if (capid_ret.e != OK) {
+		ret.error = capid_ret.e;
+		object_put_${o}(obj_ptr.${o});
+		goto out_cspace_release;
+	}
+
+	ret.error = OK;
+	ret.new_cap = capid_ret.r;
+
+out_cspace_release:
+	object_put_cspace(dest_cspace);
+out_partition_release:
+	object_put_partition(src_partition);
+out:
+	return ret;
+}
+#end for
+\#else
+extern int unused;
+\#endif

@@ -1,0 +1,34 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Common definitions used by platform SMC calls made by the hypervisor, and
+// virtual SMC calls handled by the hypervisor.
+
+define smccc_interface_id enumeration(explicit) {
+	ARCH = 0;
+	CPU = 1;
+	SIP = 2;
+	OEM = 3;
+	STANDARD = 4;
+	STANDARD_HYP = 5;
+	VENDOR_HYP = 6;
+};
+
+define smccc_function_t newtype uint16;
+
+define smccc_function_id bitfield<32> {
+	15:0	function type smccc_function_t;
+	23:16	unknown=0;
+	29:24	interface_id enumeration smccc_interface_id;
+	30	is_smc64 bool;
+	31	is_fast bool;
+};
+
+define smccc_client_id bitfield<32> {
+	15:0	client_id uint16;
+	31:16	secure_os_id uint16;
+};
+
+define SMCCC_UNKNOWN_FUNCTION constant uregister = -1;
+define SMCCC_UNKNOWN_FUNCTION32 constant uint32 = -1;

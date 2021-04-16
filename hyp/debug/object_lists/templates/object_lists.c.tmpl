@@ -1,0 +1,119 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypcontainers.h>
+
+\#include <object.h>
+\#include <spinlock.h>
+\#include <list.h>
+\#include <partition.h>
+
+\#include "event_handlers.h"
+
+extern list_t partition_list;
+extern spinlock_t partition_list_lock;
+
+list_t partition_list;
+spinlock_t partition_list_lock;
+
+void
+object_lists_handle_boot_cold_init(void)
+{
+	spinlock_init(&partition_list_lock);
+	list_init(&partition_list);
+
+	partition_t *hyp_partition = partition_get_private();
+
+	// Add hyp_partition manually
+	spinlock_acquire(&partition_list_lock);
+	list_insert_at_tail_release(&partition_list, &hyp_partition->partition_list_node);
+	spinlock_release(&partition_list_lock);
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('partition','hwirq',)
+#continue
+#end if
+	spinlock_init(&hyp_partition->${o}_list_lock);
+	list_init(&hyp_partition->${o}_list);
+#end for
+
+}
+
+error_t
+object_lists_handle_object_create_partition(partition_create_t create)
+{
+	partition_t *partition = create.partition;
+
+	spinlock_acquire(&partition_list_lock);
+	list_insert_at_tail_release(&partition_list, &partition->partition_list_node);
+	spinlock_release(&partition_list_lock);
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('partition','hwirq',)
+#continue
+#end if
+	spinlock_init(&partition->${o}_list_lock);
+	list_init(&partition->${o}_list);
+#end for
+
+	return OK;
+}
+
+void
+object_lists_handle_object_cleanup_partition(partition_t *partition)
+{
+	spinlock_acquire(&partition_list_lock);
+	(void)list_delete_node(&partition_list, &partition->partition_list_node);
+	spinlock_release(&partition_list_lock);
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('partition','hwirq',)
+#continue
+#end if
+	spinlock_acquire(&partition->${o}_list_lock);
+	assert(list_is_empty(&partition->${o}_list));
+	spinlock_release(&partition->${o}_list_lock);
+#end for
+}
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('partition','hwirq',)
+#continue
+#end if
+
+error_t
+object_lists_handle_object_create_${o}(${o}_create_t create)
+{
+	${o}_t *${o} = create.${o};
+
+	partition_t *partition = ${o}->header.partition;
+
+	spinlock_acquire(&partition->${o}_list_lock);
+	list_insert_at_tail_release(&partition->${o}_list, &${o}->${o}_list_node);
+	spinlock_release(&partition->${o}_list_lock);
+
+	return OK;
+}
+
+void
+object_lists_handle_object_cleanup_${o}(${o}_t *${o})
+{
+	partition_t *partition = ${o}->header.partition;
+
+	spinlock_acquire(&partition->${o}_list_lock);
+	(void)list_delete_node(&partition->${o}_list, &${o}->${o}_list_node);
+	spinlock_release(&partition->${o}_list_lock);
+}
+#end for

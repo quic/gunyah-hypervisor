@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	msgqueue;
+	2	msgqueue bool = 1;
+};
+#endif
+
+define kernel_or_gvaddr union {
+	guest_addr	type gvaddr_t;
+	kernel_addr	uintptr;
+};

@@ -1,0 +1,143 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module psci_pc
+
+#define PSCI_FUNCTION(fn, feat, h, ...)			\
+subscribe psci_call32[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h ## _32(__VA_ARGS__).		\
+subscribe psci_features32[PSCI_FUNCTION_ ## fn];	\
+	constant feat.					\
+subscribe psci_call64[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h ## _64(__VA_ARGS__).		\
+subscribe psci_features64[PSCI_FUNCTION_ ## fn];	\
+	constant feat.
+
+#define PSCI_FUNCTION32(fn, feat, h, ...)		\
+subscribe psci_call32[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h(__VA_ARGS__).		\
+subscribe psci_features32[PSCI_FUNCTION_ ## fn];	\
+	constant feat.
+
+#define PSCI_FUNCTION_PERVM(fn, h, ...)			\
+subscribe psci_call32[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h ## _32(__VA_ARGS__).		\
+subscribe psci_features32[PSCI_FUNCTION_ ## fn];	\
+	handler psci_ ## h ## _32_features().		\
+subscribe psci_call64[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h ## _64(__VA_ARGS__).		\
+subscribe psci_features64[PSCI_FUNCTION_ ## fn];	\
+	handler psci_ ## h ## _64_features().		\
+
+#define PSCI_FUNCTION32_PERVM(fn, h, ...)		\
+subscribe psci_call32[PSCI_FUNCTION_ ## fn];		\
+	handler psci_ ## h(__VA_ARGS__).		\
+subscribe psci_features32[PSCI_FUNCTION_ ## fn];	\
+	handler psci_ ## h ## _features().
+
+PSCI_FUNCTION32(PSCI_VERSION, 0U, version)
+PSCI_FUNCTION_PERVM(CPU_SUSPEND, cpu_suspend, arg1, arg2, arg3)
+PSCI_FUNCTION32(CPU_OFF, 0U, cpu_off)
+PSCI_FUNCTION(CPU_ON, 0U, cpu_on, arg1, arg2, arg3)
+PSCI_FUNCTION(AFFINITY_INFO, 0U, affinity_info, arg1, arg2)
+//PSCI_FUNCTION32(MIGRATE, 0U, migrate, arg1)
+//PSCI_FUNCTION32(MIGRATE_INFO_TYPE, 0U, migrate_info_type)
+//PSCI_FUNCTION(MIGRATE_INFO_UP_CPU, 0U, migrate_info_up_cpu)
+PSCI_FUNCTION32_PERVM(SYSTEM_OFF, system_off)
+PSCI_FUNCTION32_PERVM(SYSTEM_RESET, system_reset)
+PSCI_FUNCTION32(PSCI_FEATURES, 0U, features, arg1)
+//PSCI_FUNCTION32(CPU_FREEZE, 0U, cpu_freeze)
+PSCI_FUNCTION(CPU_DEFAULT_SUSPEND, 0U, cpu_default_suspend, arg1, arg2)
+//PSCI_FUNCTION(NODE_HW_STATE, 0U, node_hw_state, arg1, arg2)
+//PSCI_FUNCTION(SYSTEM_SUSPEND, 0U, system_suspend, arg1, arg2)
+PSCI_FUNCTION32(PSCI_SET_SUSPEND_MODE, 0U, set_suspend_mode, arg1)
+//PSCI_FUNCTION(PSCI_STAT_RESIDENCY, 0U, stat_residency, arg1, arg2)
+//PSCI_FUNCTION(PSCI_STAT_COUNT, 0U, stat_count, arg1, arg2)
+PSCI_FUNCTION_PERVM(SYSTEM_RESET2, system_reset2, arg1, arg2)
+//PSCI_FUNCTION32(MEM_PROTECT, 0U, mem_protect, arg1)
+//PSCI_FUNCTION(MEM_PROTECT_CHECK_RANGE, 0U, mem_protect_check_range, arg1, arg2)
+
+subscribe smccc_call_fast_32[SMCCC_INTERFACE_ID_STANDARD]
+		handler psci_pc_handle_smccc_call_fast_32(function, arg1, arg2, arg3, ret0)
+
+subscribe smccc_call_fast_64[SMCCC_INTERFACE_ID_STANDARD](
+	function, arg1, arg2, arg3, ret0)
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	// Run early to ensure that MPIDR is set correctly, since other
+	// modules may rely on it (especially VGIC, which is priority 1)
+	priority 10
+
+subscribe object_deactivate_thread
+
+subscribe object_activate_vpm_group
+
+subscribe object_deactivate_vpm_group
+
+subscribe idle_yield
+	// Run late, but before handlers that may sleep, to check
+	// whether we should suspend the physical CPU instead
+	priority -10
+
+subscribe vcpu_suspend
+	unwinder ()
+
+subscribe vcpu_started
+
+subscribe vcpu_wakeup
+
+subscribe vcpu_wakeup_self
+
+subscribe vcpu_expects_wakeup
+
+subscribe vcpu_poweron
+
+	// This is first so that it can deny poweroff without unwinding other
+	// modules.
+subscribe vcpu_poweroff
+	priority first
+
+subscribe vcpu_activate_thread(thread)
+	unwinder psci_handle_object_deactivate_thread(thread)
+	// Run after the scheduler handler
+	priority -100
+
+subscribe boot_cold_init()
+
+subscribe boot_cpu_cold_init
+
+subscribe scheduler_affinity_changed(thread, prev_cpu, need_sync)
+
+subscribe scheduler_affinity_changed_sync(thread, next_cpu)
+
+subscribe vcpu_idle_fastpath
+	priority 100
+
+subscribe vcpu_suspended
+	handler psci_vpm_system_suspended
+
+subscribe vcpu_resumed
+	handler psci_vpm_system_resumed
+
+subscribe vcpu_poweredoff
+	handler psci_vpm_system_suspended
+
+subscribe vcpu_started
+	handler psci_vpm_system_resumed
+
+#if ROOTVM_IS_HLOS
+subscribe rootvm_init
+	handler psci_handle_rootvm_init_early
+	// Run early to ensure that all the secondary threads exist for
+	// modules that need them (especially VGIC, which is priority 1)
+	priority first
+
+subscribe rootvm_init
+	handler psci_handle_rootvm_init_late(root_cspace, env_data)
+	// Run last to activate all the group's threads, to ensure that other
+	// modules don't try to configure activated threads
+	priority last
+#endif

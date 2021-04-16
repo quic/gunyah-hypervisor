@@ -1,0 +1,70 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// define customise type
+define byte_t newtype uint8;
+define half_t newtype uint16;
+define word_t newtype uint32;
+define dword_t newtype uint32;
+
+// FIXME: array of alternative types currently broken
+// TODO - test additional combinations
+//define dwordarray_t newtype array(4) type dword_t;
+
+// size_t
+
+// abi defined type
+//define vaddr_t newtype uintptr;
+
+define intarray_t newtype pointer array(8) sint8;
+
+define ea enumeration {
+	ZERO = 0;
+	ONE = 1;
+	TWO = 2;
+};
+
+define eb enumeration {
+	ZERO noprefix;
+	ONE;
+	TWO;
+};
+
+define ec enumeration(noprefix) {
+	_EC_ZER0 = 0;
+	_EC_NEG = -1;
+	_EC_POS = 1;
+};
+
+// TODO - use constants in enumerations
+//define const1 constant 5;
+
+define error enumeration {
+	OK = 0;
+	TEST = 1;
+	// CONST1 = const1;	// FIXME: no yet supported
+	bad_arg = 2;
+	negative = -3;
+	misc1; // = -2 (implicit)
+	misc2; // = -1 (implicit)
+	positive = 10;
+	//TEST2 = 1;	// duplicate error
+};
+
+define enum2 enumeration(noprefix) {
+	TEST_VAL1 = 1;
+	TEST_VAL2 = 2;
+};
+
+extend error enumeration {
+	ext1; // values continue from last value of base, or last auto value of previous extension
+	ext2;
+};
+
+extend error enumeration {
+	//second_ext1 = 11; // this should error
+	second_ext2 = -10;
+};

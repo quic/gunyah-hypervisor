@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module doorbell
+
+subscribe object_create_doorbell
+
+subscribe object_deactivate_doorbell
+
+subscribe virq_check_pending[VIRQ_TRIGGER_DOORBELL](source, reasserted)

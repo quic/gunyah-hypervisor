@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if !defined(IRQ_NULL)
+extend cap_rights_hwirq bitfield {
+	1	bind_vic	bool;
+};
+#endif
+
+extend cap_rights_vic bitfield {
+	0	bind_source	bool;
+};
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	vic;
+	3	vic bool = 1;
+};
+#endif

@@ -1,0 +1,234 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+start : _top_level_member*
+
+ZERO : "0"
+DIGIT : "0".."9"
+DIGIT_NONZERO: "1".."9"
+HEX_PREFIX : "0" ("x" | "X")
+HEX_DIGIT : "A".."F" | "a".."f"
+BIN_PREFIX : "0" ("b" | "B")
+BIN_DIGIT : "0"|"1"
+UNSIGNED_SUFFIX : "u" | "U"
+
+INTEGER : DIGIT_NONZERO DIGIT* UNSIGNED_SUFFIX?
+	| HEX_PREFIX (DIGIT | HEX_DIGIT)+ UNSIGNED_SUFFIX?
+	| BIN_PREFIX BIN_DIGIT+ UNSIGNED_SUFFIX?
+	| ZERO UNSIGNED_SUFFIX?
+
+constant_value : INTEGER
+constant_reference : IDENTIFIER
+
+_primary_expr : constant_value
+        | constant_reference
+        | "(" constant_expression ")"
+
+_unary_expr : _primary_expr
+        | unary_operation
+        | sizeof_operation
+        | alignof_operation
+        | maxof_operation
+        | minof_operation
+UNARY_OPERATOR : "~" | "!"
+unary_operation : UNARY_OPERATOR _unary_expr | SIGN_OPERATOR _unary_expr
+sizeof_operation : "sizeof" "(" _type ")"
+alignof_operation : "_Alignof" "(" _type ")"
+maxof_operation : "maxof" "(" _type ")"
+minof_operation : "minof" "(" _type ")"
+
+_mult_expr : _unary_expr | mult_operation
+MULT_OPERATOR : "*" | "/" | "%"
+mult_operation : _mult_expr MULT_OPERATOR _unary_expr
+
+_add_expr : _mult_expr | add_operation
+SIGN_OPERATOR : "+" | "-"
+add_operation : _add_expr SIGN_OPERATOR _mult_expr
+
+_shift_expr : _add_expr | shift_operation
+SHIFT_OPERATOR.2 : "<<" | ">>"
+shift_operation : _shift_expr SHIFT_OPERATOR _add_expr
+
+_relational_expr : _shift_expr | relational_operation
+RELATIONAL_OPERATOR : "<" | ">" | "<=" | ">="
+relational_operation : _relational_expr RELATIONAL_OPERATOR _shift_expr
+
+_equality_expr : _relational_expr | equality_operation
+EQUALITY_OPERATOR : "==" | "!="
+equality_operation : _equality_expr EQUALITY_OPERATOR _relational_expr
+
+_bitwise_and_expr : _equality_expr | bitwise_and_operation
+bitwise_and_operation : _bitwise_and_expr "&" _equality_expr
+
+_bitwise_xor_expr : _bitwise_and_expr | bitwise_xor_operation
+bitwise_xor_operation : _bitwise_xor_expr "^" _bitwise_and_expr
+
+_bitwise_or_expr : _bitwise_xor_expr | bitwise_or_operation
+bitwise_or_operation : _bitwise_or_expr "|" _bitwise_xor_expr
+
+_logical_and_expr : _bitwise_or_expr | logical_and_operation
+logical_and_operation : _logical_and_expr "&&" _bitwise_or_expr
+
+_logical_or_expr : _logical_and_expr | logical_or_operation
+logical_or_operation : _logical_or_expr "||" _logical_and_expr
+
+_cond_expr : _logical_or_expr | conditional_operation
+conditional_operation : _logical_or_expr "?" constant_expression ":" _cond_expr
+
+constant_expression : _cond_expr
+bracketed_constant_expression : constant_value
+        | "(" constant_expression ")"
+
+_top_level_member : _extension
+            | _definition
+
+_type : _indirect_type | direct_type
+
+_indirect_type : array
+            | pointer
+
+array_size : constant_expression
+
+array : "array" "(" array_size ")" _type
+
+pointer : "pointer" _qualifiers? _type
+
+direct_type : _customized_type _qualifiers?
+
+_qualifiers : "(" qualifier_list? ")"
+qualifier_list : _qualifier ("," _qualifier)*
+
+declaration : IDENTIFIER declaration_offset? _type ";"
+declaration_offset : "@" bracketed_constant_expression
+
+enumeration_noprefix : "noprefix"
+enumeration_explicit : "explicit"
+enumeration_expr : "=" constant_expression
+enumeration_constant : IDENTIFIER enumeration_expr? enumeration_noprefix? ";"
+
+bitfield_declaration: (_bitfield_normal | bitfield_delete) ";"
+_bitfield_normal: bitfield_specifier _bitfield_type_specifier
+_bitfield_type_specifier: bitfield_member | bitfield_unknown | bitfield_const
+bitfield_member: IDENTIFIER _type _bitfield_modifiers bitfield_default?
+
+_definition : "define" _type_definition
+_type_definition : bitfield_definition
+                | object_definition
+                | structure_definition
+                | union_definition
+                | alternative_definition
+                | constant_definition
+                | enumeration_definition
+
+public : "public"
+
+alternative_definition : IDENTIFIER public? "newtype" _type ";"
+
+// Constants aka 'C' defines
+constant_definition : IDENTIFIER public? "constant" direct_type? "=" constant_expression ";"
+
+bitfield_size : constant_expression
+bitfield_const_decl : "const"
+_bitfield_params : "<" bitfield_size ("," (bitfield_const_decl))?  ">"
+bitfield_definition : IDENTIFIER public? "bitfield" _bitfield_params? "{" bitfield_declaration* "}" ";"
+
+// NOTE: restrict object declaration only in object when handling AST
+object_definition : IDENTIFIER public? "object" _qualifiers? "{" declaration* "}" ";"
+
+structure_definition : IDENTIFIER public? "structure" _qualifiers? "{" declaration* "}" ";"
+
+union_definition : IDENTIFIER public? "union" _qualifiers? "{" declaration* "}" ";"
+
+_enumeration_param : enumeration_noprefix | enumeration_explicit
+_enumeration_params : "(" _enumeration_param? ("," _enumeration_param)* ")"
+enumeration_definition : IDENTIFIER public? "enumeration" _enumeration_params? ("{" enumeration_constant* "}")? ";"
+
+_extension : "extend" _type_extension
+_type_extension : bitfield_extension
+               | structure_extension
+               | object_extension
+               | union_extension
+               | enumeration_extension
+
+module_name : "module" IDENTIFIER
+
+bitfield_extension : IDENTIFIER "bitfield" module_name? "{" bitfield_declaration+ "}" ";"
+
+object_extension : IDENTIFIER "object" module_name? "{" declaration+ "}" ";"
+
+structure_extension : IDENTIFIER "structure" module_name? "{" declaration+ "}" ";"
+
+union_extension : IDENTIFIER "union" module_name? "{" declaration+ "}" ";"
+
+// TODO: enumeration_extension to support module_name ?
+enumeration_extension : IDENTIFIER "enumeration" "{" enumeration_constant+ "}" ";"
+
+_customized_type : bitfield_type
+                | structure_type
+                | object_type
+                | union_type
+                | enumeration_type
+                | alternative_type
+		| primitive_type
+
+
+bitfield_type : "bitfield" IDENTIFIER
+structure_type : "structure" IDENTIFIER
+object_noprefix : "noprefix"
+object_type : "object" ("(" object_noprefix? ")")? IDENTIFIER
+union_type : "union" IDENTIFIER
+enumeration_type : "enumeration" IDENTIFIER
+alternative_type : "type" IDENTIFIER
+
+PRIMITIVE_TYPE.2 : "sint8" | "sint16" | "sint32" | "sint64"
+                | "bool" | "uint8" | "uint16" | "uint32" | "uint64" | "char"
+                | "sintptr" | "uintptr" | "sregister" | "uregister" | "size"
+primitive_type : PRIMITIVE_TYPE
+
+bitfield_specifier: bitfield_others | bitfield_auto | _bitfield_bit_list
+bitfield_bit_range: _bitfield_bit [":" _bitfield_bit]
+_bitfield_bit_list: bitfield_bit_range ("," bitfield_bit_range)*
+_bitfield_bit: bracketed_constant_expression
+bitfield_width: "<" constant_expression ">"
+bitfield_auto: "auto" bitfield_width?
+bitfield_others: "others"
+bitfield_delete: "delete" IDENTIFIER
+bitfield_default: "=" constant_expression
+_bitfield_modifiers: bitfield_shift?
+bitfield_shift: "lsl" "(" constant_expression ")"
+UNKNOWN : "unknown"
+bitfield_unknown : UNKNOWN bitfield_default?
+bitfield_const: bracketed_constant_expression
+
+_qualifier : basic_qualifier | aligned_qualifier | atomic_qualifier | packed_qualifier | contained_qualifier
+BASIC_QUALIFIER : "const" | "restrict" |  "volatile" | "writeonly"
+basic_qualifier : BASIC_QUALIFIER
+aligned_qualifier : "aligned" "(" constant_expression ")"
+atomic_qualifier : "atomic"
+packed_qualifier : "packed"
+contained_qualifier : "contained"
+
+BIT : "bit"
+BITS : "bits"
+ZEROS : "zeros"
+ONES : "ones"
+SELF : "self"
+AUTO : "auto"
+
+LCASE_LETTER : "a".."z"
+UCASE_LETTER : "A".."Z"
+LETTER : UCASE_LETTER | LCASE_LETTER
+
+IDENTIFIER : LETTER ("_"|LETTER|DIGIT)*
+
+WS: /[ \t\f\r\n]/+
+
+BLOCK_COMMENT : /\/\*+[^*]*\*+(?:[^\/*][^*]*\*+)*\//
+LINE_COMMENT :  /\/\/[^\r\n]*/
+
+%ignore WS
+%ignore BLOCK_COMMENT
+%ignore LINE_COMMENT

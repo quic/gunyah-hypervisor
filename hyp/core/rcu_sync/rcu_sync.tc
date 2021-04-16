@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define rcu_sync_state structure {
+	thread pointer(atomic) object thread;
+	rcu_entry structure rcu_entry(contained);
+};
+
+extend rcu_update_class enumeration {
+	sync_complete;
+};
+
+extend scheduler_block enumeration {
+	rcu_sync;
+};

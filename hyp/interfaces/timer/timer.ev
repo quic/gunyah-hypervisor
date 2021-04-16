@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface timer
+
+// Note, the timer argument passed to the timer_action handler will have been
+// dequeued and is not-locked.
+selector_event timer_action
+	selector action_type: timer_action_t
+	param	timer: timer_t *
+	return: bool = false

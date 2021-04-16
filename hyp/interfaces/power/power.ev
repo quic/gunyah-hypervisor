@@ -1,0 +1,117 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface power
+
+// Triggered on a CPU that has been brought online as a result of an explicit
+// power management call by another CPU.
+//
+// This cannot be triggered on the first running CPU in the system (either on
+// the boot CPU, or on any other CPU that is the first to wake from a power-
+// off suspend state), and therefore is never triggered in uniprocessor
+// configurations.
+//
+// This also cannot be triggered on a CPU that is waking automatically from a
+// power-off suspend state due to an interrupt or other wakeup event.
+event power_cpu_online
+
+// Triggered when a CPU takes itself offline.
+//
+// This cannot be triggered on the last running CPU in the system, and therefore
+// is never triggered in uniprocessor configurations.
+event power_cpu_offline
+
+// Triggered when a CPU, which may the only online CPU in the system, is about
+// to enter a low-power state from which it can wake automatically in response
+// to a platform-defined wakeup event. Entry to the low-power state is aborted
+// if any registered handler returns an error.
+//
+// The may_poweroff argument is true if the CPU will attempt to enter a
+// power-off state. If this is true, and the power-off state is successfully
+// entered, the state of any device or component within the CPU's power domain
+// may be lost before the corresponding resume event. If that occurs, the
+// boot_cpu_warm_init event will be triggered prior to power_cpu_resume, and
+// the was_poweroff argument to the power_cpu_resume event will be true.
+//
+// The last_cpu argument is true if this is the last CPU to go to suspend. If
+// so, a system-level suspend may occur. However, beware that there is no
+// synchronisation between this event and a subsequent power_cpu_resume on
+// another CPU. If synchronisation is required, use power_system_suspend
+// instead.
+//
+// If a race with a wakeup on another CPU is detected, this should return
+// ERROR_DENIED. If the suspend should be delayed with a WFI idle until some
+// event occurs, this should return ERROR_BUSY. Any other error is treated as
+// fatal.
+setup_event power_cpu_suspend
+	param state: platform_power_state_t
+	param may_poweroff: bool
+	param last_cpu: bool
+	return: error_t = OK
+	success: OK
+
+// Triggered when a CPU, which may be the only online CPU in the system,
+// returns from a low-power state. This is typically due to a wakeup event,
+// but many platforms also allow this to occur spuriously.
+//
+// The was_poweroff argument is true if the CPU had successfully suspended
+// into a power-off state before resuming. It is false if the CPU either
+// suspended into a retention state, or failed to suspend at all; this may be
+// the case even if the requested suspend state was a power-off state.
+//
+// The first_cpu argument is true if this is the first cpu to wake up.
+// However, beware that there is no synchronisation between this event and a
+// subsequent power_cpu_suspend on another CPU, even with last_cpu == true.
+// If synchronisation is required, use power_system_resume instead.
+//
+// In many cases, handlers for this event will be the same as unwinders for
+// power_cpu_suspend; however, note that the was_poweroff argument has a
+// slightly different meaning for resume and suspend-unwind.
+event power_cpu_resume
+	param was_poweroff: bool
+	param first_cpu: bool
+
+// Triggered when the system is about to enter a system-level low-power state
+// from which it can wake automatically in response to a platform-defined
+// wakeup event. Entry to the low-power state is aborted if any registered
+// handler returns an error.
+//
+// This is called during power_cpu_suspend when the last_cpu argument is true.
+// It is serialised with power_system_resume.
+//
+// If a race with a wakeup on another CPU is detected, this should return
+// ERROR_DENIED. If the suspend should be delayed with a WFI idle until some
+// event occurs, this should return ERROR_BUSY. Any other error is treated as
+// fatal.
+setup_event power_system_suspend
+	param state: platform_power_state_t
+	return: error_t = OK
+	success: OK
+
+// Triggered when the system has returned from a system-level low-power state.
+// This is typically due to a wakeup event, but many platforms also allow this
+// to occur spuriously.
+//
+// The specified state is the one that was previously requested by the last
+// CPU to suspend. It is not necessarily the state that was entered.
+//
+// This is called during power_cpu_resume when the first_cpu argument is true,
+// but only if it matches a preceding power_system_suspend that returned OK.
+event power_system_resume
+	param state: platform_power_state_t
+
+// Triggered when a system reset request is received. This does not follow the
+// same path as the kernel_abort as it is not a failure or hypervisor error.
+// There is no option to hold-off this request, if this is desired, a separate
+// framework is required to provide that prior to triggering this event.
+// The reset_type and cookie are platform specific values.
+handled_event power_system_reset
+	param reset_type: uint64_t
+	param cookie: uint64_t
+	param error: error_t *
+
+// Triggered when a system off request is received. There is no option to
+// hold-off this request, if this is desired, a separate framework is required
+// to provide that prior to triggering this event.
+event power_system_off

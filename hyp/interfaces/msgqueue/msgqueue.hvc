@@ -1,0 +1,90 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define msgqueue_bind_send_virq hypercall {
+	call_num	0x17;
+	msgqueue	input type cap_id_t;
+	vic		input type cap_id_t;
+	virq		input type virq_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_bind_receive_virq hypercall {
+	call_num	0x18;
+	msgqueue	input type cap_id_t;
+	vic		input type cap_id_t;
+	virq		input type virq_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_unbind_send_virq hypercall {
+	call_num	0x19;
+	msgqueue	input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_unbind_receive_virq hypercall {
+	call_num	0x1a;
+	msgqueue	input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_send hypercall {
+	call_num	0x1b;
+	msgqueue	input type cap_id_t;
+	size		input size;
+	data		input type user_ptr_t;
+	send_flags	input uregister;
+	_res0		input uregister;
+	error		output enumeration error;
+	not_full	output bool;
+};
+
+define msgqueue_receive hypercall {
+	call_num	0x1c;
+	msgqueue	input type cap_id_t;
+	buffer		input type user_ptr_t;
+	buf_size	input size;
+	_res0		input uregister;
+	error		output enumeration error;
+	size		output size;
+	not_empty	output bool;
+};
+
+define msgqueue_flush hypercall {
+	call_num	0x1d;
+	msgqueue	input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_configure_send hypercall {
+	call_num	0x1f;
+	msgqueue	input type cap_id_t;
+	not_full_thres	input type count_t;
+	not_full_holdoff input type count_t;
+	_res1		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_configure_receive hypercall {
+	call_num	0x20;
+	msgqueue	input type cap_id_t;
+	not_empty_thres	input type count_t;
+	not_empty_holdoff input type count_t;
+	_res1		input uregister;
+	error		output enumeration error;
+};
+
+define msgqueue_configure hypercall {
+	call_num	0x21;
+	msgqueue	input type cap_id_t;
+	create_info	input bitfield msgqueue_create_info;
+	_res0		input uregister;
+	error		output enumeration error;
+};

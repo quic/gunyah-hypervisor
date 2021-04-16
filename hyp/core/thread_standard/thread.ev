@@ -1,0 +1,29 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module thread_standard
+
+subscribe boot_runtime_first_init ()
+	priority last
+
+subscribe boot_runtime_warm_init
+	priority last
+
+subscribe object_create_thread
+	unwinder
+	// Run first to ensure that thread kind is set
+	priority first
+
+subscribe object_activate_thread
+	// Run last, because this handler can cause the thread to be scheduled
+	// immediately on remote CPUs (before the activate event ends).
+	priority last
+
+subscribe object_deactivate_thread
+
+// Add a dummy handler so the scheduler can always register an unwinder.
+subscribe thread_context_switch_pre()
+
+subscribe boot_hypervisor_start
+	priority -20

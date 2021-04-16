@@ -1,0 +1,23 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define UCONST constant 2;
+
+define UBitField bitfield<83> {
+	31:0	test uint32;
+	42:32	test1 uint16;
+	58:51	test5 uint8;
+};
+
+define Demo2U union {
+	int_var uint32;
+	bit_var bitfield UBitField;
+};
+
+define DemoUStruct structure {
+	int_var uint8;
+	// this is a bit field
+	bit_field_var bitfield UBitField;
+	embedded_union union Demo2U;
+};

@@ -1,0 +1,96 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vgic
+
+subscribe boot_hypervisor_start()
+
+subscribe boot_cpu_warm_init()
+
+subscribe rootvm_init
+	// Run early so other modules can bind VIRQs. Must run after PSCI,
+	// which is priority 10.
+	priority 1
+
+subscribe object_create_vic
+	priority last
+
+subscribe object_activate_vic
+
+subscribe object_deactivate_vic
+
+subscribe object_cleanup_vic(vic)
+
+subscribe object_create_hwirq
+	unwinder(hwirq_create)
+
+subscribe object_deactivate_hwirq
+
+subscribe object_cleanup_hwirq(hwirq)
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	unwinder vgic_handle_object_deactivate_thread(thread)
+	// Run early so other modules (timer, etc) can bind to virtual PPIs.
+	// Must run after PSCI, which is priority 10.
+	priority 1
+
+subscribe object_cleanup_thread(thread)
+
+subscribe irq_received[HWIRQ_ACTION_VGIC_FORWARD_SPI]
+	handler vgic_handle_irq_received_forward_spi(hwirq)
+
+subscribe irq_received[HWIRQ_ACTION_VGIC_MAINTENANCE]
+	handler vgic_handle_irq_received_maintenance()
+
+subscribe ipi_received[IPI_REASON_VGIC_SYNC]
+	handler vgic_handle_ipi_received_sync()
+
+subscribe ipi_received[IPI_REASON_VGIC_DELIVER]
+	handler vgic_handle_ipi_received_deliver()
+
+subscribe ipi_received[IPI_REASON_VGIC_SGI]
+	handler vgic_handle_ipi_received_sgi()
+
+subscribe vic_bind_hwirq[HWIRQ_ACTION_VGIC_FORWARD_SPI]
+	handler vgic_bind_hwirq_spi(vic, hwirq, virq)
+
+subscribe vic_unbind_hwirq[HWIRQ_ACTION_VGIC_FORWARD_SPI]
+	handler vgic_unbind_hwirq_spi(hwirq)
+
+subscribe virq_set_enabled[VIRQ_TRIGGER_VGIC_FORWARDED_SPI]
+	handler vgic_handle_virq_set_enabled_hwirq_spi(source, enabled)
+
+subscribe virq_set_mode[VIRQ_TRIGGER_VGIC_FORWARDED_SPI]
+	handler vgic_handle_virq_set_mode_hwirq_spi(source, mode)
+
+subscribe scheduler_affinity_changed(thread, need_sync)
+
+subscribe scheduler_affinity_changed_sync(thread)
+
+subscribe thread_save_state
+
+subscribe thread_context_switch_post(prev)
+	// Lowered priority so default priority handlers can restore state
+	// that affects virq_check_pending handlers
+	priority -100
+
+subscribe thread_load_state()
+
+subscribe vdevice_access
+	// Raise priority as this is more likely to be performance-critical
+	// than other vdevices. This can be removed once we have proper
+	// device-kind tracking for vdevices
+	priority 1
+
+subscribe vcpu_trap_sysreg_read
+
+subscribe vcpu_trap_sysreg_write
+
+subscribe vcpu_trap_wfi()
+
+subscribe vcpu_pending_wakeup
+
+subscribe vcpu_poweredoff()

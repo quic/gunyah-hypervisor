@@ -1,0 +1,73 @@
+## © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+##
+## SPDX-License-Identifier: BSD-3-Clause
+
+#def internal_prefix: hypercall_
+
+#def public_prefix: gunyah_hyp_
+
+#def register_expr(variable)
+#if variable.category == 'bitfield'
+## FIXME: this is an implementation detail of the type system
+${variable.name}.bf[0]#slurp
+#else
+${variable.name}#slurp
+#end if
+#end def
+
+#def register_init(variable, value)
+(${variable.ctype})#slurp
+#if variable.category == 'bitfield'
+## FIXME: this is an implementation detail of the type system
+{ (uint${8 * variable.size}_t)$value }#slurp
+#else
+$value#slurp
+#end if
+#end def
+
+#def result_struct(hypercall)
+${prefix}${hypercall.name}_result#slurp
+#end def
+
+#def result_struct_definition(hypercall)
+#unless len(hypercall.outputs) < 2
+typedef struct ${result_struct(hypercall)} {
+#set pad=0
+#for r, o in hypercall.outputs
+    #set pad_size=hypercall.abi.register_size - o.size
+    ${o.ctype} _Alignas(register_t) ${o.name};
+    #if pad_size
+    uint8_t _pad${pad}[${pad_size}];	// Pad for struct static zero initialization
+    #set pad=pad+1
+    #end if
+#end for
+} ${result_struct(hypercall)}_t;
+
+#end unless
+#end def
+
+#def return_type(hypercall)
+#if len(hypercall.outputs) > 1
+${result_struct(hypercall)}_t#slurp
+#else if hypercall.outputs
+${hypercall.outputs[0][1].ctype}#slurp
+#else
+void#slurp
+#end if
+#end def
+
+#def type_signature(hypercall, suffix='', ignored_inputs=False)
+${return_type(hypercall)}
+${prefix}${hypercall.name}${suffix}(#slurp
+#set sep = ''
+#for r, i in hypercall.inputs
+#unless i.ignore and not ignored_inputs
+$sep${i.ctype} ${i.name}
+#set sep = ', '
+#end unless
+#end for
+#unless hypercall.inputs
+void#slurp
+#end unless
+)
+#end def

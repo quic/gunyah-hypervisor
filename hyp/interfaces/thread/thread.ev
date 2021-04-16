@@ -1,0 +1,111 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface thread
+
+// needed for thread_func_t
+include <thread.h>
+
+// Perform thread-kind-specific setup work.
+//
+// This event is called on the thread itself before the first thread_load_state,
+// to perform thread-specific setup work.
+event thread_start
+
+// Save state prior to a context-switch.
+//
+// This event may be called without a following context_switch event - such as
+// for debugging, or if the context-switch is later aborted by an interrupt.
+event thread_save_state
+
+// Prepare to switch to the specified thread.
+//
+// This event is triggered in the context of the pre-switch thread, but
+// handlers may safely access the next thread, which has been claimed by the
+// scheduler on the current CPU and is known not to be running elsewhere.
+//
+// The first-priority handler for this event is reserved for the scheduler,
+// which must do anything necessary to enforce the above claim if that was
+// not done prior to starting the switch. This specifically includes executing
+// any memory barriers necessary to ensure that the other handlers can safely
+// access the next thread's context.
+//
+// The first-priority handler is allowed to fail if the scheduler decides it is
+// not safe to continue the context switch; all other handlers must return OK.
+//
+// Note that the next thread may be the idle thread, and/or a new thread that
+// has only had object_create_thread triggered on it and has never been
+// executed.
+setup_event thread_context_switch_pre
+	param next: thread_t *
+	return: error_t = OK
+	success: OK
+
+// Clean up after switching from the specified thread.
+//
+// This event is triggered in the context of the new thread, but handlers may
+// safely access the previous thread, which is still owned by the scheduler on
+// the current CPU and is known not to be running elsewhere.
+//
+// The last-priority handler for this event is reserved for the scheduler,
+// which must do anything necessary to release the current CPU's claim on the
+// previous thread, including returning it to scheduling queues and executing
+// any memory barriers necessary to ensure that operations by other handlers
+// are observable to any subsequent context switch to the thread on another
+// CPU.
+//
+// Note that the prev thread may be the idle thread, even if the current
+// thread is also the idle thread.
+event thread_context_switch_post
+	param prev: thread_t *
+
+// Return the thread's main function.
+//
+// This is called on the thread itself, immediately before thread_load_state.
+// The returned function pointer will be called after thread_load_state; if it
+// returns or is NULL, the thread will tail-call thread_exit().
+selector_event thread_get_entry_fn
+	selector kind: thread_kind_t
+	return: thread_func_t = NULL
+
+// Load state after a context-switch.
+//
+// If the starting argument is true, this is the first time the current thread
+// has run.
+event thread_load_state
+	param starting: bool
+
+// Handle entry from userspace.
+//
+// This is triggered immediately after entering the hypervisor from a lower
+// privilege level. The thread module does not trigger this event itself; it
+// must be triggered by any module that extends threads with userspace context
+// support.
+//
+// The last-priority handler is reserved for the preempt module, which can
+// enable preemption if appropriate. Other handlers can expect that preemption
+// is disabled.
+//
+// The reason argument indicates the cause of the thread's entry to the
+// hypervisor. It must not be THREAD_ENTRY_REASON_NONE.
+event thread_entry_from_user
+	param reason: thread_entry_reason_t
+
+// Handle exit to userspace.
+//
+// This is triggered immediately before exiting the hypervisor to a lower
+// privilege level. The thread module does not trigger this event itself; it
+// must be triggered by any module that extends threads with userspace context
+// support.
+//
+// The first-priority handler is reserved for the preempt module, which must
+// disable preemption if it had been enabled upon entry from user. Other
+// handlers can expect that preemption is disabled.
+//
+// The reason argument indicates the reason that the thread had entered the
+// hypervisor. If the reason is THREAD_ENTRY_REASON_NONE, then the user
+// context is newly initialised, either because the thread itself is new or
+// because an exception or hypercall has caused the context to be reset.
+event thread_exit_to_user
+	param reason: thread_entry_reason_t

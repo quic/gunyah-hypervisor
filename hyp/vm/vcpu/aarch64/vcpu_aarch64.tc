@@ -1,0 +1,92 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vcpu_general_registers structure {
+	x		array(31) type register_t;
+	pc		bitfield ELR_EL2;
+	spsr_el2	bitfield SPSR_EL2_A64;
+};
+
+define vector_register_t newtype array(16) uint8();
+
+define vcpu_vfp_registers structure {
+	q		array(32) type vector_register_t(aligned(16));
+	fpcr		bitfield FPCR;
+	fpsr		bitfield FPSR;
+};
+
+define vcpu_el1_registers structure {
+	contextidr_el1	bitfield CONTEXTIDR_EL1;
+	cpacr_el1	bitfield CPACR_EL1;
+	csselr_el1	bitfield CSSELR_EL1;
+	elr_el1		bitfield ELR_EL1;
+	esr_el1		bitfield ESR_EL1;
+	far_el1		bitfield FAR_EL1;
+	par_el1		bitfield PAR_EL1_RAW;
+	mair_el1	bitfield MAIR_EL1;
+	sp_el0		bitfield SP_EL0;
+	sp_el1		bitfield SP_EL1;
+	spsr_el1	bitfield SPSR_EL1_A64;
+	sctlr_el1	bitfield SCTLR_EL1;
+	ttbr0_el1	bitfield TTBR0_EL1;
+	ttbr1_el1	bitfield TTBR1_EL1;
+	tpidr_el0	bitfield TPIDR_EL0;
+	tpidrro_el0	bitfield TPIDRRO_EL0;
+	tpidr_el1	bitfield TPIDR_EL1;
+	tcr_el1		bitfield TCR_EL1;
+	vbar_el1	bitfield VBAR_EL1;
+// zce_el1
+// trfcr_el1
+// apxxKeyxx_el1
+// RAS registers ERRxxx_el1, DISR_el1
+// SPE PMxxx_el1
+// PMU PMxx_el1
+// LOxxx_el1
+// vgic registers
+// timer registers cntxxx_el1
+// AMU
+// aarch32 guest registers
+};
+
+define vcpu_el2_registers structure {
+	cptr_el2	bitfield CPTR_EL2_E2H1;
+	hcr_el2		bitfield HCR_EL2;
+	mdcr_el2	bitfield MDCR_EL2;
+};
+
+extend vcpu object {
+	gpr structure vcpu_general_registers;
+	fpr structure vcpu_vfp_registers;
+	el1 structure vcpu_el1_registers;
+	el2 structure vcpu_el2_registers;
+
+	mpidr_el1	bitfield MPIDR_EL1;
+#if SCHEDULER_CAN_MIGRATE
+	midr_el1	bitfield MIDR_EL1;
+#endif
+};
+
+#if !defined(PREEMPT_NULL)
+extend thread object module vcpu {
+	interrupted bool;
+};
+#endif
+
+// Relevant modules (such as the debug module) need to extend this bitfield
+// and add their configuration flags for the hypercall_vcpu_configure
+// hypercall. Then in their thread_activate handlers they need to check the
+// values of these flags and act on them.
+define vcpu_option_flags public bitfield<64> {
+	0		pinned		bool = 0;
+	62:1		res0_0		uint64 = 0;
+	63		hlos_vm		bool = 0;
+};
+
+extend thread object module vcpu {
+	// The option variable used for the hypercall_vcpu_configure hypercall.
+	options		bitfield vcpu_option_flags;
+
+	// Flag to indicate that the VCPU has been warm-reset
+	warm_reset	bool;
+};

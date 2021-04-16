@@ -1,0 +1,92 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Common type definitions used by platform and virtual PSCI.
+
+define psci_function enumeration(explicit) {
+	PSCI_VERSION = 0;
+	CPU_SUSPEND = 1;
+	CPU_OFF = 2;
+	CPU_ON = 3;
+	AFFINITY_INFO = 4;
+	MIGRATE = 5;
+	MIGRATE_INFO_TYPE = 6;
+	MIGRATE_INFO_UP_CPU = 7;
+	SYSTEM_OFF = 8;
+	SYSTEM_RESET = 9;
+	PSCI_FEATURES = 0xA;
+	CPU_FREEZE = 0xB;
+	CPU_DEFAULT_SUSPEND = 0xC;
+	NODE_HW_STATE = 0xD;
+	SYSTEM_SUSPEND = 0xE;
+	PSCI_SET_SUSPEND_MODE = 0xF;
+	PSCI_STAT_RESIDENCY = 0x10;
+	PSCI_STAT_COUNT = 0x11;
+	SYSTEM_RESET2 = 0x12;
+	MEM_PROTECT = 0x13;
+	MEM_PROTECT_CHECK_RANGE = 0x14;
+	// The last ID in the PSCI function ID range (0x0..0x1f).
+	LAST_ID = 0x1F;
+};
+
+define psci_ret enumeration(explicit) {
+	SUCCESS = 0;
+	NOT_SUPPORTED = -1;
+	INVALID_PARAMETERS = -2;
+	DENIED = -3;
+	ALREADY_ON = -4;
+	ON_PENDING = -5;
+	INTERNAL_FAILURE = -6;
+	NOT_PRESENT = -7;
+	DISABLED = -8;
+	INVALID_ADDRESS = -9;
+};
+
+define psci_ret_affinity_info enumeration(explicit) {
+	ON = 0;
+	OFF = 1;
+	ON_PENDING = 2;
+};
+
+define psci_mpidr bitfield<64> {
+	7:0	Aff0		uint8;
+	15:8	Aff1		uint8;
+	23:16	Aff2		uint8;
+	31:24	unknown = 0;
+	39:32	Aff3		uint8;
+	63:40	unknown = 0;
+};
+
+#if defined (PLATFORM_PSCI_USE_ORIGINAL_POWERSTATE_FORMAT)
+define psci_suspend_powerstate bitfield<32> {
+	15:0	StateID		uint32;
+	16	StateType	enumeration psci_suspend_powerstate_type;
+	23:17	unknown = 0;
+	25:24	PowerLevel	uint32;
+	31:26	unknown = 0;
+};
+#else
+define psci_suspend_powerstate bitfield<32> {
+	27:0	StateID		uint32;
+	29:28	unknown = 0;
+	30	StateType	enumeration psci_suspend_powerstate_type;
+	31	unknown = 0;
+};
+#endif
+
+define psci_suspend_powerstate_type enumeration(explicit) {
+	standby_or_retention = 0;
+	powerdown = 1;
+};
+
+define vpm_mode enumeration(explicit) {
+	NONE = 0;
+	IDLE = 1;
+	PSCI = 2;
+};
+
+define psci_mode enumeration(explicit) {
+	PC = 0;
+	OSI = 1;
+};

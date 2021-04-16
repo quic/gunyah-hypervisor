@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module ipi
+
+subscribe platform_ipi
+
+subscribe idle_yield
+	// Run late, as this handler may sleep
+	priority -100
+
+subscribe power_cpu_suspend()
+
+subscribe thread_exit_to_user
+
+subscribe optional preempt_interrupt

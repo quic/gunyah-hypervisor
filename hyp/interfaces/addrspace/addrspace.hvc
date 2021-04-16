@@ -1,0 +1,48 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define addrspace_attach_thread hypercall {
+	call_num	0x2A;
+	addrspace	input type cap_id_t;
+	thread		input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_map hypercall {
+	call_num	0x2B;
+	addrspace	input type cap_id_t;
+	memextent	input type cap_id_t;
+	vbase		input type vmaddr_t;
+	map_attrs	input bitfield memextent_mapping_attrs;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_unmap hypercall {
+	call_num	0x2C;
+	addrspace	input type cap_id_t;
+	memextent	input type cap_id_t;
+	vbase		input type vmaddr_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_update_access hypercall {
+	call_num	0x2D;
+	addrspace	input type cap_id_t;
+	memextent	input type cap_id_t;
+	vbase		input type vmaddr_t;
+	access_attrs	input bitfield memextent_access_attrs;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_configure hypercall {
+	call_num	0x2E;
+	addrspace	input type cap_id_t;
+	vmid		input type vmid_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};

@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface rcu
+
+selector_event rcu_update
+	selector rcu_update_class: rcu_update_class_t
+	param entry: rcu_entry_t *
+	return: rcu_update_status_t = rcu_update_status_default()
+
+event rcu_read_start
+
+event rcu_read_finish
+
+event rcu_grace_period_end
+	param cpu_index: cpu_index_t
+
+event rcu_grace_period_complete
+	param cpu_index: cpu_index_t
+	param status: rcu_update_status_t

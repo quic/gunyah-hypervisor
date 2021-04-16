@@ -1,0 +1,150 @@
+#*
+# © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+#
+# 2019 Cog Systems Pty Ltd.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+*#
+
+typedef struct ${type_name} {
+	${unit_type} bf[${unit_cnt}];
+} ${type_name}_t;
+
+## These accessors are macros rather than inline functions so they can be used
+## in contexts that require constant expressions, e.g. in case labels.
+#define ${type_name}_default() \
+	(${type_name}_t){ .bf = { #slurp
+${', '.join(str(v) for v in $init_values)} } }
+
+#define ${type_name}_cast(#slurp
+#for i in range($unit_cnt)
+#if i
+, #slurp
+#end if
+val_$i#slurp
+#end for
+) (${type_name}_t){ .bf = { #slurp
+#for i in range($unit_cnt)
+#if i
+, #slurp
+#end if
+val_$i#slurp
+#end for
+} }
+
+#if $unit_cnt == 1
+static inline ${unit_type}
+${type_name}_raw(${type_name}_t bit_field) {
+	return bit_field.bf[0];
+}
+
+static inline _Atomic ${unit_type} *
+${type_name}_atomic_ptr_raw(_Atomic ${type_name}_t *ptr) {
+	return (_Atomic ${unit_type} *)&((${type_name}_t *)ptr)->bf[0];
+}
+
+#end if
+static inline void
+${type_name}_init(${type_name}_t *bit_field) {
+	*bit_field = ${type_name}_default();
+}
+
+static inline bool
+${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2) {
+    return#slurp
+#set trivial = True
+#set sep = ''
+#for i in range($unit_cnt)
+#if $compare_masks[$i] != 0
+#set mask = hex($compare_masks[$i])
+#set trivial = False
+	$sep ((b1.bf[$i] & ${mask}U) == (b2.bf[$i] & ${mask}U))
+#set sep = '&&'
+#end if
+#end for
+#if trivial
+	true
+#end if
+    ;
+#if trivial
+	(void)b1;
+	(void)b2;
+#end if
+}
+#if $all_fields_boolean
+
+static inline ${type_name}_t
+${type_name}_union(${type_name}_t b1, ${type_name}_t b2)
+{
+	return (${type_name}_t){ .bf = { #slurp
+#for i in range($unit_cnt)
+		b1.bf[$i] | b2.bf[$i],
+#end for
+	} };
+}
+
+static inline ${type_name}_t
+${type_name}_intersection(${type_name}_t b1, ${type_name}_t b2)
+{
+	return (${type_name}_t){ .bf = { #slurp
+#for i in range($unit_cnt)
+		b1.bf[$i] & b2.bf[$i],
+#end for
+	} };
+}
+
+static inline ${type_name}_t
+${type_name}_inverse(${type_name}_t b)
+{
+	return (${type_name}_t){ .bf = { #slurp
+#set trivial = True
+#for i in range($unit_cnt)
+#if $compare_masks[$i] != 0
+#set mask = hex($compare_masks[$i])
+#set trivial = False
+	[$i] = ~b.bf[$i] & ${mask}U,
+#end if
+#end for
+#if trivial
+	0
+#end if
+	} };
+#if trivial
+	(void)b;
+#end if
+}
+
+static inline ${type_name}_t
+${type_name}_difference(${type_name}_t b1, ${type_name}_t b2)
+{
+	${type_name}_t not_b2 = ${type_name}_inverse(b2);
+	return ${type_name}_intersection(b1, not_b2);
+}
+#if $unit_cnt == 1
+
+static inline ${type_name}_t
+${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
+{
+	_Atomic ${unit_type} *bf = (_Atomic ${unit_type} *) & ((${type_name}_t *) b1)->bf[0];
+	return (${type_name}_t){ .bf = { #slurp
+		atomic_fetch_or_explicit(bf, b2.bf[0], order)
+	} };
+}
+
+static inline ${type_name}_t
+${type_name}_atomic_intersection(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
+{
+	_Atomic ${unit_type} *bf = (_Atomic ${unit_type} *) & ((${type_name}_t *) b1)->bf[0];
+	return (${type_name}_t){ .bf = { #slurp
+		atomic_fetch_and_explicit(bf, b2.bf[0], order)
+	} };
+}
+
+static inline ${type_name}_t
+${type_name}_atomic_difference(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
+{
+	${type_name}_t not_b2 = ${type_name}_inverse(b2);
+	return ${type_name}_atomic_intersection(b1, not_b2, order);
+}
+#end if
+#end if

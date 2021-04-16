@@ -1,0 +1,81 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define OSDLR_EL1 bitfield<64> {
+	0	dlk	bool;
+	63:1	unknown=0;
+};
+
+define OSLAR_EL1 bitfield<64> {
+	0	oslk	bool;
+	63:1	unknown=0;
+};
+
+define OSLSR_EL1_OSLM enumeration {
+	NOT_IMPLEMENTED = 0b0;
+	IMPLEMENTED = 0b10;
+};
+
+define OSLSR_EL1 bitfield<64> {
+	0,3	oslm	enumeration OSLSR_EL1_OSLM;
+	1	oslk	bool;
+	2	nTT	bool(const) = 0;
+	63:4	unknown=0;
+};
+
+// We don't care about most of the contents of the EL1 debug registers at
+// present; these will be fully defined if we ever implement self-debug for
+// EL2 and/or a cross-VM debug API. The one thing we do care about is the
+// enable bits in the control registers; if they are all clear, then we will
+// disable the VCPU's debug access when saving its context.
+define DBGBCR_EL1 bitfield<32> {
+	0	E	bool;
+	31:1	unknown;
+};
+
+define DBGWCR_EL1 bitfield<32> {
+	0	E	bool;
+	31:1	unknown;
+};
+
+define MDSCR_EL1 bitfield<32> {
+	0	SS		bool;
+	12	TDCC		bool;
+	15	MDE		bool;
+	31:16,14:13,11:1	unknown;
+};
+
+define MDCCINT_EL1 bitfield<32> {
+	31:0	unknown;
+};
+
+// Note: semantics of this register defined by PSCI, not ARMv8
+define DBGCLAIM_EL1 bitfield<8> {
+	0	debug_ext	bool;
+	1	debug_self	bool;
+	2	pmu_ext		bool;
+	3	pmu_self	bool;
+	7:4	unknown;
+};
+
+// Registers that are shared between self-hosted and external debug
+define debug_common_registers structure {
+	bvrs		array(CPU_DEBUG_BP_COUNT) uregister;
+	wvrs		array(CPU_DEBUG_WP_COUNT) uregister;
+	bcrs		array(CPU_DEBUG_BP_COUNT) bitfield DBGBCR_EL1;
+	wcrs		array(CPU_DEBUG_WP_COUNT) bitfield DBGWCR_EL1;
+	mdscr		bitfield MDSCR_EL1;
+};
+
+#if PLATFORM_DEBUG_SAVE_STATE
+// External debugger state, saved on powerdown suspend
+define debug_ext_state structure {
+	dbgclaim	bitfield DBGCLAIM_EL1;
+	mdccint		bitfield MDCCINT_EL1;
+	common		structure debug_common_registers;
+	dtrrx		uint32;
+	dtrtx		uint32;
+	eccr		uint32;
+};
+#endif

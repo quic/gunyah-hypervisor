@@ -1,0 +1,59 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define MEMDB_BITS_PER_ENTRY constant type index_t = 4;
+define MEMDB_NUM_ENTRIES constant type index_t = (1 << MEMDB_BITS_PER_ENTRY);
+
+extend rcu_update_class enumeration {
+	memdb_release_level;
+};
+
+extend error enumeration {
+	MEMDB_EMPTY = 110;
+	MEMDB_NOT_OWNER = 111;
+};
+
+define memdb_entry_info bitfield<64> {
+	3:0	type enumeration memdb_type;
+	11:4	shifts type count_t;
+	63:12	guard uint64;
+};
+
+define memdb_obj_type structure {
+	object	uintptr;
+	type	enumeration memdb_type;
+};
+
+define memdb_entry structure {
+	info	bitfield memdb_entry_info;
+	next	uintptr;
+};
+
+// FIXME: remove aligned() when Issue #27 is fixed.
+define memdb_level structure {
+	level		array(MEMDB_NUM_ENTRIES) structure memdb_entry(atomic,
+			aligned(sizeof(structure memdb_entry)));
+	lock		structure spinlock;
+	rcu_entry	structure rcu_entry(contained);
+	allocator	pointer structure allocator;
+};
+
+// FIXME: remove aligned() when Issue #27 is fixed.
+define memdb structure {
+	root	structure memdb_entry(atomic,
+		aligned(sizeof(structure memdb_entry)));
+	lock	structure spinlock;
+};
+
+define memdb_op enumeration {
+	INSERT = 0;
+	UPDATE;
+	ROLLBACK;
+	LOOKUP;
+	CONTIGUOUSNESS;
+};
+
+extend trace_class enumeration {
+	MEMDB;
+};

@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread_kind enumeration {
+	idle;
+};
+
+extend scheduler_block enumeration {
+	idle;
+};
+
+extend ipi_reason enumeration {
+	IDLE;
+};

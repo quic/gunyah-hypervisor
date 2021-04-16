@@ -1,0 +1,19 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module partition_standard
+
+subscribe boot_cold_init()
+	priority first
+
+subscribe boot_hypervisor_start()
+	// Run this early since it can add more heap memory
+	priority 100
+
+subscribe object_create_partition
+	priority last
+
+subscribe object_activate_partition
+
+subscribe object_deactivate_partition()

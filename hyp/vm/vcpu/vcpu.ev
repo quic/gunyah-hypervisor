@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vcpu
+
+subscribe object_get_defaults_thread
+
+subscribe object_create_thread
+
+// Run (second) last, the handler configures vcpu options through its own
+// setup_event which can't unwind correctly unless it is last here.
+subscribe object_activate_thread
+	priority -100
+
+interface vcpu
+
+setup_event vcpu_activate_thread
+	param thread: thread_t *
+	param options: vcpu_option_flags_t
+	return: bool = true
+	success: true

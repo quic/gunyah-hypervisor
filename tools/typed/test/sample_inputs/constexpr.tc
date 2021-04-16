@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define PAGE_SIZE constant size = 1 << 12;
+
+define sizeof_test structure {
+	test uint32;
+};
+
+define UNARY_MINUS_TEST constant sint32 = -PAGE_SIZE;
+define SIZEOF_MINUS_TEST constant size = PAGE_SIZE - sizeof(structure sizeof_test);
+define SIZEOF_MINUSES_TEST constant size = PAGE_SIZE - - - sizeof(structure sizeof_test);
+
+define LOGICAL_AND_TEST constant bool = (1 == 1) && ((2 | 1) == 3);
+define LOGICAL_OR_TEST constant bool = (1 == 0) || ((2 & 1) == 3);

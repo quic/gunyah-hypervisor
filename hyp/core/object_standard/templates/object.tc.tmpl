@@ -1,0 +1,32 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define object_header structure {
+	type		enumeration object_type;
+	state		enumeration object_state(atomic);
+	refcount	structure refcount;
+	rcu_entry	structure rcu_entry(contained);
+	lock		structure spinlock;
+};
+
+#for obj in $object_list
+#set o = str(obj)
+
+// TODO: add priority support to the type system to place the object_header
+//       at the start of the object, needed for partition_revoke
+//	"	header structure object_header priority=first;"
+extend $o object {
+	header structure object_header(contained);
+};
+#end for
+
+#for obj in $object_list
+#set o = str(obj)
+extend cap_rights_${o} bitfield {
+	31	object_activate bool;
+};
+#end for
+extend cap_rights_generic bitfield {
+	31	object_activate bool;
+};

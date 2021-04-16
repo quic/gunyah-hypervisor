@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if ARCH_AARCH64_USE_VHE
+define HYP_ASPACE_LOW_BITS constant type count_t =
+	HYP_ASPACE_MAP_DIRECT_BITS + 1;
+define HYP_ASPACE_HIGH_BITS constant type count_t = 39;
+define HYP_ASPACE_PHYSACCESS_OFFSET constant uintptr =
+	(1 << HYP_ASPACE_MAP_DIRECT_BITS);
+#else
+define HYP_ASPACE_BITS constant type count_t = HYP_ASPACE_MAP_DIRECT_BITS + 2;
+#endif
+
+define lookup_result bitfield<32> {
+	auto	mapped bool;
+	auto	consistent bool;
+	auto	contiguous bool;
+	auto	direct bool;
+};

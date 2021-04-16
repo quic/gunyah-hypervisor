@@ -1,0 +1,33 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#for obj in $object_list
+#set o = str(obj)
+${o}_t *
+object_get_${o}_additional(${o}_t *${o});
+
+bool
+object_get_${o}_safe(${o}_t *${o});
+
+void
+object_put_${o}(${o}_t *${o});
+
+error_t
+object_activate_${o}(${o}_t *${o});
+
+#end for
+object_ptr_t
+object_get_additional(object_type_t type, object_ptr_t object);
+
+bool
+object_get_safe(object_type_t type, object_ptr_t object);
+
+void
+object_put(object_type_t type, object_ptr_t object);
+
+object_header_t *
+object_get_header(object_type_t type, object_ptr_t object);
+
+error_t
+object_activate(object_type_t type, object_ptr_t object);

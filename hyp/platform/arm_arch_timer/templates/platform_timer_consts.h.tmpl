@@ -1,0 +1,26 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#set $ns_in_s = 1000000000
+#set freq_shift = 0
+#set ns_shift = 0
+#set $freq = $PLATFORM_ARCH_TIMER_FREQ
+#while freq / ($ns_in_s << $ns_shift) > 1
+#set ns_shift += 1
+#end while
+#while $ns_in_s / ($freq << $freq_shift) > 1
+#set freq_shift += 1
+#end while
+
+\#define NS_IN_S (uint64_t)${ns_in_s}U
+
+\#define PLATFORM_TIMER_FREQ_SHIFT $freq_shift
+\#define PLATFORM_TIMER_NS_SHIFT $ns_shift
+
+\#define PLATFORM_TIMER_FREQ_SCALE					       \
+	 (uint64_t)(((__uint128_t)$freq << 64) / ($ns_in_s << $ns_shift))
+\#define PLATFORM_TIMER_NS_SCALE					       \
+	 (uint64_t)(((__uint128_t)$ns_in_s << 64) / ($freq << $freq_shift))

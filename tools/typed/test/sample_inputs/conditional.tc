@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(CHOOSE3)
+define Choosen structure {
+	x uint32;
+	xp pointer uint64;
+	abc array(8) sint8;
+};
+#else
+define Default structure {
+	x uint32;
+};
+#endif

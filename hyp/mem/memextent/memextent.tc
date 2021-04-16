@@ -1,0 +1,47 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend addrspace object {
+	mapping_list		structure list;
+};
+
+extend cap_rights_memextent bitfield {
+	0	map	bool;
+	1	derive	bool;
+};
+
+define memextent_max_maps constant = 4;
+
+define memextent_arg structure {
+	me		pointer object memextent;
+	map		array(memextent_max_maps) pointer structure memextent_mapping;
+	failed_address	type paddr_t;
+};
+
+define memextent_mapping structure {
+	addrspace		pointer object addrspace;
+	attrs			bitfield memextent_mapping_attrs;
+	mapping_list_node	structure list_node(contained);
+	vbase			type vmaddr_t;
+};
+
+extend memextent object {
+	lock			structure spinlock;
+	phys_base		type paddr_t;
+	size			size;
+	memtype			enumeration memextent_memtype;
+	access			enumeration pgtable_access;
+	children_list		structure list;
+	children_list_node	structure list_node(contained);
+	mappings		array(memextent_max_maps) structure memextent_mapping;
+	active			bool;
+	device_mem		bool;
+};
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	memextent;
+	6	memextent bool = 1;
+};
+#endif

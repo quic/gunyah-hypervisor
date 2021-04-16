@@ -1,0 +1,46 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <compiler.h>
+\#include <cspace.h>
+\#include <cspace_lookup.h>
+\#include <spinlock.h>
+
+\#include "event_handlers.h"
+
+#for obj in $object_list
+#set o = str(obj)
+
+static ${o}_ptr_result_t
+cspace_lookup_${o}_common(cspace_t *cspace, cap_id_t cap_id,
+			  cap_rights_${o}_t rights, bool active_only)
+{
+	object_ptr_result_t ret;
+	${o}_ptr_result_t result;
+
+	ret = cspace_lookup_object(cspace, cap_id, OBJECT_TYPE_${o.upper()},
+				   cap_rights_${o}_raw(rights), active_only);
+	if (compiler_expected(ret.e == OK)) {
+		result = ${o}_ptr_result_ok(ret.r.${o});
+	} else {
+		result = ${o}_ptr_result_error(ret.e);
+	}
+	return result;
+}
+
+${o}_ptr_result_t
+cspace_lookup_${o}(cspace_t *cspace, cap_id_t cap_id, cap_rights_${o}_t rights)
+{
+	return cspace_lookup_${o}_common(cspace, cap_id, rights, true);
+}
+
+${o}_ptr_result_t
+cspace_lookup_${o}_any(cspace_t *cspace, cap_id_t cap_id, cap_rights_${o}_t rights)
+{
+	return cspace_lookup_${o}_common(cspace, cap_id, rights, false);
+}
+#end for

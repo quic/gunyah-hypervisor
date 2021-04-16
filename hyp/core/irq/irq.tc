@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend hwirq object {
+	irq type irq_t;
+	action enumeration hwirq_action;
+};
+
+extend hwirq_create structure {
+	irq type irq_t;
+	action enumeration hwirq_action;
+};
+
+define hwirq_action enumeration {
+	ignore;
+};

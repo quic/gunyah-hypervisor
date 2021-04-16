@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Trace class and trace ID definition.
+//
+// The number of enumerators in trace_class enumeration should be less than 32
+// for _core_ classes to support 32-bit architectures.
+
+define trace_class enumeration() {
+	ERROR;	// Critical errors
+	DEBUG;	// Debugging information
+};
+
+define trace_id enumeration(explicit) {
+	INFO = 0;
+	WARN = 1;
+};
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	trace_ctrl;
+	7	trace_ctrl	bool = 1;
+};
+#endif

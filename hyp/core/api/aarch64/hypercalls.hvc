@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define hypervisor_identify hypercall {
+	call_num 0x0;
+	hyp_api_info	output bitfield hyp_api_info;
+	api_flags_0	output bitfield hyp_api_flags0;
+	api_flags_1	output bitfield hyp_api_flags1;
+	api_flags_2	output bitfield hyp_api_flags2;
+};

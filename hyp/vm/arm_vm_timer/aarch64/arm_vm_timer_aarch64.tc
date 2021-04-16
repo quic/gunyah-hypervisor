@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend vcpu_el1_registers structure {
+	cntkctl_el1	bitfield CNTKCTL_EL1;
+	cntv_ctl_el0	bitfield CNTV_CTL_EL0;
+	cntv_cval_el0	bitfield CNTV_CVAL_EL0;
+};

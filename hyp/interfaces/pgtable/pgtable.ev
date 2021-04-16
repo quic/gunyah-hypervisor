@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface pgtable
+
+// Event broadcasting a mapping change to a VM page-table.
+event pgtable_vm_commit
+	param pgtable: pgtable_vm_t *

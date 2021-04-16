@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend ACTLR_EL2 bitfield {
+	0	ACTLREN		bool;
+	1	ECTLREN		bool;
+	4	AMEN		bool;
+	5	ERXPFGEN	bool;
+	7	PWREN		bool;
+	11	SMEN		bool;
+	12	CLUSTERPMUEN	bool;
+};

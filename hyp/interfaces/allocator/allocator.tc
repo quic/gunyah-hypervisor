@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend error enumeration {
+	ALLOCATOR_RANGE_OVERLAPPING = 100;
+	ALLOCATOR_MEM_INUSE = 101;
+};
+
+define allocator structure {
+};

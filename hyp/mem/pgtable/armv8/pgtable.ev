@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module pgtable
+
+subscribe boot_cold_init()
+	// Must be called prior to memdb and hyp address space initialisation.
+	priority 30
+
+subscribe boot_runtime_warm_init()

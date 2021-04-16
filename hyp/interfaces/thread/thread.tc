@@ -1,0 +1,36 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define thread_kind enumeration {
+	none = 0;
+};
+
+define thread_state enumeration {
+	// INIT state is set by zero-initialisation
+	init = 0;
+	ready;
+	killed;
+	exited;
+};
+
+define thread_entry_reason enumeration {
+	none = 0;
+	interrupt;
+	exception;
+	hypercall;
+};
+
+extend thread object {
+	state enumeration thread_state;
+	kind enumeration thread_kind;
+	params uintptr;
+	stack_base uintptr;
+	stack_size size;
+};
+
+extend thread_create structure {
+	kind enumeration thread_kind;
+	params uintptr;
+	stack_size size;
+};

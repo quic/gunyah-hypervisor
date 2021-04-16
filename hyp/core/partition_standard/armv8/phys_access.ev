@@ -1,0 +1,8 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module partition_standard
+
+subscribe boot_cpu_warm_init
+	handler partition_phys_access_cpu_warm_init()

@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_vm_pmu
+
+subscribe thread_save_state()
+
+subscribe thread_load_state()
+
+subscribe thread_context_switch_post()
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	unwinder arm_vm_pmu_handle_object_deactivate_thread(thread)
+
+subscribe object_deactivate_thread
+
+subscribe platform_pmu_counter_overflow
+
+subscribe virq_check_pending[VIRQ_TRIGGER_PMU](source)

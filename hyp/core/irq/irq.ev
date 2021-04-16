@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module irq
+
+subscribe boot_cold_init()
+
+subscribe object_create_hwirq
+	priority last
+
+subscribe object_deactivate_hwirq
+	priority first

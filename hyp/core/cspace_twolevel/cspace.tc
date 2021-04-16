@@ -1,0 +1,107 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+extend object_type enumeration {
+	ANY;
+};
+
+extend object_header structure {
+	cap_list structure list;
+	cap_list_lock structure spinlock;
+};
+
+extend rcu_update_class enumeration {
+	CSPACE_RELEASE_LEVEL;
+};
+
+define cap_value bitfield<16> {
+	7:0	lower_index type index_t;
+	15:8	upper_index type index_t;
+};
+
+extend cap_rights_cspace bitfield {
+	0	cap_create	bool;	// right to create a cap
+	1	cap_delete	bool;	// right to delete a cap
+	2	cap_copy	bool;	// right to copy a cap from cspace
+	3	attach		bool;	// right to attach a thread to cspace
+};
+
+define cap_state enumeration(explicit) {
+	NULL = 0;
+	VALID = 1;
+	REVOKED = 2;
+};
+
+define cap_info bitfield<32> {
+	31	master_cap bool;
+	15:8	type enumeration object_type;
+	1:0	state enumeration cap_state;
+	others	unknown=0;
+};
+
+define cap_data structure {
+	object union object_ptr;
+	rights type cap_rights_t;
+	info bitfield cap_info;
+};
+
+define cap structure(aligned(16)) {
+	data		structure cap_data(atomic);
+	cap_list_node	structure list_node(contained);
+};
+
+define cap_table_inner object {
+	cspace pointer object cspace;
+	partition pointer object partition;
+	rcu_entry structure rcu_entry(contained);
+	index type index_t;
+	cap_count type count_t;
+};
+
+define cspace_inner object {
+	cap_allocation_lock structure spinlock;
+	max_caps type count_t;
+	cap_count type count_t;
+	revoked_cap_list_lock structure spinlock;
+	revoked_cap_list structure list;
+	id_mult uint64;
+	id_inv uint64;
+	id_rand_base uint64;
+};
+
+define CAP_TABLE_ALLOC_SIZE constant size = 2048;
+define CSPACE_ALLOC_SIZE constant size = 2048;
+
+define CAP_TABLE__CAP_SLOT_MEM_AVAIL constant size =
+		CAP_TABLE_ALLOC_SIZE - sizeof(object cap_table_inner);
+define CAP_TABLE_NUM_CAP_SLOTS constant type index_t =
+		(CAP_TABLE__CAP_SLOT_MEM_AVAIL -
+			(BITMAP_NUM_WORDS(CAP_TABLE__CAP_SLOT_MEM_AVAIL /
+			sizeof(structure cap)) *
+			sizeof(type register_t))) / sizeof(structure cap);
+
+define CSPACE__CAP_TABLE_MEM_AVAIL constant size =
+		CSPACE_ALLOC_SIZE - sizeof(object cspace_inner) -
+		sizeof(structure object_header) - sizeof(structure list_node);
+define CSPACE_NUM_CAP_TABLES constant type index_t =
+		(CSPACE__CAP_TABLE_MEM_AVAIL -
+			(2 * BITMAP_NUM_WORDS(CSPACE__CAP_TABLE_MEM_AVAIL /
+				sizeof(pointer object cap_table)) *
+			sizeof(type register_t))) /
+		sizeof(pointer object cap_table);
+
+define cap_table object(aligned(CAP_TABLE_ALLOC_SIZE)) {
+	ct_inner object(noprefix) cap_table_inner;
+	used_slots BITMAP(CAP_TABLE_NUM_CAP_SLOTS, atomic);
+	cap_slots array(CAP_TABLE_NUM_CAP_SLOTS) structure cap;
+};
+
+extend cspace object {
+	c_inner object(noprefix) cspace_inner;
+	allocated_tables BITMAP(CSPACE_NUM_CAP_TABLES, atomic);
+	available_tables BITMAP(CSPACE_NUM_CAP_TABLES);
+	tables array(CSPACE_NUM_CAP_TABLES) pointer(atomic) object cap_table;
+};

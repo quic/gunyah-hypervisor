@@ -1,0 +1,19 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object module vetm {
+	// Current trace filter setting for VCPU
+	//
+	// Trace filter protection guildline:
+	// * only allows setting from HLOS
+	// * disable tracing for hypervisor
+	trcvi_ctlr	bitfield ETM_TRCVI_CTLR;
+
+	// indicates if the etm is enabled or not
+	enabled		bool;
+};
+
+extend trace_class enumeration {
+	VETM;
+};

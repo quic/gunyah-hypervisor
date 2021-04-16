@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define arch_context structure {
+	pc	type register_t;
+	sp	type register_t;
+	fp	type register_t;
+};

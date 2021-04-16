@@ -1,0 +1,105 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier; BSD-3-Clause
+
+extend esr_ec enumeration {
+	SVC64			= 0x15;
+	HVC64_EL2		= 0x16;
+	SMC64_EL2		= 0x17;
+	SYSREG			= 0x18;
+	SP_ALIGN		= 0x26;
+	FP32			= 0x28;
+	FP64			= 0x2c;
+	SERROR			= 0x2f;
+	BREAK_LO		= 0x30;
+	BREAK			= 0x31;
+	STEP_LO			= 0x32;
+	STEP			= 0x33;
+	WATCH_LO		= 0x34;
+	WATCH			= 0x35;
+	BKPT			= 0x38;
+	VECTOR32_EL2		= 0x3a;
+	BRK			= 0x3c;
+};
+
+#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+extend esr_ec enumeration {
+	PAUTH_EL2		= 0x09;
+	ERET_EL2		= 0x1a;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend esr_ec enumeration {
+	SVE			= 0x19;
+};
+#endif
+
+
+extend iss_da_ia_fsc enumeration {
+	TRANSLATION_0		= 0x04;
+	SYNC_TAG_CHECK		= 0x11;
+	SYNC_EXTERN_WALK_0	= 0x14;
+	SYNC_PARITY_ECC_WALK_0	= 0x1c;
+	ALIGNMENT		= 0x21;
+	IMP_DEF_LOCKDOWN	= 0x34;
+	IMP_DEF_ATOMIC		= 0x35;
+	SECTION_DOMAIN		= 0x3d;
+	PAGE_DOMAIN		= 0x3e;
+};
+
+#if defined(ARCH_ARM_8_1_TTHM)
+extend iss_da_ia_fsc enumeration {
+	ATOMIC_HW_UPDATE	= 0x31;
+};
+#endif
+
+define iss_da_ia_set enumeration {
+	UER		= 0b00;
+	UC		= 0b10;
+	UEO_CE		= 0b11;
+};
+
+define iss_serror_aet enumeration {
+	UC		= 0b000;
+	UEU		= 0b001;
+	UEO		= 0b010;
+	UER		= 0b011;
+	CE		= 0b110;
+};
+
+define iss_serror_dfsc enumeration {
+	Uncategorised	= 0b000000;
+	Async_Int	= 0b010001;
+};
+
+define spsr_64bit_mode enumeration {
+	el0t		= 0x00;
+	el1t		= 0x04;
+	el1h		= 0x05;
+	el2t		= 0x08;
+	el2h		= 0x09;
+};
+
+define currentel_el enumeration {
+	el0		= 0x00;
+	el1;
+	el2;
+	el3;
+};
+
+define tcr_tg enumeration {
+	GRANULE_SIZE_4KB	= 0b00;
+	GRANULE_SIZE_64KB	= 0b01;
+	GRANULE_SIZE_16KB	= 0b10;
+};
+
+define tcr_ps enumeration {
+	SIZE_32BITS = 0b000;
+	SIZE_36BITS = 0b001;
+	SIZE_40BITS = 0b010;
+	SIZE_42BITS = 0b011;
+	SIZE_44BITS = 0b100;
+	SIZE_48BITS = 0b101;
+	SIZE_52BITS = 0b110;
+};

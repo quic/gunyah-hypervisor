@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vdevice
+
+handled_event vdevice_access
+	param ipa:		vmaddr_t
+	param access_size:	size_t
+	param value:		register_t *
+	param is_write:		bool

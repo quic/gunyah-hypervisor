@@ -1,0 +1,51 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+static inline bool
+debug_save_common(debug_common_registers_t *regs,
+		  struct asm_ordering_dummy *order)
+{
+	bool in_use = false;
+
+#for bp in range(0, $CPU_DEBUG_BP_COUNT)
+	regs->bvrs[${bp}] = register_DBGBVR${bp}_EL1_read_ordered(order);
+#end for
+#for wp in range(0, $CPU_DEBUG_WP_COUNT)
+	regs->wvrs[${wp}] = register_DBGWVR${wp}_EL1_read_ordered(order);
+#end for
+#for bp in range(0, $CPU_DEBUG_BP_COUNT)
+	regs->bcrs[${bp}] = register_DBGBCR${bp}_EL1_read_ordered(order);
+        in_use = in_use || DBGBCR_EL1_get_E(&regs->bcrs[${bp}]);
+#end for
+#for wp in range(0, $CPU_DEBUG_WP_COUNT)
+	regs->wcrs[${wp}] = register_DBGWCR${wp}_EL1_read_ordered(order);
+        in_use = in_use || DBGWCR_EL1_get_E(&regs->wcrs[${wp}]);
+#end for
+	regs->mdscr = register_MDSCR_EL1_read_ordered(order);
+        in_use = in_use && MDSCR_EL1_get_MDE(&regs->mdscr);
+        in_use = in_use || MDSCR_EL1_get_TDCC(&regs->mdscr);
+        in_use = in_use || MDSCR_EL1_get_SS(&regs->mdscr);
+
+	return in_use;
+}
+
+static inline void
+debug_load_common(const debug_common_registers_t *regs,
+		  struct asm_ordering_dummy *order)
+{
+#for bp in range(0, $CPU_DEBUG_BP_COUNT)
+	register_DBGBVR${bp}_EL1_write_ordered(regs->bvrs[${bp}], order);
+#end for
+#for wp in range(0, $CPU_DEBUG_WP_COUNT)
+	register_DBGWVR${wp}_EL1_write_ordered(regs->wvrs[${wp}], order);
+#end for
+#for bp in range(0, $CPU_DEBUG_BP_COUNT)
+	register_DBGBCR${bp}_EL1_write_ordered(regs->bcrs[${bp}], order);
+#end for
+#for wp in range(0, $CPU_DEBUG_WP_COUNT)
+	register_DBGWCR${wp}_EL1_write_ordered(regs->wcrs[${wp}], order);
+#end for
+
+	register_MDSCR_EL1_write_ordered(regs->mdscr, order);
+}

@@ -1,0 +1,92 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+// We need only 3 bits to encode the cpu level state of a vcpu
+define PSCI_VCPUS_STATE_PER_VCPU_BITS constant type count_t = 3;
+define PSCI_VCPUS_STATE_PER_VCPU_MASK constant uint8 = 0x7;
+define PSCI_VCPUS_STATE_BITS constant type count_t = 32;
+define PSCI_VCPUS_STATE_MAX_VCPUS constant type count_t = PSCI_VCPUS_STATE_BITS/PSCI_VCPUS_STATE_PER_VCPU_BITS;
+define PSCI_VCPUS_STATE_MAX_INDEX constant type count_t = PLATFORM_MAX_CORES*PSCI_VCPUS_STATE_PER_VCPU_BITS;
+
+define vpm_group_suspend_state bitfield<64> {
+	auto<PSCI_VCPUS_STATE_BITS>	vcpus_state	uint32;
+	others	unknown=0;
+};
+
+extend vpm_group object module psci {
+	cpus			array(PLATFORM_MAX_CORES) pointer(atomic) object thread;
+	online_count		type count_t(atomic);
+	mode			enumeration psci_mode;
+	vm_suspend_state	bitfield vpm_group_suspend_state(atomic);
+	system_suspend_virq	structure virq_source(contained);
+	lock			structure spinlock;
+	system_suspend_count	sint8;
+	system_suspend_signal	bool;
+	system_resume_signal	bool;
+};
+
+extend thread object module psci {
+	// Reference-counted virtual PM group pointer
+	group pointer object vpm_group;
+
+	// Attachment index for the PSCI group. This is a CPU index because
+	// the PSCI implementation currently assumes that the set of valid
+	// virtual MPIDRs is the same as the valid physical MPIDRs, even if
+	// there is no strict CPU affinity.
+	index type cpu_index_t;
+
+	// PSCI suspend state requested by this VCPU; valid only for a VCPU
+	// blocked by SCHEDULER_BLOCK_VCPU_SUSPEND.
+	suspend_state bitfield psci_suspend_powerstate;
+
+	pm_list_node structure list_node(contained);
+
+	mode enumeration vpm_mode;
+
+	// True if the VCPU is being migrated between PM lists.
+	migrate bool;
+
+	// Tracks when the VCPU becomes inactive due to being off, suspended
+	// or migrating. When zero, the VCPU is considered active and will be
+	// accounted for in vpm_active_vcpus.
+	inactive_count type count_t;
+};
+
+#if ROOTVM_IS_HLOS
+extend boot_env_data structure module psci {
+	group type cap_id_t;
+	secondary_vcpus array(PLATFORM_MAX_CORES) type cap_id_t;
+};
+#endif
+
+extend cap_rights_vpm_group bitfield {
+	0	attach_vcpu	bool;
+	1	bind_virq	bool;
+	2	query		bool;
+};
+
+extend virq_trigger enumeration {
+	vpm_group;
+};
+
+extend trace_ids bitfield {
+	23:16	vcpu_index	type cpu_index_t;
+};
+
+extend trace_class enumeration {
+	PSCI;
+};
+
+extend trace_id enumeration {
+	PSCI_PSTATE_VALIDATION = 0x30;
+	PSCI_VPM_STATE_CHANGED = 0x31;
+	PSCI_VPM_SYSTEM_SUSPEND = 0x32;
+	PSCI_VPM_SYSTEM_RESUME = 0x33;
+	PSCI_VPM_VCPU_SUSPEND = 0x34;
+	PSCI_VPM_VCPU_RESUME = 0x35;
+	PSCI_SYSTEM_SUSPEND = 0x36;
+	PSCI_SYSTEM_RESUME = 0x37;
+};

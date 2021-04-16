@@ -1,0 +1,24 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+#extends hypercall_api
+#implements respond
+
+#def prefix: $internal_prefix
+
+\#if !defined(__ASSEMBLER__)
+#for hypcall_num in sorted($hypcall_dict.keys())
+    #set $hypcall = $hypcall_dict[$hypcall_num]
+
+    ${result_struct_definition($hypcall)}
+    ${type_signature($hypcall)};
+#end for
+
+\#else
+#if len($hypcall_dict)
+\#define HYPERCALL_BASE ${hex($hypcall_dict[0].abi.hypcall_base)}U
+\#define HYPERCALL_NUM ${$max($hypcall_dict.keys()) + 1}U
+#end if
+\#endif

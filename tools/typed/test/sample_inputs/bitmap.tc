@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <stdalign.h>
+
+#define BITMAP_WORD_BITS (sizeof(uregister) * 8)
+#define BITMAP_WORDS(x) (((x) + BITMAP_WORD_BITS - 1)/ BITMAP_WORD_BITS)
+#define BITMAP_DECLARE(bits, name) name array(BITMAP_WORDS(bits)) uregister
+
+define test_struct structure {
+	BITMAP_DECLARE(512, test_bitmap_512);
+	BITMAP_DECLARE(768, test_bitmap_768);
+	BITMAP_DECLARE(1, test_bitmap_1);
+};
+
+define sizeof_test_struct constant sizeof structure test_struct;
+define alignof_test_struct constant alignof(structure test_struct);
+
+define condition_test constant (sizeof_test_struct > (64 % 12)) ?
+		42 + 1 : 48 + 52;

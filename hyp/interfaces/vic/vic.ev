@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vic
+
+selector_event vic_bind_hwirq
+	selector action: hwirq_action_t
+	param vic: vic_t *
+	param hwirq: hwirq_t *
+	param virq: virq_t
+	return: error_t = ERROR_ARGUMENT_INVALID
+
+selector_event vic_unbind_hwirq
+	selector action: hwirq_action_t
+	param hwirq: hwirq_t *
+	return: error_t = ERROR_ARGUMENT_INVALID

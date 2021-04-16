@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend object_header structure {
+	partition	pointer object partition;
+};
+
+extend partition object {
+	allocator	structure allocator;
+	virt_offset	size;
+};
+
+extend cap_rights_partition bitfield {
+	0	object_create	bool;
+};

@@ -1,0 +1,27 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface psci
+
+selector_event psci_call32
+	selector function: psci_function_t
+	param arg1: uint32_t
+	param arg2: uint32_t
+	param arg3: uint32_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32
+
+selector_event psci_call64
+	selector function: psci_function_t
+	param arg1: uint64_t
+	param arg2: uint64_t
+	param arg3: uint64_t
+	return: uint64_t = SMCCC_UNKNOWN_FUNCTION
+
+selector_event psci_features32
+	selector function: psci_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32
+
+selector_event psci_features64
+	selector function: psci_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32

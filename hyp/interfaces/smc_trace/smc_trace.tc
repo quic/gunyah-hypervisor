@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define smc_trace_id enumeration {
+	INVALID		= 0x0;
+	EL1_64ENT	= 0x10;		// SMC entry from EL1
+	EL1_64RET	= 0x11;		// SMC return to EL1
+	EL2_64CAL	= 0x20;		// SMC call from EL2 to TZ
+	EL2_64RET	= 0x21;		// SMC return to EL2
+	EL2_64INT	= 0x25;		// SMC interrupted return from TZ
+	EL2_64RES	= 0x24;		// SMC resume to TZ
+};

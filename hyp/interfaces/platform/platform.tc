@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define platform_prng_data256 structure {
+	word array(8) uint32;
+};
+
+define PLATFORM_RAM_RANGES_MAX	constant type count_t = 32;
+
+define platform_ram_range structure {
+	base		type paddr_t;
+	size		size;
+};
+
+define platform_ram_info structure {
+	num_ranges	type count_t;
+	ram_range	array(PLATFORM_RAM_RANGES_MAX)
+			structure platform_ram_range;
+};

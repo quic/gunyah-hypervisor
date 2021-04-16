@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend vcpu_el1_registers structure {
+	actlr_el1	bitfield ACTLR_EL1;
+	amair_el1	bitfield AMAIR_EL1;
+	afsr0_el1	bitfield AFSR0_EL1;
+	afsr1_el1	bitfield AFSR1_EL1;
+};

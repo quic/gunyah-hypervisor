@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface preempt
+
+handled_event preempt_interrupt
+
+handled_event preempt_abort
+
+module preempt
+
+subscribe boot_cpu_early_init
+
+subscribe boot_cpu_start
+	priority last
+
+subscribe thread_start
+	priority first
+
+subscribe thread_entry_from_user
+	priority last
+
+subscribe thread_exit_to_user
+	priority first

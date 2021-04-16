@@ -1,0 +1,14 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vectors
+
+subscribe vectors_trap_unknown_el2
+
+// This handler emits a HLT instruction to allow aborts on a debug build to
+// stop in the debugger when an external debugger is attached.
+// This currently has very high priority to stop before other actions like IPIs
+// are sent. We may consider changing this priority if it causes problems.
+subscribe abort_kernel()
+	priority 2000

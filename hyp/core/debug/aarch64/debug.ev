@@ -1,0 +1,14 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module debug
+
+#if PLATFORM_DEBUG_SAVE_STATE
+subscribe power_cpu_online
+
+subscribe power_cpu_suspend(may_poweroff)
+	unwinder(may_poweroff)
+
+subscribe power_cpu_resume(was_poweroff)
+#endif

@@ -1,0 +1,28 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface mutex
+
+// Mutex events.
+//
+// Note that there are separate events for before and after the various mutex
+// operations.
+
+event mutex_init
+	param lock: mutex_t *
+
+event mutex_acquire
+	param lock: mutex_t *
+
+event mutex_acquired
+	param lock: mutex_t *
+
+event mutex_failed
+	param lock: mutex_t *
+
+event mutex_release
+	param lock: mutex_t *
+
+event mutex_released
+	param lock: mutex_t *

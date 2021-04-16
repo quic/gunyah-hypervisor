@@ -1,0 +1,73 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier; BSD-3-Clause
+
+define esr_ec enumeration {
+	UNKNOWN			= 0x00;
+	WFIWFE			= 0x01;
+	MCRMRC15		= 0x03;
+	MCRRMRRC15		= 0x04;
+	MCRMRC14		= 0x05;
+	LDCSTC			= 0x06;
+	FPEN			= 0x07;
+	VMRS_EL2		= 0x08;
+	MRRC14			= 0x0c;
+	ILLEGAL			= 0x0e;
+	SVC32			= 0x11;
+	HVC32_EL2		= 0x12;
+	SMC32_EL2		= 0x13;
+	INST_ABT_LO		= 0x20;
+	INST_ABT		= 0x21;
+	PC_ALIGN		= 0x22;
+	DATA_ABT_LO		= 0x24;
+	DATA_ABT		= 0x25;
+};
+
+define iss_da_ia_fsc enumeration {
+	ADDR_SIZE_0		= 0x00;
+	ADDR_SIZE_1		= 0x01;
+	ADDR_SIZE_2		= 0x02;
+	ADDR_SIZE_3		= 0x03;
+	TRANSLATION_1		= 0x05;
+	TRANSLATION_2		= 0x06;
+	TRANSLATION_3		= 0x07;
+	ACCESS_FLAG_1		= 0x09;
+	ACCESS_FLAG_2		= 0x0a;
+	ACCESS_FLAG_3		= 0x0b;
+	PERMISSION_1		= 0x0d;
+	PERMISSION_2		= 0x0e;
+	PERMISSION_3		= 0x0f;
+	SYNC_EXTERNAL		= 0x10;
+	SYNC_EXTERN_WALK_1	= 0x15;
+	SYNC_EXTERN_WALK_2	= 0x16;
+	SYNC_EXTERN_WALK_3	= 0x17;
+	SYNC_PARITY_ECC		= 0x18;
+	SYNC_PARITY_ECC_WALK_1	= 0x1d;
+	SYNC_PARITY_ECC_WALK_2	= 0x1e;
+	SYNC_PARITY_ECC_WALK_3	= 0x1f;
+	DEBUG			= 0x22;
+	TLB_CONFLICT		= 0x30;
+};
+
+#if defined(ARCH_ARM_8_1_TTHM)
+extend iss_da_ia_fsc enumeration {
+	ATOMIC_HW_UPDATE	= 0x31;
+};
+#endif
+
+define iss_da_sas enumeration {
+	Byte		= 0b00;
+	Halfword;
+	Word;
+	DoubleWord;
+};
+
+define spsr_32bit_mode enumeration {
+	User		= 0b10000;
+	FIQ		= 0b10001;
+	IRQ		= 0b10010;
+	Supervisor	= 0b10011;
+	Abort		= 0b10111;
+	Undefined	= 0b11011;
+	System		= 0b11111;
+};

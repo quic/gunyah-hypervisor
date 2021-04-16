@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vic_base
+
+#if VIC_BASE_FORWARD_PRIVATE
+subscribe vic_bind_hwirq[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_bind_hwirq_forward_private(vic, hwirq, virq)
+
+subscribe vic_unbind_hwirq[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_unbind_hwirq_forward_private(hwirq)
+
+subscribe irq_received[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_handle_irq_received_forward_private(hwirq)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_handle_virq_check_pending_forward_private(source, reasserted)
+
+subscribe virq_set_enabled[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_handle_virq_set_enabled_forward_private(source, enabled)
+
+subscribe virq_set_mode[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
+	handler vic_handle_virq_set_mode_forward_private(source, mode)
+#endif

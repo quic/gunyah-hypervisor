@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module smccc
+
+subscribe vcpu_trap_smc64(iss)
+
+subscribe vcpu_trap_hvc64(iss)

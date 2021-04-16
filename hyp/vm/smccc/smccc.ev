@@ -1,0 +1,69 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface smccc
+
+selector_event smccc_call_fast_32
+	selector interface_id: smccc_interface_id_t
+	param function: smccc_function_t
+	param is_hvc: bool
+	param arg1: uint32_t
+	param arg2: uint32_t
+	param arg3: uint32_t
+	param arg4: uint32_t
+	param arg5: uint32_t
+	param arg6: uint32_t
+	param client_id: smccc_client_id_t
+	param ret0: uint32_t *
+	param ret1: uint32_t *
+	param ret2: uint32_t *
+	param ret3: uint32_t *
+
+selector_event smccc_call_fast_64
+	selector interface_id: smccc_interface_id_t
+	param function: smccc_function_t
+	param is_hvc: bool
+	param arg1: uint64_t
+	param arg2: uint64_t
+	param arg3: uint64_t
+	param arg4: uint64_t
+	param arg5: uint64_t
+	param arg6: uint64_t
+	param client_id: smccc_client_id_t
+	param ret0: uint64_t *
+	param ret1: uint64_t *
+	param ret2: uint64_t *
+	param ret3: uint64_t *
+
+selector_event smccc_call_yielding_32
+	selector interface_id: smccc_interface_id_t
+	param function: smccc_function_t
+	param is_hvc: bool
+	param arg1: uint32_t
+	param arg2: uint32_t
+	param arg3: uint32_t
+	param arg4: uint32_t
+	param arg5: uint32_t
+	param arg6: uint32_t
+	param client_id: smccc_client_id_t
+	param ret0: uint32_t *
+	param ret1: uint32_t *
+	param ret2: uint32_t *
+	param ret3: uint32_t *
+
+selector_event smccc_call_yielding_64
+	selector interface_id: smccc_interface_id_t
+	param function: smccc_function_t
+	param is_hvc: bool
+	param arg1: uint64_t
+	param arg2: uint64_t
+	param arg3: uint64_t
+	param arg4: uint64_t
+	param arg5: uint64_t
+	param arg6: uint64_t
+	param client_id: smccc_client_id_t
+	param ret0: uint64_t *
+	param ret1: uint64_t *
+	param ret2: uint64_t *
+	param ret3: uint64_t *

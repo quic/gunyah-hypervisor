@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module idle
+
+subscribe object_create_thread
+
+subscribe boot_hypervisor_start
+	handler idle_thread_init()
+
+subscribe thread_get_entry_fn[THREAD_KIND_IDLE]
+
+subscribe idle_start
+
+subscribe boot_cold_init
+
+#if !defined(UNIT_TESTS)
+subscribe vcpu_idle_fastpath
+	priority last
+#endif

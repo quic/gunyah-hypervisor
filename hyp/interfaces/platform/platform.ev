@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <hypconstants.h>
+
+interface platform
+
+handled_event platform_ipi
+#if PLATFORM_IPI_LINES > ENUM_IPI_REASON_MAX_VALUE
+	param ipi: ipi_reason_t
+#endif
+
+event platform_timer_expiry
+
+event platform_pmu_counter_overflow

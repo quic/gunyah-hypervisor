@@ -1,0 +1,51 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Generic hypervisor address space memory types.
+//
+// We define only eight memory types to match the ARMv8 architecture stage-1
+// page-table MAIR setting.
+define pgtable_hyp_memtype enumeration(explicit) {
+	// Non-cacheable memory, but no ordering guarantees
+	WRITECOMBINE = 0;
+	// Writeback-cacheable memory; allocate on reads and writes
+	WRITEBACK = 1;
+	// Writeback-cacheable in CPU caches, but not in external caches
+	OUTER_WRITECOMBINE = 2;
+	// Writethrough-cacheable memory
+	WRITETHROUGH = 3;
+	// Non-cacheable, and prevents speculative accesses
+	NOSPEC = 4;
+	// Like NOSPEC, but prevents gathering of adjacent / repeated accesses
+	NOSPEC_NOCOMBINE = 5;
+	// Like NOSPEC_NOCOMBINE, but prevents reordering by the CPU
+	DEVICE = 6;
+	// Like DEVICE, but prevents reordering across the whole memory system
+	STRONG = 7;
+};
+
+// VM address space memory types.
+//
+// These are non-generic as (at least) on ARM, the memory types in stage-2
+// page-tables are not absolute types, but instead are modifiers of the stage-1
+// output memory type.
+define pgtable_vm_memtype public enumeration(explicit);
+
+// Generic mapping access permissions enumeration
+define pgtable_access public enumeration(explicit) {
+	NONE = 0;
+	X = 1;
+	W = 2;
+	R = 4;
+	RX = 5;
+	RW = 6;
+	RWX = 7;
+};
+
+define pgtable_vm structure {
+};
+
+extend error enumeration {
+	EXISTING_MAPPING = 200;
+};

@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend error enumeration {
+	STRING_TRUNCATED = 90;
+	STRING_REACHED_END = 91;
+	STRING_INVALID_FORMAT = 92;
+	STRING_MISSING_PLACEHOLDER = 93;
+	STRING_MISSING_ARGUMENT = 94;
+};

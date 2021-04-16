@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Add list_node in object definition as:
+// <node-name> structure list_node(contained);
+// so that we can get the object from the node by calling
+// <object-name>_container_of_<node-name>(list_node)
+
+define list_node structure {
+	next	pointer(atomic) structure list_node;
+	prev	pointer structure list_node;
+};
+
+define list structure {
+	head	structure list_node;
+};

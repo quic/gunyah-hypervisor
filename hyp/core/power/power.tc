@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define cpu_power_state enumeration(explicit) {
+	off	= 0;	// never booted
+	boot	= 1;	// boot CPU in cold boot
+	suspend	= 2;
+	offline	= 3;	// hotplugged
+	online	= 4;
+};

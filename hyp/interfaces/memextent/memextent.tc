@@ -1,0 +1,57 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define memextent_type enumeration {
+	BASIC = 0;
+};
+
+extend memextent object {
+	type	enumeration memextent_type;
+	parent	pointer object memextent;
+};
+
+extend memextent_create structure module memextent {
+	device_mem bool;
+};
+
+extend error enumeration {
+	MEMEXTENT_MAPPINGS_FULL = 120;
+};
+
+// Memory extents have a simplified memtype which is distinct from
+// pgtable_hyp_memtype. This is because there are only limited memory types
+// which we need to enforce, but potentially a large number of memtypes
+// available for mapping.
+define memextent_memtype public enumeration(explicit) {
+	ANY = 0;		// May map with any type
+	DEVICE = 1;		// Device memory types only
+	UNCACHED = 2;		// Force uncached
+	CACHED = 3;		// Force writeback cached
+};
+
+// Bitfield for memextent configure API
+define memextent_attrs public bitfield<32> {
+	2:0	access enumeration pgtable_access;
+	9:8	memtype enumeration memextent_memtype;
+	31	append bool;	// List append range
+	// Reserved bits
+	30:10,7:3 res_0 uregister(const) = 0;
+};
+
+// Bitfield for mapping API attributes
+define memextent_mapping_attrs public bitfield<32> {
+	2:0	user_access enumeration pgtable_access;
+	6:4	kernel_access enumeration pgtable_access;
+	23:16	memtype enumeration pgtable_vm_memtype;
+	// Reserved bits
+	31:24,15:8,7,3 res_0 uregister(const) = 0;
+};
+
+// Bitfield for mapping access change APIs
+define memextent_access_attrs public bitfield<32> {
+	2:0	user_access enumeration pgtable_access;
+	6:4	kernel_access enumeration pgtable_access;
+	// Reserved bits
+	31:8,7,3 res_0 uregister(const) = 0;
+};

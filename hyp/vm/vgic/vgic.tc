@@ -1,0 +1,441 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+// The hardware has to support at least 5 priority bits, but might not support
+// more. We constrain the implementation to 5 anyway.
+define VGIC_PRIO_BITS constant type count_t = 5;
+define VGIC_PRIORITIES constant type count_t = 1 << VGIC_PRIO_BITS;
+
+// Low bits to shift out of priority values.
+define VGIC_PRIO_SHIFT constant type count_t = 8 - VGIC_PRIO_BITS;
+
+// Chunks to split the IRQ search bitmap into for the SPIs and PPIs (<1020)
+define VGIC_LOW_RANGES constant type count_t = 64;
+
+#if !GICV3_HAS_VLPI
+// Upper bound for software-implemented IRQ IDs
+define VGIC_IDBITS constant type count_t = VGIC_HAS_LPI ? 16 : 15;
+define VGIC_LPI_NUM constant type count_t = (1 << VGIC_IDBITS) - GIC_LPI_BASE;
+define VGIC_LPI_RANGES constant type count_t = BITMAP_NUM_WORDS(VGIC_LPI_NUM);
+#endif
+
+// Delivery state for VIRQs.
+//
+// This tracks why, how and where the VIRQ is currently being asserted.
+//
+// It is independent of both the HW IRQ activation state and the list register
+// status, and is maintained for all VIRQs that can be listed in LRs,
+// regardless of whether they have registered sources or whether they are
+// currently listed.
+define vgic_delivery_state bitfield<16> {
+	// Currently in a list register.
+	//
+	// If the VIRQ is a forwarded SPI and is marked as such in the list
+	// register, it must have valid transitions in and out of HW listed
+	// state within the same non-preemptible critical sections that set
+	// and clear this flag.
+	//
+	// If this flag is set, the active and pending flags in the GICD &
+	// GICR may be wrong; if the VCPU is running then the active and
+	// pending flags below may also be wrong. All flags will be updated by
+	// the VCPU that has listed the VIRQ prior to clearing this flag. It
+	// may also update them at other times while the listed flag is set.
+	//
+	// This flag may only be set or cleared, and a list register may only
+	// be manipulated, by the VCPU owning the list register in question,
+	// or by another thread holding that VPCU's lr_lock while it is not
+	// running.
+	auto		listed		bool;
+
+	// An interrupt has been rerouted, disabled or reasserted while it is
+	// listed on a VCPU that is current on a remote CPU. The remote CPU
+	// should check the VIRQ and delist, deroute or reassert it, then
+	// clear this bit and call asm_event_wake_updated().
+	//
+	// Note that an EOI maintenance interrupt is handled the same way
+	// other than that the routing check is skipped.
+	//
+	// This must only be set if the listed bit is set.
+	auto		need_sync	bool;
+
+	// The source of a forwarded SPI has been removed while the VIRQ is
+	// listed. The LR must be read back and converted to a SW VIRQ, and
+	// the HW SPI must be deactivated if it is still active.
+	//
+	// Note that this is only used as a trigger. Clearing it does not
+	// imply synchronisation: the IRQ may not have been deactivated yet
+	// when it clears.
+	//
+	// This must only be set if the listed bit is set.
+	auto		hw_detached	bool;
+
+	// Currently enabled. If this false, the IRQ should not be asserted on
+	// any VCPU.
+	auto		enabled		bool;
+
+	// The interrupt is currently active. This is only valid for an
+	// unlisted interrupt; for a listed interrupt the active state is in
+	// the LR. If set, it inhibits re-listing of the interrupt until it
+	// is cleared, either via LRENP maintenance triggered by an EOIR write
+	// on the VCPU that activated it, or by a trapped write to DIR or
+	// ICATIVER on any VCPU.
+	auto		active		bool;
+
+	// The ICFGR bit 1 for the VIRQ.
+	//
+	// If this is set and the listed bit is clear, the VIRQ's pending
+	// state is the edge bit in this bitfield.
+	//
+	// If this is set and the listed bit is also set, the VIRQ's pending
+	// state is the union of the edge bit in this bitfield and the pending
+	// bit in the corresponding list register.
+	//
+	// If this is clear, the VIRQ's pending state is the union of the
+	// level_sw, level_msg and level_src bits in this bitfield. If the
+	// listed bit is set, and all three level bits are clear, then any
+	// pending state in the corresponding list register is spurious and
+	// may be discarded at the next opportunity.
+	auto		cfg_is_edge	bool;
+
+	// IRQ was asserted by a write to GIC[DR]_ISPENDR. Must remain set
+	// until its bit is set in GIC[DR]_ICPENDR.
+	auto		level_sw	bool;
+
+	// IRQ was asserted by a write to GICD_SETSPI while level-triggered.
+	// Must remain set until its IRQ number is written to GICD_CLRSPI.
+	auto		level_msg	bool;
+
+	// IRQ was asserted by a call to virq_assert(edge_only==false). Must
+	// remain set until virq_clear() is called or a handler for the
+	// virq_check_pending event returns false.
+	auto		level_src	bool;
+
+	// IRQ was asserted for any reason, and the assertion is known not to
+	// have been acknowledged by a VCPU. This includes all of the above
+	// sources, in addition to SGIs (excluding GICv4.1 vSGIs), LPIs
+	// (excluding GICv4 vLPIs), and calls to virq_assert(edge_only==true).
+	//
+	// This bit is cleared when the listed bit is set, because the VCPU
+	// may acknowledge the interrupt at any time after that. If the IRQ is
+	// delisted while pending, this bit should be set before the listed
+	// bit is cleared. Note that this means that an assertion after the
+	// VIRQ is listed but before it is acknowledged will be spuriously
+	// delivered; this is an unavoidable consequence of the list register
+	// model and applies to hardware edges too.
+	//
+	// Apart from determining the pending state when cfg_is_edge is true,
+	// this bit is also passed to the virq_check_pending event to indicate
+	// that the interrupt has been reasserted since it was delivered to
+	// the VM.
+	auto		edge		bool;
+
+	// IRQ is in Group 1 (rather than Group 0).
+	//
+	// This bit is copied into the LR when the VIRQ is listed.
+	auto		group1		bool;
+};
+
+extend virq_trigger enumeration {
+	vgic_forwarded_spi;
+};
+
+extend virq_source structure module vgic {
+	// RCU-protected cache of the CPU that this VIRQ should be routed
+	// to. Updates are protected by gicd_lock.
+	vcpu		pointer(atomic) object thread;
+
+	// Flag to protect against concurrent binding of the source.
+	is_bound	bool(atomic);
+};
+
+// HW IRQ extensions for forwarding through the virtual GIC.
+//
+// Note that forwarded HW IRQs can only be SPIs. PPIs must be processed by
+// other modules and converted to registered VIRQs. LPIs and SGIs will be
+// converted to unregistered VIRQs if handled in software.
+extend hwirq object module vgic {
+	// The VIRQ source for forwarded SPIs. It must have trigger set to
+	// VIRQ_TRIGGER_VGIC_FORWARDED_SPI.
+	spi_source	structure virq_source(contained);
+
+	// The current activation state of the hardware IRQ.
+	state		enumeration vgic_hwirq_state(atomic);
+};
+
+define vgic_hwirq_state enumeration {
+	// Not yet acknowledged and known to be inactive (or about to be
+	// deactivated after an active->inactive transition). Since the
+	// hardware should prevent delivery of the interrupt unless it is
+	// already in this state, delivery may transition to active state with
+	// an unconditional store (no compare-exchange).
+	inactive = 0;
+
+	// Acknowledged but not listed in an LR; known to be active. Any
+	// deactivate call to the driver must be preceded by a successful
+	// compare-exchange from active te inactive. Any switch to EL1 with
+	// this interrupt listed in an LR with the HW bit set must be preceded
+	// by a successful compare-exchange from active to listed.
+	active = 1;
+
+	// Acknowledged and listed in an LR; may have been deactivated by a VM
+	// write to ICV_EOIR_EL1 or ICV_DIR_EL1. Must be delisted to determine
+	// whether an explicit deactivate is needed. A hwirq in this state is
+	// effectively locked by the VCPU that has listed it; that VCPU must
+	// clear at least the HW bit in its LR, if not the whole LR, prior to
+	// returning tho EL1 if it clears this state. Since a concurrent
+	// delivery may have forced the hwirq back into active state, the VCPU
+	// must use a compare-exchange to transition to inactive state.
+	listed = 2;
+};
+
+extend hwirq_action enumeration {
+	vgic_forward_spi;
+	vgic_maintenance;
+};
+
+// Virtual GICD state is in the stand-alone vic object.
+extend vic object {
+	// Lock protecting group, priority and routing changes for all SPIs,
+	// and registration & enablement of hardware SPIs. Must not be
+	// acquired while holding a GICR's attochment or LR ownership lock.
+	gicd_lock		structure spinlock;
+
+	// The GICD register state. This may be exposed read-only to
+	// userspace.
+	//
+	// Bits in the I[SC]PEND*R and I[SC]ACTIVE*R registers may sometimes
+	// be spuriously set on read accesses. This is because the GICH
+	// updates IRQ states in its list registers without notifying the
+	// hypervisor. This usually doesn't matter, because these are only
+	// used by PM save/restore sequences that are not needed in a VM
+	// (because VCPUs never observably power-off suspend), and the worst
+	// that can happen if an incorrect value is used is a spurious
+	// interrupt on resume.
+	gicd			pointer structure gicd;
+
+	// The array of VCPUs attached to this GICD. Protected by gicd_lock.
+	// Weak references; pointers cleared by thread deactivate.
+	gicr_vcpus		pointer pointer(atomic) object thread;
+	// The size of the vcpus array.
+	gicr_count		type count_t;
+
+	// The array of shared VIRQ sources attached to this GICD, indexed by
+	// VIRQ number minus GIC_SPI_BASE. The attachment pointers are
+	// protected by RCU and will be cleared if the corresponding VIRQs are
+	// deleted or detached.
+	sources			pointer pointer(atomic) structure virq_source;
+	// The sources array size; shared VIRQs can only have registered sources
+	// if they have valid SPI numbers with an offset less than this count.
+	// This is fixed after VIC creation.
+	sources_count		type count_t;
+
+	// Assertion states of the SPIs (including those with no sources).
+	spi_states		array(GIC_SPI_NUM)
+		bitfield vgic_delivery_state(atomic);
+};
+
+extend cap_rights_vic bitfield {
+	1	attach_vcpu	bool;
+};
+
+// State tracking for a list register.
+define vgic_lr_status structure {
+	// The listed VIRQ's delivery state. The listed bit should be set.
+	// This pointer is NULL if the list register is free.
+	dstate		pointer bitfield vgic_delivery_state(atomic);
+
+	// The content of the LR as it was last written to or read from the
+	// hardware. Note that this may be out of date if this LR belongs to
+	// the current VCPU on some physical CPU.
+	lr		union ICH_LR_EL2;
+};
+
+// Virtual GICR state is embedded in the associated thread context.
+extend thread object module vgic {
+	// Reference-counted pointer to the vic that owns this GICR. This
+	// cannot change once the thread is activated.
+	vic		pointer object vic;
+	// Index of this GICR in the register map and attachment array. This
+	// cannot change once the thread is activated; it is checked for
+	// uniqueness (i.e. no conflicts with other threads) at activation
+	// time.
+	gicr_index	type index_t;
+
+	// The array of private VIRQ sources attached to this GICR, indexed by
+	// VIRQ number minus GIC_PPI_BASE. The attachment pointers are protected
+	// by RCU and will be cleared if the corresponding VIRQs are deleted
+	// or detached.
+	sources			array(GIC_PPI_NUM) pointer(atomic)
+			structure virq_source;
+
+	// Assertion states of the SGIs and PPIs. These are only accessed
+	// atomically.
+	private_states		array(GIC_SGI_NUM + GIC_PPI_NUM)
+		bitfield vgic_delivery_state(atomic);
+
+	// The GICR register state. This may be exposed read-only to userspace.
+	//
+	// The bases are allocated separately in order to avoid allocating
+	// 128KB of mostly empty space for each virtual GICR.
+	//
+	// These registers are only accessed atomically.
+	//
+	// Also see the comments for vgic->gicd above.
+	gicr_rd		pointer structure gicr_rd_base;
+	gicr_sgi	pointer structure gicr_sgi_base;
+
+	// The ICH EL2 register state. Parts of these are exposed to userspace
+	// through the ICV EL1 registers. These are accessed only by the owner
+	// thread.
+	ich_hcr		bitfield ICH_HCR_EL2;
+	ich_vmcr	bitfield ICH_VMCR_EL2;
+
+	// Active priority registers.
+	//
+	// These are used only for context switching. Writing any value other
+	// than 0 or the context-saved value has UNPREDICTABLE behaviour. (In
+	// fact, the manual says that writing any value other than 0 or the
+	// last value read has UNPREDICTABLE behaviour, but that makes safe
+	// context switching impossible, so we assume it's a bad copy-paste
+	// from the ICC documentation.)
+	ap0rs		array(CPU_GICH_APR_COUNT) uint32;
+	ap1rs		array(CPU_GICH_APR_COUNT) uint32;
+
+	// Current state of each of the LRs.
+	//
+	// Updates to these status structures are protected by a combination
+	// of lr_lock and lr_owner. Specifically, the thread acquires lr_lock
+	// and sets lr_owner to the physical CPU index during context load,
+	// then resets lr_owner to CPU_INDEX_INVALID during context save.
+	//
+	// Between context switches, the thread that owns this GICR may change
+	// the LR state without acquiring the lock, but must update it in the
+	// physical LRs as well.
+	//
+	// Any other thread wishing to update these structures must acquire
+	// lr_lock _and_ check that lr_owner is invalid before changing the
+	// status; simply holding lr_lock is never enough because the physical
+	// LRs cannot be remotely updated (and also because the GICR's thread
+	// is allowed to update without holding the lock). If lr_owner is
+	// valid, the thread must signal the GICR's owner to perform the
+	// desired update rather than doing it directly. For deliveries, this
+	// is done with the deliver IPI and the search range flags below; for
+	// undeliveries it is done with the need-sync flag in the dstate.
+	//
+	// The lr_owner variable may also be read without holding the lock, to
+	// determine where an IPI targeting this vCPU should be sent, if
+	// anywhere. Such a read must be ordered after any delivery state
+	// changes with a seq_cst fence.
+	lrs		array(CPU_GICH_LR_COUNT) structure vgic_lr_status;
+	lr_lock		structure spinlock;
+	lr_owner	type cpu_index_t(atomic);
+
+	// Current sleep state of the virtual CPU interface. This is an alias
+	// of the virtual GICR_WAKER.ProcessorSleep field. If it is true,
+	// newly delivered interrupts will not be listed. This is protected by
+	// the lr_lock.
+	sleep		bool;
+
+	// Workaround for UEFI and other non-DS-aware guests: automatically
+	// wake the GICR when the VCPU is activated
+	auto_wake	bool;
+
+	// Cache of VIRQ numbers that may need to be checked when searching
+	// for a pending IRQ to deliver.
+	//
+	// Bits are set in these arrays after an attempt is made to deliver a
+	// corresponding IRQ to the VCPU that fails to immediately list it, or
+	// when an IRQ is kicked out of the list registers due to low priority.
+	//
+	// To search for a pending IRQ of a specific priority, the VCPU must
+	// find a set bit in the array, clear it, check all the IRQs in the
+	// corresponding range, and reset the bit if an IRQ was found.
+	search_ranges_low	array(VGIC_PRIORITIES)
+		BITMAP(VGIC_LOW_RANGES, atomic);
+#if !GICV3_HAS_VLPI && VGIC_HAS_LPI
+	search_ranges_lpi	array(VGIC_PRIORITIES)
+		BITMAP(VGIC_LPI_RANGES, atomic);
+#endif
+
+	// Cache of shifted priorities that may have nonzero bits in their
+	// search ranges.
+	//
+	// To select a priority to search for, the VCPU must find the least
+	// significant set bit in the array, clear it, search for an interrupt
+	// of the corresponding priority, and reset the bit if one was found.
+	search_prios		BITMAP(VGIC_PRIORITIES, atomic);
+
+#if VGIC_HAS_LPI
+#error VLPIs are not implemented yet
+#endif
+
+	// Record of active interrupts that were kicked out of the list
+	// registers due to higher-priority pending interrupts.
+	//
+	// If the VM has EOImode set to 0, this functions as a stack, which is
+	// always sorted with highest priority at the top; we know this
+	// because we always kick out the lowest priority listed active
+	// interrupt, and interrupts can't enter the active state if they are
+	// lower-priority than anything already on the stack. This allows us
+	// to handle EOIcount!=0 interrupts by popping from the stack.
+	//
+	// If the VM has EOImode is set to 1, this functions as a write-only
+	// ring. We do this because VM EOImode==1 is slow anyway (it has to
+	// trap every ICV_DIR_EL1 write) and is rarely used (it's only useful
+	// if the VM's kernel forwards IRQs to EL0), and changes to EOImode
+	// can't be selectively trapped, so writing unconditionally is better
+	// than checking EOImode all the time. Note that VGIC_PRIORITIES is a
+	// power of two, so indexing modulo VGIC_PRIORITIES is cheap.
+	active_unlisted		array(VGIC_PRIORITIES) type virq_t;
+	active_unlisted_count	type count_t;
+
+	// Bitmap of SGIs pending delivery.
+	pending_sgis		BITMAP(GIC_SGI_NUM, atomic);
+};
+
+extend ipi_reason enumeration {
+	vgic_sync;
+	vgic_deliver;
+	vgic_sgi;
+};
+
+extend boot_env_data structure {
+	vic		type cap_id_t;
+	vic_hwirq	array(GIC_SPI_BASE + GIC_SPI_NUM) type cap_id_t;
+
+	gicd_base	type paddr_t;
+	gicr_base	type paddr_t;
+};
+
+define VGIC_PIDR2 constant uint32 = 0x30; // GICv3
+
+define vgic_irq_type enumeration {
+	sgi;
+	ppi;
+	spi;
+#if VGIC_HAS_EXT_IRQS
+	ppi_ext;
+	spi_ext;
+#endif
+#if VGIC_HAS_LPI
+	lpi;
+#endif
+	reserved;
+};
+
+extend trace_class enumeration {
+	VGIC;
+};
+
+extend trace_id enumeration {
+	VGIC_VIRQ_CHANGED = 0x20;
+	VGIC_DSTATE_CHANGED = 0x21;
+	VGIC_HWSTATE_CHANGED = 0x22;
+	VGIC_HWSTATE_UNCHANGED = 0x23;
+	VGIC_GICD_WRITE = 0x24;
+	VGIC_GICR_WRITE = 0x25;
+	VGIC_SGI = 0x26;
+};

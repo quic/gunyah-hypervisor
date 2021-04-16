@@ -1,0 +1,18 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+define SCHEDULER_VARIANT constant enumeration scheduler_variant = 0x0;
+
+define SCHEDULER_NUM_BLOCK_BITS constant type index_t = maxof(enumeration scheduler_block) + 1;
+
+extend thread object module scheduler {
+	block_bits BITMAP(SCHEDULER_NUM_BLOCK_BITS);
+	lock structure spinlock;
+};
+
+extend ipi_reason enumeration {
+	RESCHEDULE;
+};

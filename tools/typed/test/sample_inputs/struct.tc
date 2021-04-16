@@ -1,0 +1,34 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define CSZ constant = 2;
+
+define StructBitField bitfield<83> {
+	31:0	test uint32;
+	42:32	test1 uint16;
+	58:51	test5 uint8;
+};
+
+define Demo2Packed structure {
+	int_var uint32;
+};
+
+define DemoPacked structure {
+	int_var uint8;
+	// this is a bit field
+	bit_field_var bitfield StructBitField;
+	nested_struct structure Demo2Packed;
+};
+
+define DemoFixed structure {
+	// before_start_var @ -0x1 uint8;
+	start_var @ 0x0 uint8;
+	cacheline_var @ 0x40 uint8;
+	// overlapping_var @ 0x40 uint8;
+	// backwards_var @ 0x3f uint8;
+	// misaligned_var @ 0x41 uint64;
+	next_cacheline_var @ 0x80 uint64;
+};

@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module cpulocal
+
+// This needs to run first to set up the correct CPU number before the rest of
+// the handlers run.
+subscribe boot_cpu_cold_init
+	priority first
+
+subscribe object_create_thread
+
+// This needs to run first to set up the correct CPU number before the rest of
+// the handlers run.
+subscribe thread_context_switch_post(prev)
+	priority first

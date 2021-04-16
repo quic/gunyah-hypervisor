@@ -1,0 +1,33 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define object_activate hypercall {
+	call_num 0xc;
+	cap	input type cap_id_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};
+
+define object_activate_from hypercall {
+	call_num 0xd;
+	cspace	input type cap_id_t;
+	cap	input type cap_id_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};
+
+define object_reset hypercall {
+	call_num 0xe;
+	cap	input type cap_id_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};
+
+define object_reset_from hypercall {
+	call_num 0xf;
+	cspace	input type cap_id_t;
+	cap	input type cap_id_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};

@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface irq
+
+#if !defined(IRQ_NULL)
+selector_event irq_registered
+	selector action: hwirq_action_t
+	param irq: irq_t
+	param hwirq: hwirq_t *
+
+selector_event irq_received
+	selector action: hwirq_action_t
+	param irq: irq_t
+	param hwirq: hwirq_t *
+	// Returns true if the interrupt has been fully handled and should be
+	// deactivated; false if the interrupt has been forwarded to a guest
+	// or queued for deferred handling.
+	return: bool = false
+#endif

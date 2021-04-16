@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module trace_standard
+
+subscribe boot_runtime_first_init
+	handler trace_boot_init()
+	priority 10
+
+subscribe trace_log(id, action, arg0, arg1, arg2, arg3, arg4, arg5)
+	priority 10

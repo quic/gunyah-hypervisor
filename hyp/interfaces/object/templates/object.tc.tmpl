@@ -1,0 +1,45 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define object_state enumeration {
+	NONE = 0;
+	INIT;
+	ACTIVE;
+	FAILED;
+	DESTROYING;
+};
+
+extend error enumeration {
+	OBJECT_STATE = 33;
+	OBJECT_CONFIG = 34;
+	OBJECT_CONFIGURED = 35;
+};
+
+define object_type enumeration {
+#for obj in $object_list
+#set o = str(obj)
+	$o;
+#end for
+};
+
+define object_ptr union {
+#for obj in $object_list
+#set o = str(obj)
+	$o pointer object $o;
+#end for
+};
+
+#for obj in $object_list
+#set o = str(obj)
+define $o object {
+};
+#end for
+
+#for obj in $object_list
+#set o = str(obj)
+
+define ${o}_create structure {
+	$o pointer object $o;
+};
+#end for

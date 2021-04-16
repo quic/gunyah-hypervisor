@@ -1,0 +1,72 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+#extends hypercall_api
+#implements respond
+#def prefix: $public_prefix
+
+// Hypervisor Call C Types
+\#include <guest_types.h>
+// Hypervisor Call definitions
+\#include <guest_interface.h>
+
+#for hypcall_num in sorted($hypcall_dict.keys())
+    #set $hypcall = $hypcall_dict[$hypcall_num]
+    $type_signature($hypcall) {
+    #set has_pointer = False
+    #for $in_reg, $input in $hypcall.inputs
+        const register uint${input.size * 8}_t#slurp
+        _in_$in_reg __asm__("$in_reg") = #slurp
+        #if $input.ignore
+        ${hex(input.default)}U;
+        #else
+        (uint${input.size * 8}_t)($register_expr($input));
+        #end if
+        #if $input.pointer
+            #set $has_pointer = True
+        #end if
+    #end for
+    #for $out_reg, $output in $hypcall.outputs
+        register uint${output.size * 8}_t#slurp
+        _out_$out_reg __asm__("$out_reg");
+        #if $output.pointer
+            #set $has_pointer = True
+        #end if
+    #end for
+
+    __asm__ volatile( #slurp
+    "hvc $hypcall.hvc_num" : #slurp
+    #set sep = ''
+    #for $out_reg, _ in $hypcall.outputs
+        $sep"=r"(_out_$out_reg) #slurp
+        #set sep = ', '
+    #end for
+        : #slurp
+    #set sep = ''
+    #for $in_reg, _ in $hypcall.inputs
+        $sep"r"(_in_$in_reg) #slurp
+        #set sep = ', '
+    #end for
+    : ${', '.join('"{:s}"'.format(c) for c in sorted($hypcall.clobbers))}
+#if $has_pointer
+    , "memory"
+#end if
+    );
+
+    #if $hypcall.outputs
+    return #slurp
+    #if len($hypcall.outputs) < 2
+        $register_init($output, '_out_' + $out_reg);
+    #else
+    ($return_type($hypcall)){
+    #for $out_reg, $output in $hypcall.outputs
+        .${output.name} = $register_init($output, '_out_' + $out_reg),
+    #end for
+    };
+    #end if
+    #end if
+}
+
+#end for

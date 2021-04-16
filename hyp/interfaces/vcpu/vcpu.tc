@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend cap_rights_thread bitfield {
+	0	power		bool;
+	1	affinity	bool;
+	2	priority	bool;
+	3	timeslice	bool;
+};
+
+define vcpu_trap_result enumeration {
+	unhandled;
+	emulated;
+	retry;
+	fault;
+};

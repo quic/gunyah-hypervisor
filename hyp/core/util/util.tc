@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define refcount structure {
+	count uint32(atomic);
+};
+
+extend trace_id enumeration {
+	PANIC = 10;
+	ASSERT_FAILED = 11;
+};

@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface ipi
+
+selector_event ipi_received
+	selector reason: ipi_reason_t
+	// Result is true if a reschedule is needed
+	return: bool = false

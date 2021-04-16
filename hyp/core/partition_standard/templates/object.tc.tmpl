@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend rcu_update_class enumeration {
+#for obj in $object_list
+#set o = str(obj)
+	${o}_destroy;
+#end for
+};

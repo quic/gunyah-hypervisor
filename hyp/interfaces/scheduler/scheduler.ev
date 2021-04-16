@@ -1,0 +1,30 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface scheduler
+
+// All of the events below are called with preemption disabled, and with no
+// locks held other than the scheduler's internal locks, unless stated
+// otherwise.
+
+// Triggered when the scheduler runs and elects not to switch threads.
+event scheduler_quiescent
+
+// This event is triggered when the affinity of a thread is explicitly
+// changed. The scheduler lock for the thread is held by the caller.
+// If this is too restrictive for a module, handlers can request the
+// next event to be triggered after a grace period.
+event scheduler_affinity_changed
+	param thread: thread_t *
+	param prev_cpu: cpu_index_t
+	param next_cpu: cpu_index_t
+	param need_sync: bool *
+
+// This event is triggered when the affinity of a thread is explicitly
+// changed, if requested by the previous event. It is triggered after
+// a grace period, with no locks held.
+event scheduler_affinity_changed_sync
+	param thread: thread_t *
+	param prev_cpu: cpu_index_t
+	param next_cpu: cpu_index_t

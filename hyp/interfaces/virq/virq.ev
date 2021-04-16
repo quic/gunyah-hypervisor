@@ -1,0 +1,95 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface virq
+
+// The virq_check_pending event is triggered to poll the status of a level-
+// triggered virtual interrupt.
+//
+// If a handler is registered, and returns false, the VIRQ's pending state
+// may be cleared as if virq_clear() had been called. This is typically more
+// efficient than actually calling virq_clear(), especially if cross-CPU
+// delivery is possible, e.g. for IPC objects.
+//
+// However, the result of the handler will not necessarily affect the VIRQ
+// source's state. Tn particular, after the handler returns false, clearing
+// the interrupt's pending state may fail due to a concurrent virq_assert()
+// call, or any other concurrent VIRQ or VIC operation, or spuriously.
+//
+// The VIC implementation must guarantee that as soon as practical after an
+// EOI by the VM for any VIRQ that has been asserted by its VIRQ source with
+// edge_only=false, this event will be triggered repeatedly for that source
+// until at least one of the following has occurred:
+//
+// 1.	the handler for this event returns false, and the level-pending flag is
+//	successfully cleared (rather than remaining set for any of the reasons
+//	listed above);
+//
+// 2.	the handler for this event returns true (which is the default when
+//	there is no registered handler); or
+//
+// 3.	a call to virq_clear() has completed successfully for this source at
+//	any time after the VM last acknowledged the VIRQ. Note that if
+//	virq_clear() is called early enough (i.e. completing after the VM
+//	acknowledges the IRQ but before EOI), this event may not be triggered.
+//
+// The event may not be triggered in a timely manner, or at all, after an EOI
+// for an edge-triggered delivery.
+//
+// In addition to the guaranteed triggers above, this event may be triggered
+// at any other time while the interrupt is marked pending for level-triggered
+// delivery. Any memory reads executed by the handler are guaranteed to be
+// ordered after the read that determines that the interrupt is marked pending.
+//
+// The reasserted argument is true if the virq_assert() function has been
+// called more recently than the last acknowledgement of this VIRQ by the VM.
+// Any memory reads executed by the handler are guaranteed to be ordered after
+// the read that determines the value of the reasserted argument.
+//
+// If the reasserted argument is false, then a false return from the handler is
+// guaranteed to take effect only if it is ordered before any virq_assert(),
+// and to have no effect otherwise. This guarantee is not provided if the
+// reasserted argument is true.
+//
+// Apart from the above ordering guarantees, it is not generally possible to
+// serialise handlers for this event and callers of virq_assert() and
+// virq_clear(). In particular, handlers MUST NOT acquire any spinlock or
+// equivalent that is held during virq_assert() or virq_clear() calls, because
+// they may be called holding locks internal to the VIC implementation.
+//
+// This event may be called for a VIRQ that is asserted on a CPU while context
+// switching to that CPU. This occurs in a thread_context_switch_post handler
+// with lowered priority, so any context that the handler relies on must be
+// restored at or before the default priority of thread_context_switch_post.
+selector_event virq_check_pending
+	selector trigger: virq_trigger_t
+	param source: virq_source_t *
+	param reasserted: bool
+	return: bool = true
+
+// The virq_set_enabled event is triggered when the VM enables or disables the
+// specified VIRQ source.
+//
+// The handler need not take any action, especially for virtual interrupts,
+// since the VIC code already checks its internally-maintained enable bit
+// before forwarding VIRQs to the VM. It is provided mainly to allow hardware
+// interrupt sources to be disabled when not needed.
+selector_event virq_set_enabled
+	selector trigger: virq_trigger_t
+	param source: virq_source_t *
+	param enabled: bool
+
+// The virq_set_mode event is triggered when the VM attempts to switch the
+// VIRQ between edge-triggered and level-triggered modes.
+//
+// The return value is the mode that was actually selected, which may not be
+// the mode that was requested if the source only supports a limited range of
+// modes.
+//
+// If no handler is registered, all mode changes will be accepted.
+selector_event virq_set_mode
+	selector trigger: virq_trigger_t
+	param source: virq_source_t *
+	param mode: irq_trigger_t
+	return: irq_trigger_result_t = irq_trigger_result_ok(mode)

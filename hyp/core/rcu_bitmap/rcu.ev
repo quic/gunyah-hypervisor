@@ -1,0 +1,36 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module rcu_bitmap
+
+// Events that activate a CPU
+subscribe preempt_interrupt()
+subscribe thread_entry_from_user()
+subscribe thread_context_switch_pre()
+subscribe power_cpu_online
+
+// Events that deactivate a CPU
+subscribe idle_yield()
+#if !defined(UNIT_TESTS)
+subscribe vcpu_idle_fastpath
+	unwinder()
+#endif
+subscribe thread_exit_to_user()
+subscribe power_cpu_suspend()
+
+// Events that quiesce a CPU but don't activate or deactivate it
+subscribe scheduler_quiescent
+
+// Support for CPU hotplug is currently unimplemented. However, it is not used
+// in the hypervisor at present, so that should not be a problem. We register
+// this handler to ensure a link error if hotplug is ever enabled.
+subscribe power_cpu_offline
+
+// Handlers for internal IPIs
+subscribe ipi_received[IPI_REASON_RCU_QUIESCE]
+	handler rcu_bitmap_quiesce()
+subscribe ipi_received[IPI_REASON_RCU_NOTIFY]
+	handler rcu_bitmap_notify()
+subscribe ipi_received[IPI_REASON_RCU_UPDATE]
+	handler rcu_bitmap_update()

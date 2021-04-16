@@ -1,0 +1,88 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define ARRAY_SIZE constant = 10;
+define CSZ constant = 2;
+
+define TestBitField bitfield<83> {
+	31:0	test uint32;
+	42:32	test1 uint16;
+	50:43	test5 uint8;
+};
+
+define DemoPacked structure {
+	int_var uint8;
+	// this is a bit field
+	bit_field_var bitfield TestBitField;
+	tt uint32;
+};
+
+define NestUI object {
+	t uint32;
+	uy uint32;
+	// illegal_offset @ 0x800 uint32;
+};
+
+define UI object {
+	o sint32;
+	p sint32;
+	j array(ARRAY_SIZE) uint32;
+	JJ array(ARRAY_SIZE) object NestUI;
+	bit_field_in_obj bitfield TestBitField;
+	N object NestUI;
+	OO object() NestUI;
+	N_noprefix object(noprefix) NestUI;
+	ds structure DemoPacked;
+};
+
+extend UI object module Machine {
+	e char;
+	f char;
+};
+
+define Back object {
+	k sint8;
+	p sint8;
+	TRI object Tripple;
+};
+
+define ExecContext object {
+	a sint32;
+	b sint32;
+	O object UI;
+	tt pointer object Back;
+	yy array(8) object Back;
+	jj array(ARRAY_SIZE) object Back;
+	permitted_offset @ 0x800 uint32;
+};
+
+define Standalone object {
+	t uint8;
+	u uint8;
+};
+
+
+define Tripple object {
+	tj sint8;
+	tp uint8;
+};
+
+/* optional feature
+define EmbeddedExecContext object {
+	a sint8;
+	b sint8;
+
+	define EmbeddedUI object {
+		o sint8;
+		p sint8;
+	};
+
+	define EmbeddedBack object {
+		k sint8;
+		p sint8;
+	};
+};
+*/

@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module gicv3
+
+subscribe boot_cold_init
+
+// Since other modules might be enabling their hardware interrupts in
+// cpu_cold_init, we need to make sure GIC's handler for this event runs before
+// the handlers of the other modules.
+subscribe boot_cpu_cold_init
+	priority 10
+
+subscribe boot_cpu_warm_init
+
+subscribe power_cpu_suspend()
+	unwinder gicv3_handle_power_cpu_resume()
+	// This writes to the GIC which is slow, so run it late
+	priority -10
+
+subscribe power_cpu_resume()

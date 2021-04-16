@@ -1,0 +1,36 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_vm_timer
+
+subscribe boot_hypervisor_start
+
+subscribe boot_cpu_cold_init()
+
+subscribe boot_cpu_warm_init
+
+subscribe thread_save_state()
+
+subscribe thread_context_switch_pre()
+
+subscribe thread_context_switch_post()
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	unwinder arm_vm_timer_handle_object_deactivate_thread(thread)
+
+subscribe object_deactivate_thread
+
+subscribe timer_action[TIMER_ACTION_VIRTUAL_TIMER](timer)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_TIMER](source)
+
+subscribe irq_received[HWIRQ_ACTION_VM_TIMER]()
+
+subscribe vcpu_poweroff()
+
+subscribe power_cpu_suspend()
+
+subscribe vcpu_suspend()

@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface rootvm
+
+event rootvm_init
+	param root_partition: partition_t *
+	param root_thread: thread_t *
+	param root_cspace: cspace_t *
+	param env_data: boot_env_data_t *
+
+module rootvm
+
+subscribe boot_hypervisor_start
+	handler rootvm_init()
+	priority last

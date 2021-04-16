@@ -1,0 +1,1677 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// AArch64 registers and bitfields definitions
+// FIXME: split AArch32 common registers to an armv8 architecture file
+
+define ACTLR_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define ACTLR_EL2 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AFSR0_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AFSR0_EL2 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AFSR1_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AFSR1_EL2 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AIDR_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AMAIR_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define AMAIR_EL2 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define CCSIDR_EL1 bitfield<64> {
+	2:0		LineSize	uint8;
+	12:3		Associativity	uint32;
+	27:13		NumSets		uint32;
+	31:28		unknown;
+	63:32		unknown=0;
+};
+
+#if defined(ARCH_ARM_8_3_CCIDX)
+extend CCSIDR_EL1 bitfield {
+	delete		Associativity;
+	23:3		Associativity	uint32;
+	31:24		unknown=0;
+	delete		NumSets;
+	55:32		NumSets		uint32;
+	63:56		unknown=0;
+};
+#endif
+
+define CCSIDR2_EL1 bitfield<64> {
+	23:0		NumSets		uint32;
+	63:24		unknown=0;
+};
+
+define CLIDR_EL1 bitfield<64> {
+	2:0		Ctype1		uint8;
+	5:3		Ctype2		uint8;
+	8:6		Ctype3		uint8;
+	11:9		Ctype4		uint8;
+	14:12		Ctype5		uint8;
+	17:15		Ctype6		uint8;
+	20:18		Ctype7		uint8;
+	23:21		LoUIS		uint8;
+	26:24		LoC		uint8;
+	29:27		LoUU		uint8;
+	32:30		ICB		uint8;
+	63:33		unknown=0;
+};
+
+define CNTFRQ_EL0 bitfield<64> {
+	31:0		ClockFrequency	uint32;
+	63:32		unknown=0;
+};
+
+define CNTHCTL_EL2_E2H0 bitfield<64> {
+	0		EL1PCTEN	bool;
+	1		EL1PCEN		bool;
+	2		EVNTEN		bool;
+	3		EVNTDIR		bool;
+	7:4		EVNTI		uint8;
+	63:8		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+define CNTHCTL_EL2_E2H1 bitfield<64> {
+	0		EL0PCTEN	bool;
+	1		EL0VCTEN	bool;
+	2		EVNTEN		bool;
+	3		EVNTDIR		bool;
+	7:4		EVNTI		uint8;
+	8		EL0VTEN		bool;
+	9		EL0PTEN		bool;
+	10		EL1PCTEN	bool;
+	11		EL1PTEN		bool;
+	63:12		unknown=0;
+};
+#endif
+
+#define CNTx_CTL(x, el)							\
+define CNT##x##_CTL_##el bitfield<64> {					\
+	0		ENABLE		bool;				\
+	1		IMASK		bool;				\
+	2		ISTATUS		bool;				\
+	63:3		unknown=0;					\
+};
+CNTx_CTL(P, EL0)
+CNTx_CTL(V, EL0)
+CNTx_CTL(HP, EL2)
+CNTx_CTL(HV, EL2)
+
+#define CNTx_CVAL(x, el)						\
+define CNT##x##_CVAL_##el bitfield<64> {				\
+	63:0		CompareValue	uint64;				\
+};
+CNTx_CVAL(P, EL0)
+CNTx_CVAL(V, EL0)
+CNTx_CVAL(HP, EL2)
+CNTx_CVAL(HV, EL2)
+
+#define CNTx_TVAL(x, el)						\
+define CNT##x##_TVAL_##el bitfield<64> {				\
+	31:0		TimerValue	sint32;				\
+	63:32		unknown=0;					\
+};
+CNTx_TVAL(P, EL0)
+CNTx_TVAL(V, EL0)
+CNTx_TVAL(HP, EL2)
+CNTx_TVAL(HV, EL2)
+
+
+define CNTKCTL_EL1 bitfield<64> {
+	0		EL0PCTEN	bool;
+	1		EL0VCTEN	bool;
+	2		EVNTEN		bool;
+	3		EVNTDIR		bool;
+	7:4		EVNTI		uint8;
+	8		EL0VTEN		bool;
+	9		EL0PTEN		bool;
+	63:10		unknown=0;
+};
+
+define CNTPCT_EL0 bitfield<64> {
+	63:0		CountValue	uint64;
+};
+
+define CNTVCT_EL0 bitfield<64> {
+	63:0		CountValue	uint64;
+};
+
+define CNTVOFF_EL2 bitfield<64> {
+	63:0		VirtualOffset	uint64;
+};
+
+#define CONTEXTIDR(el)							\
+define CONTEXTIDR_##el bitfield<64> {					\
+	31:0		PROCID		uint32;				\
+	63:32		unknown=0;					\
+};
+CONTEXTIDR(EL1)
+CONTEXTIDR(EL2)
+
+define CPACR_EL1 bitfield<64> {
+	15:0		unknown=0;
+	17:16		unknown=0;
+	19:18		unknown=0;
+	21:20		FPEN		uint8;
+	28		TTA		bool;
+	63:29		unknown=0;
+};
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend CPACR_EL1 bitfield {
+	17:16		ZEN		uint8;
+};
+#endif
+
+define CPTR_EL2_E2H0 bitfield<64> {
+	7:0		unknown=0b11111111;
+	8		unknown=1;
+	9		unknown=1;
+	10		TFP		bool;
+	11		unknown=0;
+	13:12		unknown=0b11;
+	19:14		unknown=0;
+	20		unknown=0;
+	29:21		unknown=0;
+	30		unknown=0;
+	31		TCPAC		bool;
+	63:32		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+define CPTR_EL2_E2H1 bitfield<64> {
+	15:0		unknown=0;
+	17:16		unknown=0;
+	19:18		unknown=0;
+	21:20		FPEN		uint8;
+	27:22		unknown=0;
+	28		TTA		bool;
+	29		unknown=0;
+	30		unknown=0;
+	31		TCPAC		bool;
+	63:32		unknown=0;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend CPTR_EL2_E2H0 bitfield {
+	8		TZ		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend CPTR_EL2_E2H1 bitfield {
+	17:16		ZEN		uint8;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 81)
+extend CPTR_EL2_E2H0 bitfield {
+	20		TTA		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_4_AMU)
+extend CPTR_EL2_E2H1 bitfield {
+	30		TAM		bool;
+};
+extend CPTR_EL2_E2H0 bitfield {
+	30		TAM		bool;
+};
+#endif
+
+define CSSELR_EL1 bitfield<64> {
+	0		InD		bool;
+	3:1		Level		uint8;
+	63:4		unknown=0;
+};
+
+define CTR_EL0 bitfield<64> {
+	3:0		IminLine	uint8;
+	13:4		unknown=0;
+	15:14		L1Ip		uint8;
+	19:16		DminLine	uint8;
+	23:20		ERG		uint8;
+	27:24		CWG		uint8;
+	28		IDC		bool;
+	29		DIC		bool;
+	30		unknown=0;
+	31		unknown=1;
+	63:32		unknown=0;
+};
+
+define CurrentEL bitfield<64> {
+	1:0		unknown=0;
+	3:2		EL		enumeration currentel_el;
+	63:4		unknown=0;
+};
+
+define DACR32_EL2 bitfield<64> {
+	1:0		D0		uint8;
+	3:2		D1		uint8;
+	5:4		D2		uint8;
+	7:6		D3		uint8;
+	9:8		D4		uint8;
+	11:10		D5		uint8;
+	13:12		D6		uint8;
+	15:14		D7		uint8;
+	17:16		D8		uint8;
+	19:18		D9		uint8;
+	21:20		D10		uint8;
+	23:22		D11		uint8;
+	25:24		D12		uint8;
+	27:26		D13		uint8;
+	29:28		D14		uint8;
+	31:30		D15		uint8;
+	63:32		unknown=0;
+};
+
+define DAIF bitfield<64> {
+	5:0		unknown=0;
+	6		F		bool;
+	7		I		bool;
+	8		A		bool;
+	9		D		bool;
+	63:10		unknown=0;
+};
+
+define DCZID_EL0 bitfield<64, const> {
+	3:0		BS		uint8;
+	4		DZP		bool;
+	63:5		unknown=0;
+};
+
+define DIT bitfield<64> {
+	23:0		unknown=0;
+	24		DIT		bool;
+	63:25		unknown=0;
+};
+
+#define ELR(el)								\
+define ELR_##el bitfield<64> {						\
+	63:0		ReturnAddress	uint64;				\
+};
+ELR(EL1)
+ELR(EL2)
+
+#define ESR(el)								\
+define ESR_##el bitfield<64> {						\
+	24:0		ISS		uint32;				\
+	25		IL		bool;				\
+	31:26		EC		enumeration esr_ec;		\
+	63:32		unknown=0;					\
+};
+ESR(EL1)
+ESR(EL2)
+
+define FAR_EL1 bitfield<64> {
+	63:0		VirtualAddress	uint64;
+};
+
+define FAR_EL2 bitfield<64> {
+	63:0		VirtualAddress	uint64;
+};
+
+define FPCR bitfield<64> {
+	7:0		unknown=0;
+	8		IOE		bool;
+	9		DZE		bool;
+	10		OFE		bool;
+	11		UFE		bool;
+	12		IXE		bool;
+	14:13		unknown=0;
+	15		IDE		bool;
+	18:16		Len		uint8;
+	19		FZ16		bool;
+	21:20		Stride		uint8;
+	23:22		RMode		uint8;
+	24		FZ		bool;
+	25		DN		bool;
+	26		AHP		bool;
+	63:27		unknown=0;
+};
+
+define FPSR bitfield<64> {
+	0		IOC		bool;
+	1		DZC		bool;
+	2		OFC		bool;
+	3		UFC		bool;
+	4		IXC		bool;
+	6:5		unknown=0;
+	7		IDC		bool;
+	26:8		unknown=0;
+	27		QC		bool;
+	28		V		bool;
+	29		C		bool;
+	30		Z		bool;
+	31		N		bool;
+	63:32		unknown=0;
+};
+
+define FPEXC32_EL2 bitfield<64> {
+	0		IOF		bool;
+	1		DZF		bool;
+	2		OFF		bool;
+	3		UFF		bool;
+	4		IXF		bool;
+	6:5		unknown=0;
+	7		IDF		bool;
+	10:8		VECITR		uint8;
+	25:11		unknown=0;
+	26		TFV		bool;
+	27		VV		bool;
+	28		FP2V		bool;
+	29		DEX		bool;
+	30		EN		bool;
+	31		EX		bool;
+	63:32		unknown=0;
+};
+
+define HACR_EL2 bitfield<64> {
+	63:0		unknown=0;
+};
+
+define HCR_EL2 bitfield<64> {
+	0		VM		bool;
+	1		SWIO		bool;
+	2		PTW		bool;
+	3		FMO		bool;
+	4		IMO		bool;
+	5		AMO		bool;
+	6		VF		bool;
+	7		VI		bool;
+	8		VSE		bool;
+	9		FB		bool;
+	11:10		BSU		uint8;
+	12		DC		bool;
+	13		TWI		bool;
+	14		TWE		bool;
+	15		TID0		bool;
+	16		TID1		bool;
+	17		TID2		bool;
+	18		TID3		bool;
+	19		TSC		bool;
+	20		TIDCP		bool;
+	21		TACR		bool;
+	22		TSW		bool;
+	23		TPCP		bool;
+	24		TPU		bool;
+	25		TTLB		bool;
+	26		TVM		bool;
+	27		TGE		bool;
+	28		TDZ		bool;
+	29		HCD		bool;
+	30		TRVM		bool;
+	31		RW		bool;
+	32		CD		bool;
+	33		ID		bool;
+	35:34		unknown=0;
+	36		unknown=0;
+	37		TEA		bool;
+	38		MIOCNCE		bool;
+	39		unknown=0;
+	41:40		unknown=0;
+	43:42		unknown=0;
+	44		unknown=0;
+	45		unknown=0;
+	46		unknown=0;
+	47		unknown=0;
+	63:48		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+extend HCR_EL2 bitfield {
+	34		E2H		bool;
+	35		TLOR		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_RAS) || defined(ARCH_ARM_8_4_RAS)
+extend HCR_EL2 bitfield {
+	36		TERR		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+extend HCR_EL2 bitfield {
+	40		APK		bool;
+	41		API		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_NV)
+extend HCR_EL2 bitfield {
+	44		AT		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_NV)
+extend HCR_EL2 bitfield {
+	42		NV		bool;
+	43		NV1		bool;
+	45		NV2		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_S2FWB)
+extend HCR_EL2 bitfield {
+	46		FWB		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_RAS)
+extend HCR_EL2 bitfield {
+	47		FIEN		bool;
+};
+#endif
+
+define HPFAR_EL2 bitfield<64> {
+	3:0		unknown=0;
+	39:4		FIPA		uint64 lsl(12);
+	43:40		unknown=0;
+	62:44		unknown=0;
+	63		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_LPA)
+extend HPFAR_EL2 bitfield {
+	delete		FIPA;
+	43:4		FIPA		uint64 lsl(12);
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84)
+extend HPFAR_EL2 bitfield {
+	63		NS		bool;
+};
+#endif
+
+define HSTR_EL2 bitfield<64> {
+	0		T0		bool;
+	1		T1		bool;
+	2		T2		bool;
+	3		T3		bool;
+	4		T4		bool;
+	5		T5		bool;
+	6		T6		bool;
+	7		T7		bool;
+	8		T8		bool;
+	9		T9		bool;
+	10		T10		bool;
+	11		T11		bool;
+	12		T12		bool;
+	13		T13		bool;
+	14		T14		bool;
+	15		T15		bool;
+	63:16		unknown=0;
+};
+
+define ID_AA64DFR0_EL1 bitfield<64> {
+	3:0		DebugVer	uint8;
+	7:4		TraceVer	uint8;
+	11:8		PMUVer		uint8;
+	15:12		BRPs		uint8 = 1;
+	19:16		unknown=0;
+	23:20		WRPs		uint8 = 1;
+	27:24		unknown=0;
+	31:28		CTX_CMPs	uint8;
+	35:32		PMSVer		uint8;
+	39:36		DoubleLock	uint8;
+	43:40		TraceFilt	uint8;
+	63:44		unknown=0;
+};
+
+define ID_AA64MMFR0_EL1 bitfield<64> {
+	3:0		PARange		enumeration tcr_ps;
+	7:4		ASIDBits	uint8;
+	11:8		BigEnd		uint8;
+	15:12		SNSMem		uint8;
+	19:16		BigEndEL0	uint8;
+	23:20		TGran16		uint8;
+	27:24		TGran64		uint8;
+	31:28		TGran4		uint8;
+	35:32		TGran16_2	uint8;
+	39:36		TGran64_2	uint8;
+	43:40		TGran4_2	uint8;
+	47:44		ExS		uint8;
+	63:48		unknown=0;
+};
+
+define ID_AA64MMFR1_EL1 bitfield<64> {
+	3:0		HAFDBS		uint8;
+	7:4		VMIDBits	uint8;
+	11:8		VH		uint8;
+	15:12		HPDS		uint8;
+	19:16		LO		uint8;
+	23:20		PAN		uint8;
+	27:24		SpecSEI		uint8;
+	31:28		XNX		uint8;
+	63:32		unknown=0;
+};
+
+define ID_AA64MMFR2_EL1 bitfield<64> {
+	3:0		CnP		uint8;
+	7:4		UAO		uint8;
+	11:8		LSM		uint8;
+	15:12		IESB		uint8;
+	19:16		VARange		uint8;
+	23:20		CCIDX		uint8;
+	27:24		NV		uint8;
+	31:28		ST		uint8;
+	35:32		AT		uint8;
+	39:36		IDS		uint8;
+	43:40		FWB		uint8;
+	47:44		unknown=0;
+	51:48		TTL		uint8;
+	55:52		BBM		uint8;
+	59:56		EVT		uint8;
+	63:60		E0PD		uint8;
+};
+
+define ID_AA64PFR0_EL1 bitfield<64> {
+	3:0		EL0		uint8;
+	7:4		EL1		uint8;
+	11:8		EL2		uint8;
+	15:12		EL3		uint8;
+	19:16		FP		uint8;
+	23:20		AdvSIMD		uint8;
+	27:24		GIC		uint8;
+	31:28		RAS		uint8;
+	35:32		SVE		uint8;
+	39:36		SEL2		uint8;
+	43:40		MPAM		uint8;
+	47:44		AMU		uint8;
+	51:48		DIT		uint8;
+	55:52		unknown=0;
+	59:56		CSV2		uint8;
+	63:60		CSV3		uint8;
+};
+
+define ID_AA64PFR1_EL1 bitfield<64> {
+	3:0		BT		uint8;
+	7:4		SSBS		uint8;
+	11:8		MTE		uint8;
+	15:12		RAS_frac	uint8;
+	63:16		unknown=0;
+};
+
+define ID_AA64ISAR0_EL1 bitfield<64> {
+	3:0		unknown=0;
+	7:4		AES		uint8;
+	11:8		SHA1		uint8;
+	15:12		SHA2		uint8;
+	19:16		CRC32		uint8;
+	23:20		Atomic		uint8;
+	27:24		unknown=0;
+	31:28		RDM		uint8;
+	35:32		SHA3		uint8;
+	39:36		SM3		uint8;
+	43:40		SM4		uint8;
+	47:44		DP		uint8;
+	51:48		FHM		uint8;
+	55:52		TS		uint8;
+	59:56		TLB		uint8;
+	63:60		RNDR		uint8;
+};
+
+define ID_AA64ISAR1_EL1 bitfield<64> {
+	3:0		DPB		uint8;
+	7:4		APA		uint8;
+	11:8		API		uint8;
+	15:12		JSCVT		uint8;
+	19:16		FCMA		uint8;
+	23:20		LRCPC		uint8;
+	27:24		GPA		uint8;
+	31:28		GPI		uint8;
+	35:32		FRINTTS		uint8;
+	39:36		SB		uint8;
+	43:40		SPECRES		uint8;
+	63:44		unknown=0;
+};
+
+define ID_DFR0_EL1 bitfield<64> {
+	3:0		CopDbg		uint8;
+	7:4		CopSDbg		uint8;
+	11:8		MMapDbg		uint8;
+	15:12		CopTrc		uint8;
+	19:16		MMapTrc		uint8;
+	23:20		MProfDbg	uint8;
+	27:24		PerfMon		uint8;
+	31:28		TraceFilt	uint8;
+	63:32		unknown=0;
+};
+
+define ID_PFR0_EL1 bitfield<64> {
+	3:0		State0		uint8;
+	7:4		State1		uint8;
+	11:8		State2		uint8;
+	15:12		State3		uint8;
+	19:16		CSV2		uint8;
+	23:20		AMU		uint8;
+	27:24		DIT		uint8;
+	31:28		RAS		uint8;
+	63:32		unknown=0;
+};
+
+define ID_PFR1_EL1 bitfield<64> {
+	3:0		ProgMod		uint8;
+	7:4		Security	uint8;
+	11:8		MProgMod	uint8;
+	15:12		Virtualization	uint8;
+	19:16		GenTimer	uint8;
+	23:20		Sec_frac	uint8;
+	27:24		Virt_frac	uint8;
+	31:28		GIC		uint8;
+	63:32		unknown=0;
+};
+
+define ID_PFR2_EL1 bitfield<64> {
+	3:0		CSV3		uint8;
+	7:4		SSBS		uint8;
+	11:8		RAS_frac	uint8;
+	63:12		unknown=0;
+};
+
+define ID_ISAR0_EL1 bitfield<64> {
+	3:0		Swap		uint8;
+	7:4		BitCount	uint8;
+	11:8		BitField	uint8;
+	15:12		CmpBranch	uint8;
+	19:16		Coproc		uint8;
+	23:20		Debug		uint8;
+	27:24		Divide		uint8;
+	63:28		unknown=0;
+};
+
+define ID_ISAR1_EL1 bitfield<64> {
+	3:0		Endian		uint8;
+	7:4		Except		uint8;
+	11:8		Except_AR	uint8;
+	15:12		Extend		uint8;
+	19:16		IfThen		uint8;
+	23:20		Immediate	uint8;
+	27:24		Interwork	uint8;
+	31:28		Jazelle		uint8;
+	63:32		unknown=0;
+};
+
+define ID_ISAR2_EL1 bitfield<64> {
+	3:0		LoadStore	uint8;
+	7:4		MemHint		uint8;
+	11:8		MultiAccessInt	uint8;
+	15:12		Mult		uint8;
+	19:16		MultS		uint8;
+	23:20		MultU		uint8;
+	27:24		PSR_AR		uint8;
+	31:28		Reversal	uint8;
+	63:32		unknown=0;
+};
+
+define ID_ISAR3_EL1 bitfield<64> {
+	3:0		Saturate	uint8;
+	7:4		SIMD		uint8;
+	11:8		SVC		uint8;
+	15:12		SynchPrim	uint8;
+	19:16		TabBranch	uint8;
+	23:20		T32Copy		uint8;
+	27:24		TrueNOP		uint8;
+	31:28		T32EE		uint8;
+	63:32		unknown=0;
+};
+
+define ID_ISAR4_EL1 bitfield<64> {
+	3:0		Unpriv		uint8;
+	7:4		WithShifts	uint8;
+	11:8		Writeback	uint8;
+	15:12		SMC		uint8;
+	19:16		Barrier		uint8;
+	23:20		SynchPrim_frac	uint8;
+	27:24		PSR_M		uint8;
+	31:28		SWP_frac	uint8;
+	63:32		unknown=0;
+};
+
+define ID_ISAR5_EL1 bitfield<64> {
+	3:0		SEVL		uint8;
+	7:4		AES		uint8;
+	11:8		SHA1		uint8;
+	15:12		SHA2		uint8;
+	19:16		CRC32		uint8;
+	23:20		unknown=0;
+	27:24		RDM		uint8;
+	31:28		VCMA		uint8;
+	63:32		unknown=0;
+};
+
+define ID_ISAR6_EL1 bitfield<64> {
+	3:0		JSCVT		uint8;
+	7:4		DP		uint8;
+	11:8		FHM		uint8;
+	15:12		SB		uint8;
+	19:16		SPECRES		uint8;
+	63:20		unknown=0;
+};
+
+define ID_MMFR0_EL1 bitfield<64> {
+	3:0		VMSA		uint8;
+	7:4		PMSA		uint8;
+	11:8		OuterShr	uint8;
+	15:12		ShareLvl	uint8;
+	19:16		TCM		uint8;
+	23:20		AuxReg		uint8;
+	27:24		FCSE		uint8;
+	31:28		InnerShr	uint8;
+	63:32		unknown=0;
+};
+
+define ID_MMFR1_EL1 bitfield<64> {
+	3:0		L1HvdVA		uint8;
+	7:4		L1UniVA		uint8;
+	11:8		L1HvdSW		uint8;
+	15:12		L1UniSW		uint8;
+	19:16		L1Hvd		uint8;
+	23:20		L1Uni		uint8;
+	27:24		L1TstCln	uint8;
+	31:28		BPred		uint8;
+	63:32		unknown=0;
+};
+
+define ID_MMFR2_EL1 bitfield<64> {
+	3:0		L1HvdFG		uint8;
+	7:4		L1HvdBG		uint8;
+	11:8		L1HvdRng	uint8;
+	15:12		HvdTLB		uint8;
+	19:16		UniTLB		uint8;
+	23:20		MemBarr		uint8;
+	27:24		WFIStall	uint8;
+	31:28		HWAccFlg	uint8;
+	63:32		unknown=0;
+};
+
+define ID_MMFR3_EL1 bitfield<64> {
+	3:0		CMaintVA	uint8;
+	7:4		CMaintSW	uint8;
+	11:8		BPMaint		uint8;
+	15:12		MaintBcst	uint8;
+	19:16		PAN		uint8;
+	23:20		CohWalk		uint8;
+	27:24		CMemSz		uint8;
+	31:28		Supersec	uint8;
+	63:32		unknown=0;
+};
+
+define ID_MMFR4_EL1 bitfield<64> {
+	3:0		SpecSEI		uint8;
+	7:4		AC2		uint8;
+	11:8		XNX		uint8;
+	15:12		CnP		uint8;
+	19:16		HPDS		uint8;
+	23:20		LSM		uint8;
+	27:24		CCIDX		uint8;
+	31:28		EVT		uint8;
+	63:32		unknown=0;
+};
+
+define ISR_EL1 bitfield<64> {
+	5:0		unknown=0;
+	6		F		bool;
+	7		I		bool;
+	8		A		bool;
+	63:9		unknown=0;
+};
+
+define MAIR_ATTR enumeration {
+	DEVICE_nGnRnE	= 0x0;
+	DEVICE_nGnRE	= 0x4;
+	DEVICE_nGRE	= 0x8;
+	DEVICE_GRE	= 0xc;
+
+	NORMAL_NC	= 0x44; // Inner/outer non-cacheable
+	NORMAL_WB_OUTER_NC = 0x4f; // Inner cacheable RW alloc
+	TAGGED_NORMAL_WB = 0xf0; // Non-transient RW alloc
+	NORMAL_WB	= 0xff; // Inner/outer cacheable WR alloc
+	// Other combinations of types not enumerated
+};
+
+// Bits valid for device types
+define MAIR_ATTR_DEVICE_MASK constant enumeration MAIR_ATTR = 0xc;
+
+#define MAIR(el)							\
+define MAIR_##el bitfield<64> {						\
+	7:0		Attr0		enumeration MAIR_ATTR;		\
+	15:8		Attr1		enumeration MAIR_ATTR;		\
+	23:16		Attr2		enumeration MAIR_ATTR;		\
+	31:24		Attr3		enumeration MAIR_ATTR;		\
+	39:32		Attr4		enumeration MAIR_ATTR;		\
+	47:40		Attr5		enumeration MAIR_ATTR;		\
+	55:48		Attr6		enumeration MAIR_ATTR;		\
+	63:56		Attr7		enumeration MAIR_ATTR;		\
+};
+MAIR(EL1)
+MAIR(EL2)
+
+define MDCR_EL2 bitfield<64> {
+	7:0		unknown=0;
+	8		TDE		bool;
+	9		TDA		bool;
+	10		TDOSA		bool;
+	11		TDRA		bool;
+	19:12		unknown=0;
+	63:20		unknown=0;
+};
+
+#if ARCH_ARM_PMU_VER >= 3
+extend MDCR_EL2 bitfield {
+	4:0		HPMN		uint8;
+	5		TPMCR		bool;
+	6		TPM		bool;
+	7		HPME		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_SPE)
+extend MDCR_EL2 bitfield {
+	13:12		E2PB		uint8;
+	14		TPMS		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_1_PMU) || defined(ARCH_ARM_8_4_PMU) ||	\
+	(ARCH_ARM_VER >= 84)
+extend MDCR_EL2 bitfield {
+	17		HPMD		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_4_TRACE)
+extend MDCR_EL2 bitfield {
+	19		TTRF		bool;
+};
+#endif
+
+define MIDR_EL1 bitfield<64> {
+	3:0		Revision	uint8;
+	15:4		PartNum		uint16;
+	19:16		Architecture	uint8;
+	23:20		Variant		uint8;
+	31:24		Implementer	uint8;
+	63:32		unknown=0;
+};
+
+define MPIDR_EL1 bitfield<64> {
+	7:0		Aff0		uint8;
+	15:8		Aff1		uint8;
+	23:16		Aff2		uint8;
+	24		MT		bool;
+	29:25		unknown=0;
+	30		U		bool;
+	31		unknown=1;
+	39:32		Aff3		uint8;
+	63:40		unknown=0;
+};
+
+define NZCV bitfield<64> {
+	27:0		unknown=0;
+	28		V		bool;
+	29		C		bool;
+	30		Z		bool;
+	31		N		bool;
+	63:32		unknown=0;
+};
+
+define PAN bitfield<64> {
+	21:0		unknown=0;
+	22		PAN		bool;
+	63:23		unknown=0;
+};
+
+define PAR_EL1_RAW bitfield<64> {
+	63:0		val		uint64;
+};
+
+define PAR_EL1_F0 bitfield<64> {
+	0		F		bool = 0;
+	6:1		unknown=0;
+	8:7		SH		uint8;
+	9		NS		bool;
+	10		IMPDEF		bool;
+	11		unknown=1;
+	47:12		PA		uint64 lsl(12);
+	51:48		unknown=0;
+	55:52		unknown=0;
+	63:56		ATTR		uint8;
+};
+
+#if defined(ARCH_ARM_8_2_LPA)
+extend PAR_EL1_F0 bitfield {
+	delete		PA;
+	51:12		PA		uint64 lsl(12);
+};
+#endif
+
+define PAR_EL1_F1 bitfield<64> {
+	0		F		bool = 1;
+	6:1		FST		uint8;
+	7		unknown=0;
+	8		PTW		bool;
+	9		S		bool;
+	10		unknown=0;
+	11		unknown=1;
+	47:12		unknown=0;
+	51:48		IMPDEF1		uint8;
+	55:52		IMPDEF2		uint8;
+	63:56		IMPDEF3		uint8;
+};
+
+define PMCR_EL0 bitfield<64> {
+	0		E		bool;
+	1		P		bool;
+	2		C		bool;
+	3		D		bool;
+	4		X		bool;
+	5		DP		bool;
+	6		LC		bool;
+	10:7		unknown=0;
+	15:11		N		uint8;
+	23:16		IDCODE		uint8;
+	31:24		IMP		uint8;
+	63:32		unknown=0;
+};
+
+#if defined(ARCH_ARM_8_5_PMU)
+extend PMCR_EL0 bitfield {
+	7		LP		bool;
+};
+#endif
+
+define SCTLR_EL1 bitfield<64> {
+	0		M		bool;
+	1		A		bool;
+	2		C		bool;
+	3		SA		bool;
+	4		SA0		bool;
+	5		CP15BEN		bool;
+	6		unknown=0;
+	7		ITD		bool;
+	8		SED		bool;
+	9		UMA		bool;
+	10		unknown=0;
+	11		unknown=1;
+	12		I		bool;
+	13		unknown=0;
+	14		DZE		bool;
+	15		UCT		bool;
+	16		nTWI		bool;
+	17		unknown=0;
+	18		nTWE		bool;
+	19		WXN		bool;
+	20		unknown=1;
+	21		unknown=0;
+	22		unknown=1;
+	23		unknown=1;
+	24		E0E		bool;
+	25		EE		bool;
+	26		UCI		bool;
+	27		unknown=0;
+	29:28		unknown=0b11;
+	31:30		unknown=0;
+	63:32		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81)
+extend SCTLR_EL1 bitfield {
+	23		SPAN		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_IESB)
+extend SCTLR_EL1 bitfield {
+	21		IESB		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_LSMAOC)
+extend SCTLR_EL1 bitfield {
+	28		nTLSMD		bool;
+	29		LSMAOE		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83)
+extend SCTLR_EL1 bitfield {
+	13		EnDB		bool;
+	27		EnDA		bool;
+	30		EnIB		bool;
+	31		EnIA		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_LSE)
+extend SCTLR_EL1 bitfield {
+	6		nAA		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_0_SSBS)
+extend SCTLR_EL1 bitfield {
+	44		DSSBS		bool;
+};
+#endif
+
+define SCTLR_EL2_VM bitfield<64> {
+	0		M		bool;
+	1		A		bool;
+	2		C		bool;
+	3		SA		bool;
+	5:4		unknown=0b11;
+	6		unknown=0;
+	10:7		unknown=0;
+	11		unknown=1;
+	12		I		bool;
+	13		unknown=0;
+	15:14		unknown=0;
+	16		unknown=1;
+	17		unknown=0;
+	18		unknown=1;
+	19		WXN		bool;
+	20		unknown=0;
+	21		unknown=0;
+	23:22		unknown=0b11;
+	24		unknown=0;
+	25		EE		bool;
+	26		unknown=0;
+	27		unknown=0;
+	29:28		unknown=0b11;
+	30		unknown=0;
+	31		unknown=0;
+	63:32		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+define SCTLR_EL2_E2H_TGE bitfield<64> {
+	0		M		bool;
+	1		A		bool;
+	2		C		bool;
+	3		SA		bool;
+	4		SA0		bool;
+	5		CP15BEN		bool;
+	6		unknown=0;
+	7		ITD		bool;
+	8		SED		bool;
+	10:9		unknown=0;
+	11		unknown=1;
+	12		I		bool;
+	13		unknown=0;
+	14		DZE		bool;
+	15		UCT		bool;
+	16		nTWI		bool;
+	17		unknown=0;
+	18		nTWE		bool;
+	19		WXN		bool;
+	20		unknown=1;
+	21		unknown=0;
+	22		unknown=1;
+	23		SPAN		bool;
+	24		E0E		bool;
+	25		EE		bool;
+	26		UCI		bool;
+	27		unknown=0;
+	29:28		unknown=0b11;
+	30		unknown=0;
+	31		unknown=0;
+	63:32		unknown=0;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_IESB)
+extend SCTLR_EL2_VM bitfield {
+	21		IESB		bool;
+};
+extend SCTLR_EL2_E2H_TGE bitfield {
+	21		IESB		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_LSMAOC)
+extend SCTLR_EL2_E2H_TGE bitfield {
+	28		nTLSMD		bool;
+	29		LSMAOE		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83)
+extend SCTLR_EL2_VM bitfield {
+	13		EnDB		bool;
+	27		EnDA		bool;
+	30		EnIB		bool;
+	31		EnIA		bool;
+};
+extend SCTLR_EL2_E2H_TGE bitfield {
+	13		EnDB		bool;
+	27		EnDA		bool;
+	30		EnIB		bool;
+	31		EnIA		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_LSE)
+extend SCTLR_EL2_VM bitfield {
+	6		nAA		bool;
+};
+extend SCTLR_EL2_E2H_TGE bitfield {
+	6		nAA		bool;
+};
+#endif
+
+#define SP(el)								\
+define SP_##el bitfield<64> {						\
+	63:0		Address		uint64;				\
+};
+SP(EL0)
+SP(EL1)
+SP(EL2)
+
+define SPSel bitfield<64> {
+	0		SP		bool;
+	63:1		unknown=0;
+};
+
+define SPSR_EL2_A32 bitfield<64> {
+	4:0		M		enumeration spsr_32bit_mode;
+	5		T		bool;
+	6		F		bool;
+	7		I		bool;
+	8		A		bool;
+	9		E		bool;
+	26:25,15:10	IT		uint8;
+	19:16		GE		uint8;
+	20		IL		bool;
+	21		SS		bool;
+	22		unknown=0;
+	23		unknown=0;
+	24		unknown=0;
+	27		Q		bool;
+	28		V		bool;
+	29		C		bool;
+	30		Z		bool;
+	31		N		bool;
+	63:32		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_PAN)
+extend SPSR_EL2_A32 bitfield {
+	22		PAN		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_DIT)
+extend SPSR_EL2_A32 bitfield {
+	23		DIT		bool;
+};
+#endif
+
+#define SPSR_A64(el)							\
+define SPSR_##el##_A64 bitfield<64> {					\
+	4:0		M		enumeration spsr_64bit_mode;	\
+	5		unknown=0;					\
+	6		F		bool;				\
+	7		I		bool;				\
+	8		A		bool;				\
+	9		D		bool;				\
+	19:10		unknown=0;					\
+	20		IL		bool;				\
+	21		SS		bool;				\
+	22		unknown=0;					\
+	23		unknown=0;					\
+	24		unknown=0;					\
+	27:25		unknown=0;					\
+	28		V		bool;				\
+	29		C		bool;				\
+	30		Z		bool;				\
+	31		N		bool;				\
+	63:32		unknown=0;					\
+};
+SPSR_A64(EL1)
+SPSR_A64(EL2)
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_PAN)
+extend SPSR_EL1_A64 bitfield {
+	22		PAN		bool;
+};
+extend SPSR_EL2_A64 bitfield {
+	22		PAN		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_UAO)
+extend SPSR_EL1_A64 bitfield {
+	23		UAO		bool;
+};
+extend SPSR_EL2_A64 bitfield {
+	23		UAO		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_DIT)
+extend SPSR_EL1_A64 bitfield {
+	24		DIT		bool;
+};
+extend SPSR_EL2_A64 bitfield {
+	24		DIT		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_0_SSBS)
+extend SPSR_EL1_A64 bitfield {
+	12		SSBS		bool;
+};
+extend SPSR_EL2_A64 bitfield {
+	12		SSBS		bool;
+};
+#endif
+
+define TCR_EL1 bitfield<64> {
+	5:0		T0SZ		uint8;
+	6		unknown=0;
+	7		EPD0		bool;
+	9:8		IRGN0		uint8;
+	11:10		ORGN0		uint8;
+	13:12		SH0		uint8;
+	15:14		TG0		enumeration tcr_tg;
+	21:16		T1SZ		uint8;
+	22		A1		bool;
+	23		EPD1		bool;
+	25:24		IRGN1		uint8;
+	27:26		ORGN1		uint8;
+	29:28		SH1		uint8;
+	31:30		TG1		enumeration tcr_tg;
+	34:32		IPS		enumeration tcr_ps;
+	35		unknown=0;
+	36		AS		bool;
+	37		TBI0		bool;
+	38		TBI1		bool;
+	40:39		unknown=0;
+	42:41		unknown=0;
+	50:43		unknown=0;
+	52:51		unknown=0;
+	54:53		unknown=0;
+	63:55		unknown=0;
+};
+
+#if defined(ARCH_ARM_8_1_TTHM)
+extend TCR_EL1 bitfield {
+	39		HA		bool;
+	40		HD		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_HPD)
+extend TCR_EL1 bitfield {
+	41		HPD0		bool;
+	42		HPD1		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_TTPBHA)
+extend TCR_EL1 bitfield {
+	43		HWU059		bool;
+	44		HWU060		bool;
+	45		HWU061		bool;
+	46		HWU062		bool;
+	47		HWU159		bool;
+	48		HWU160		bool;
+	49		HWU161		bool;
+	50		HWU162		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend TCR_EL1 bitfield {
+	53		NFD0		bool;
+	54		NFD1		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+extend TCR_EL1 bitfield {
+	51		TBID0		bool;
+	52		TBID1		bool;
+};
+#endif
+
+define TCR_EL2_E2H0 bitfield<64> {
+	5:0		T0SZ		uint8;
+	7:6		unknown=0;
+	9:8		IRGN0		uint8;
+	11:10		ORGN0		uint8;
+	13:12		SH0		uint8;
+	15:14		TG0		enumeration tcr_tg;
+	18:16		PS		enumeration tcr_ps;
+	19		unknown=0;
+	20		TBI		bool;
+	22:21		unknown=0;
+	23		unknown=1;
+	24		unknown=0;
+	28:25		unknown=0;
+	29		unknown=0;
+	30		unknown=0;
+	31		unknown=1;
+	63:32		unknown=0;
+};
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+define TCR_EL2_E2H1 bitfield<64> {
+	5:0		T0SZ		uint8;
+	6		unknown=0;
+	7		EPD0		bool;
+	9:8		IRGN0		uint8;
+	11:10		ORGN0		uint8;
+	13:12		SH0		uint8;
+	15:14		TG0		enumeration tcr_tg;
+	21:16		T1SZ		uint8;
+	22		A1		bool;
+	23		EPD1		bool;
+	25:24		IRGN1		uint8;
+	27:26		ORGN1		uint8;
+	29:28		SH1		uint8;
+	31:30		TG1		enumeration tcr_tg;
+	34:32		IPS		enumeration tcr_ps;
+	35		unknown=0;
+	36		AS		bool;
+	37		unknown=0;
+	38		TBI1		bool;
+	63:39		unknown=0;
+};
+#endif
+
+#if defined(ARCH_ARM_8_1_TTHM)
+extend TCR_EL2_E2H0 bitfield {
+	21		HA		bool;
+	22		HD		bool;
+};
+extend TCR_EL2_E2H1 bitfield {
+	39		HA		bool;
+	40		HD		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_HPD)
+extend TCR_EL2_E2H0 bitfield {
+	24		HPD		bool;
+};
+extend TCR_EL2_E2H1 bitfield {
+	41		HPD0		bool;
+	42		HPD1		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+extend TCR_EL2_E2H1 bitfield {
+	37		TBI0		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_TTPBHA)
+extend TCR_EL2_E2H0 bitfield {
+	25		HWU059		bool;
+	26		HWU060		bool;
+	27		HWU061		bool;
+	28		HWU062		bool;
+};
+extend TCR_EL2_E2H1 bitfield {
+	43		HWU059		bool;
+	44		HWU060		bool;
+	45		HWU061		bool;
+	46		HWU062		bool;
+	47		HWU159		bool;
+	48		HWU160		bool;
+	49		HWU161		bool;
+	50		HWU162		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_SVE)
+extend TCR_EL2_E2H1 bitfield {
+	53		NFD0		bool;
+	54		NFD1		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+extend TCR_EL2_E2H0 bitfield {
+	29		TBID		bool;
+};
+extend TCR_EL2_E2H1 bitfield {
+	51		TBID0		bool;
+	52		TBID1		bool;
+};
+#endif
+
+#define TPIDR(el)							\
+define TPIDR##el bitfield<64> {						\
+	63:0		ThreadID	uint64;				\
+};
+TPIDR(_EL0)
+TPIDR(RO_EL0)
+TPIDR(_EL1)
+TPIDR(_EL2)
+
+#define TTBR(n, el)							\
+define TTBR##n##_##el bitfield<64> {					\
+	0		CnP		bool;				\
+	47:1		BADDR		uint64 lsl(1);			\
+	63:48		ASID		uint32;				\
+};
+TTBR(0,EL1)
+TTBR(1,EL1)
+TTBR(0,EL2)
+TTBR(1,EL2)
+
+define UAO bitfield<64> {
+	22:0		unknown=0;
+	23		UAO		bool;
+	63:24		unknown=0;
+};
+
+#define VBAR(el)							\
+define VBAR_##el bitfield<64> {						\
+	10:0		unknown=0;					\
+	63:11		VectorBase	uint64 lsl(11);			\
+};
+VBAR(EL1)
+VBAR(EL2)
+
+define VTCR_EL2 bitfield<64> {
+	5:0		T0SZ		uint8;
+	7:6		SL0		uint8;
+	9:8		IRGN0		uint8;
+	11:10		ORGN0		uint8;
+	13:12		SH0		uint8;
+	15:14		TG0		enumeration tcr_tg;
+	18:16		PS		enumeration tcr_ps;
+	19		unknown=0;
+	20		unknown=0;
+	22:21		unknown=0;
+	24:23		unknown=0;
+	28:25		unknown=0;
+	30:29		unknown=0;
+	31		unknown=1;
+	63:32		unknown=0;
+};
+
+#if defined(ARCH_ARM_8_1_VMID16)
+extend VTCR_EL2 bitfield {
+	19		VS		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_1_TTHM)
+extend VTCR_EL2 bitfield {
+	21		HA		bool;
+	22		HD		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_8_2_TTPBHA)
+extend VTCR_EL2 bitfield {
+	25		HWU059		bool;
+	26		HWU060		bool;
+	27		HWU061		bool;
+	28		HWU062		bool;
+};
+#endif
+
+#if (ARCH_ARM_VER >= 84)
+extend VTCR_EL2 bitfield {
+	29		NSW		bool;
+	30		NSA		bool;
+};
+#endif
+
+define VTTBR_EL2 bitfield<64> {
+	0		CnP		bool;
+	47:1		BADDR		uint64 lsl(1);
+	55:48		VMID		uint32;
+	63:56		unknown=0;
+};
+
+
+#if defined(ARCH_ARM_8_1_VMID16)
+extend VTTBR_EL2 bitfield {
+	delete		VMID;
+	63:48		VMID		uint32;
+};
+#endif
+
+
+
+// ESR_EL2 ISS encodings (only some ISS encodings have been added)
+define ESR_EL2_ISS_WFI_WFE bitfield<25> {
+	0		TI		bool;
+	19:1		unknown=0;
+	23:20		COND		uint8;
+	24		CV		bool;
+};
+
+define ESR_EL2_ISS_MCR_MRC bitfield<25> {
+	0		Direction	bool;
+	4:1		CRm		uint8;
+	9:5		Rt		uint8;
+	13:10		CRn		uint8;
+	16:14		Opc1		uint8;
+	19:17		Opc2		uint8;
+	23:20		COND		uint8;
+	24		CV		bool;
+};
+
+define ESR_EL2_ISS_MCRR_MRRC bitfield<25> {
+	0		Direction	bool;
+	4:1		CRm		uint8;
+	9:5		Rt		uint8;
+	14:10		Rt2		uint8;
+	15		unknown=0;
+	19:16		Opc1		uint8;
+	23:20		COND		uint8;
+	24		CV		bool;
+};
+
+define ESR_EL2_ISS_LDC_STC bitfield<25> {
+	0		Direction	bool;
+	3:1		AM		uint8;
+	4		Offset		bool;
+	9:5		Rn		uint8;
+	11:10		unknown=0;
+	19:12		imm8		uint8;
+	23:20		COND		uint8;
+	24		CV		bool;
+};
+
+define ESR_EL2_ISS_HVC bitfield<25> {
+	15:0		imm16		uint16;
+	24:16		unknown=0;
+};
+
+define ESR_EL2_ISS_SMC32 bitfield<25> {
+	18:0		unknown=0;
+	19		CCKNOWNPASS	bool;
+	23:20		COND		uint8;
+	24		CV		bool;
+};
+
+define ESR_EL2_ISS_SMC64 bitfield<25> {
+	15:0		imm16		uint16;
+	24:16		unknown=0;
+};
+
+define ESR_EL2_ISS_MSR_MRS bitfield<25> {
+	0		Direction	bool;
+	4:1		CRm		uint8;
+	9:5		Rt		uint8;
+	13:10		CRn		uint8;
+	16:14		Op1		uint8;
+	19:17		Op2		uint8;
+	21:20		Op0		uint8;
+	24:22		unknown=0;
+};
+
+define ESR_EL2_ISS_INST_ABORT bitfield<25> {
+	5:0		IFSC		enumeration iss_da_ia_fsc;
+	6		unknown=0;
+	7		S1PTW		bool;
+	8		unknown=0;
+	9		EA		bool;
+	10		FnV		bool;
+	12:11		SET		enumeration iss_da_ia_set;
+	24:13		unknown=0;
+};
+
+define ESR_EL2_ISS_DATA_ABORT bitfield<25> {
+	5:0		DFSC		enumeration iss_da_ia_fsc;
+	6		WnR		bool;
+	7		S1PTW		bool;
+	8		CM		bool;
+	9		EA		bool;
+	10		FnV		bool;
+	12:11		SET		enumeration iss_da_ia_set;
+	13		VNCR		bool;
+	14		AR		bool;
+	15		SF		bool;
+	20:16		SRT		uint8;
+	21		SSE		bool;
+	23:22		SAS		enumeration iss_da_sas;
+	24		ISV		bool;
+};
+
+define ESR_EL2_ISS_SERROR bitfield<25> {
+	5:0		DFSC		enumeration iss_serror_dfsc;
+	8:6		unknown=0;
+	9		EA		bool;
+	12:10		AET		enumeration iss_serror_aet;
+	13		IESB		bool;
+	23:14		unknown=0;
+	24		IDS		bool;
+};

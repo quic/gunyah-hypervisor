@@ -1,0 +1,112 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// '6TRA' = '36545241'
+// '6BUF' = '36425546'
+// - Note, external tools can also use these to detect endianness.
+define TRACE_MAGIC constant = 0x41525436;
+define TRACE_MAGIC_BUFFER constant = 0x46554236;
+
+define TRACE_VERSION constant = 0x0100;
+
+#include <types/bitmap.h>
+
+extend trace_class enumeration {
+	TRACE_BUFFER;
+	TRACE_LOG_BUFFER;	// Put the log messages in the trace buffer
+};
+
+define trace_format enumeration {
+	kernel = 0;
+	hypervisor_armv8 = 1;
+};
+
+define trace_action enumeration {
+	TRACE;
+	TRACE_LOCAL;
+};
+
+define trace_info bitfield<64> {
+	55:0	timestamp	uint64;
+	63:56	cpu_id		type cpu_index_t;
+};
+
+define trace_tag bitfield<64> {
+	15:0	trace_id	enumeration trace_id;
+#if TRACE_FORMAT == 0
+	63:16	thread		sregister;
+#elif TRACE_FORMAT == 1
+	47:16	trace_ids	uint32;
+	55:48	unknown=0;
+	59:56	unknown=0;
+	63:60	nargs		uint8;
+#else
+#error Unknown trace format
+#endif
+};
+
+define trace_ids bitfield<32> {
+	others	unknown=0;
+};
+
+extend thread object {
+	trace_ids	bitfield trace_ids;
+};
+
+#define WORD_BYTES (sizeof(uregister))
+
+define trace_buffer_entry structure(aligned(64)) {
+	info	bitfield trace_info(atomic);
+	tag	bitfield trace_tag;
+	fmt	pointer char(const);
+	args	array(5) uregister;
+};
+
+define trace_buffer_header structure(aligned(64)) {
+	buf_magic	uint32;
+
+	// size of the buffer in units of entries, excluding the header
+	entries		type index_t;
+
+	// bitmap of cpus logging to the trace_buffer
+	cpu_mask	BITMAP(256);
+
+	// current head of the circular buffer
+	head		type index_t(atomic);
+
+	// The flag to indicate if this buffer has wrapped around.
+	// Use inverted logic for backwards compatibility.
+	not_wrapped	bool;
+};
+
+define trace_control_flags bitfield<16> {
+	0	regs_64		bool = ARCH_IS_64BIT;
+	1	little_endian	bool = ARCH_ENDIAN_LITTLE;
+	3:2	unknown=0;
+	// FIXME: not supported yet: enumerator default values
+	7:4	format		enumeration trace_format;// = hypervisor_armv8;
+	15:8	unknown=0;
+};
+
+// Control structure for binary trace logging.
+//
+// This structure is singleton, and is accessible from all CPUs. This structure
+// is also prepared for debug dumping.
+define trace_control structure {
+	magic		uint32(const);
+	version		uint16(const);
+	flags		bitfield trace_control_flags;
+
+	// Possibly duplicated in cpu_local struct
+	enabled_class_flags type register_t(atomic);
+	num_bufs	type count_t;
+	area_size_64	uint32;
+
+	header_phys	type paddr_t;
+	header		pointer structure trace_buffer_header;
+};
+
+// One per each CPU, plus one for the global buffer
+// The global buffer will be the first, followed by the local buffers
+define TRACE_BUFFER_NUM constant = (PLATFORM_MAX_CORES + 1);

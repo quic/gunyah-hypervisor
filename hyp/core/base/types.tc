@@ -1,0 +1,52 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define error public enumeration(explicit) {
+	OK = 0 noprefix;
+	UNIMPLEMENTED = -1;
+	RETRY = -2;
+
+	// Generic Argument Errors
+	ARGUMENT_INVALID = 1;
+	ARGUMENT_SIZE = 2;
+	ARGUMENT_ALIGNMENT = 3;
+
+	// Generic Memory Allocation Errors
+	NOMEM = 10;
+
+	// Generic Address Errors
+	ADDR_OVERFLOW = 20;
+	ADDR_UNDERFLOW = 21;
+	ADDR_INVALID = 22;
+
+	// Generic Calling Errors
+	DENIED = 30;
+	BUSY = 31;
+	IDLE = 32;
+	// 33, 34, 35 - Object API Errors
+	FAILURE = 36;
+
+	// Interrupt Interface Errors
+	// 40..49
+
+	// CSpace Interface Errors
+	// 50..59
+
+	// Message Queue Interface Errors
+	// 60..69
+
+	// String and Formatting Errors
+	// 90..99
+
+	// 100+ Module Implementation Specific Errors
+
+	// 100s - Memory Allocator
+	// 110s - Memory Database
+};
+
+define register_t public newtype uregister;
+define sregister_t public newtype sregister;
+
+define count_t public newtype uint32;
+define index_t public newtype uint32;

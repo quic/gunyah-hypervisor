@@ -1,0 +1,9 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module prng_simple
+
+subscribe boot_runtime_first_init()
+
+subscribe boot_hypervisor_start()

@@ -1,0 +1,45 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypregisters.h>
+
+\#include <asm/barrier.h>
+\#include <asm/sysregs.h>
+
+\#include "arm_vm_pmu_event_regs.h"
+
+#set $num = $PLATFORM_PMU_CNT_NUM
+
+void
+arm_vm_pmu_load_counters_state(thread_t *thread)
+{
+#for i in range(0, $num)
+	sysreg64_write_ordered(PMEVCNTR${i}_EL0,
+			       thread->pmu.pmu_regs.pmevcntr_el0[${i}],
+			       asm_ordering);
+	sysreg64_write_ordered(PMEVTYPER${i}_EL0,
+			       thread->pmu.pmu_regs.pmevtyper_el0[${i}],
+			       asm_ordering);
+
+#end for
+}
+
+void
+arm_vm_pmu_save_counters_state(thread_t *thread)
+{
+#for i in range(0, $num)
+	sysreg64_read_ordered(PMEVCNTR${i}_EL0,
+			       thread->pmu.pmu_regs.pmevcntr_el0[${i}],
+				      asm_ordering);
+	sysreg64_read_ordered(PMEVTYPER${i}_EL0,
+			       thread->pmu.pmu_regs.pmevtyper_el0[${i}],
+				      asm_ordering);
+
+#end for
+}

@@ -1,0 +1,73 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vcpu
+
+// core initialization
+
+subscribe boot_cpu_warm_init ()
+
+// new vcpu handlers
+
+subscribe thread_get_entry_fn[THREAD_KIND_VCPU] ()
+
+subscribe object_create_thread
+	handler vcpu_arch_handle_object_create_thread
+
+#if SCHEDULER_CAN_MIGRATE
+subscribe thread_start
+	handler vcpu_arch_handle_thread_start
+#endif
+
+// vcpu context_switch handlers
+
+subscribe thread_save_state
+	handler vcpu_context_switch_save()
+
+subscribe thread_save_state
+	handler vcpu_context_switch_cpu_save()
+
+subscribe thread_load_state
+	handler vcpu_context_switch_load()
+
+subscribe thread_load_state
+	handler vcpu_context_switch_cpu_load()
+
+// vcpu register trap handlers
+
+subscribe vcpu_trap_sysreg_read
+	handler sysreg_read
+	priority first
+
+subscribe vcpu_trap_sysreg_read
+	handler sysreg_read_cpu
+
+subscribe vcpu_trap_sysreg_read
+	handler sysreg_read_fallback
+	priority last
+
+subscribe vcpu_trap_sysreg_write
+	handler sysreg_write
+	priority first
+
+subscribe vcpu_trap_sysreg_write
+	handler sysreg_write_cpu
+
+subscribe vcpu_trap_sysreg_write
+	handler sysreg_write_fallback
+	priority last
+
+// VCPU wait for interrupt
+subscribe vcpu_trap_wfi()
+	priority last
+
+subscribe thread_exit_to_user()
+
+subscribe rootvm_init(root_thread)
+
+subscribe vcpu_poweron
+	handler vcpu_reset_execution_context(vcpu)
+
+subscribe vcpu_warm_reset
+	handler vcpu_reset_execution_context(vcpu)

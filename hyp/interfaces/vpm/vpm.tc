@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	vpm;
+	4	vpm bool = 1;
+};
+#endif
+
+define vpm_state enumeration(explicit) {
+	no_state = 0;		// Invalid / non existant
+	running = 1;		// VPM is active
+	cpus_suspended = 2;	// VPM is suspended after a CPU_SUSPEND call
+	system_suspended = 3;	// VPM is suspended after a SYSTEM_SUSPEND call
+};

@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define SMC_TRACE_REG_MAX constant type count_t = 14;
+
+define smc_trace_entry structure {
+	// Using explicit sized registers rather than a bitfield for debuggers
+	id		uint16;
+	pcpu		uint8;
+	vcpu		uint8;
+	vmid		type vmid_t;
+	res0		uint8(const);
+	regs		uint8;		// number of used x registers below
+	x		array(14) type register_t;
+	timestamp	uint64;
+};
+
+define smc_trace structure(aligned(64)) {
+	entries		array(HYP_SMC_LOG_NUM) structure smc_trace_entry;
+	next_idx	type index_t(atomic);
+};

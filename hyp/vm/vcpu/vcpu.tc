@@ -1,0 +1,32 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vcpu object {
+};
+
+extend thread object module vcpu {
+	regs object vcpu;
+};
+
+extend thread_kind enumeration {
+	vcpu;
+};
+
+extend scheduler_block enumeration {
+	vcpu_off;
+	vcpu_suspend;
+	vcpu_wfi;
+#if !defined(NDEBUG)
+	vcpu_fault;
+#endif
+};
+
+extend hyp_api_flags0 bitfield {
+	delete	vcpu;
+	5	vcpu bool = 1;
+};
+
+extend abort_reason enumeration {
+	UNHANDLED_EXCEPTION;
+};

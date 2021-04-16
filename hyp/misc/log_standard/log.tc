@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// '6LOG' = '364c4f47'
+// - Note, external tools can also use this to detect endianness.
+define LOG_MAGIC constant = 0x474f4c36;
+
+// This structure is a singleton, and is accessible from all CPUs.
+define log_control object {
+	log_magic	uint32(const);
+	head		type index_t(atomic);
+	buffer_size	size(const);
+	log_buffer	pointer(const) char;
+};
+
+extend trace_class enumeration {
+	LOG_BUFFER;
+	LOG_TRACE_BUFFER;	// Put the trace messages in the log buffer
+};
+
+extend trace_action enumeration {
+	LOG;
+	TRACE_AND_LOG;
+};

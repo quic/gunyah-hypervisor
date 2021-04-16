@@ -1,0 +1,108 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+start: _END_DECL (module | interface)+
+
+interface : _interface_decl include* (_publish | subscribe_public)*
+_interface_decl : "interface" symbol _END_DECL
+
+module : _module_decl include* subscribe*
+_module_decl : "module" symbol _END_DECL
+
+include : "include" _include_file _END_DECL
+
+_include_file : /</ _filename />/ | /"/ _filename /"/
+_filename : /[a-zA-Z0-9\/.]+/
+
+_publish : publish_event
+    | publish_handled_event
+    | publish_multi_event
+    | publish_selector_event
+    | publish_setup_event
+
+publish_event : "event" symbol _event_params? _END_DECL
+
+publish_handled_event : "handled_event" symbol _event_params? result? _END_DECL
+
+publish_multi_event : "multi_event" symbol count_param _event_params?  _END_DECL
+
+publish_setup_event : "setup_event" symbol _event_params? result success _END_DECL
+
+publish_selector_event : "selector_event" symbol selector_param _event_params?  result? _END_DECL
+
+symbol : IDENTIFIER
+
+_event_params : event_param+
+_EVENT_PARAM : _CONT_DECL "param"
+event_param : _EVENT_PARAM _param
+_SELECTOR_PARAM : _CONT_DECL "selector"
+selector_param : _SELECTOR_PARAM _param
+_COUNT_PARAM : _CONT_DECL "count"
+count_param : _COUNT_PARAM _param
+_param : symbol ":" type_decl
+
+_RESULT : _CONT_DECL "return" WS_INLINE? ":"
+result : _RESULT type_decl "=" constexpr
+_SUCCESS : _CONT_DECL "success" WS_INLINE? ":"
+success : _SUCCESS constexpr
+
+type_decl: _type_decl
+_type_decl: (IDENTIFIER POINTER?)+
+	| LPAREN _type_decl RPAREN
+	| _type_decl LPAREN POINTER RPAREN LPAREN _arg_type_list? RPAREN
+_arg_type_list: _arg_type_list COMMA _type_decl | _type_decl
+
+subscribe : "subscribe" optional? symbol selector? _subscriber? priority? _END_DECL
+subscribe_public : "subscribe" optional? symbol selector? _subscriber_public priority? _END_DECL
+
+optional : "optional"
+selector : "[" _selector_list "]"
+_subscriber : expected_args unwinder? | handler unwinder? | unwinder | constant
+_subscriber_public : handler_public unwinder_public? | constant
+_HANDLER : ":" | _CONT_DECL "handler"
+handler : _HANDLER symbol expected_args? public?
+handler_public : _HANDLER symbol expected_args? public
+_UNWINDER : _CONT_DECL "unwinder"
+unwinder : _UNWINDER symbol? expected_args? public?
+unwinder_public : _UNWINDER symbol? expected_args? public
+_CONSTANT : _CONT_DECL "constant"
+constant : _CONSTANT constexpr
+public : _CONT_DECL? "public"
+expected_args : "(" _NL_INDENT? _expected_arg_list? ")"
+_expected_arg_list : symbol ("," _NL_INDENT? symbol)*
+%import common.SIGNED_NUMBER -> NUMBER
+_PRIORITY : _CONT_DECL "priority"
+priority : _PRIORITY (NUMBER | /min|max|first|last|default/)
+
+IDENTIFIER : /[a-zA-Z_][a-zA-Z0-9_]*/
+POINTER : "*"
+constexpr : _constexpr
+_constexpr : IDENTIFIER _args? | SIGNED_INT | SIGNED_FLOAT | UNSIGNED_INT
+LPAREN : "("
+RPAREN : ")"
+COMMA : ","
+_args : LPAREN _arg_list? RPAREN
+_arg_list : _NL_INDENT? _constexpr [COMMA _arg_list]
+_selector_list : _NL_INDENT? _constexpr ["," _selector_list]
+%import common.SIGNED_INT
+%import common.SIGNED_FLOAT
+%import common.INT
+UNSIGNED_INT.2 : INT ("U" | "u")
+
+%import common.WS_INLINE
+
+LINE_COMMENT :  /\/\/[^\r\n]*/ _NL
+_NL : /\r?\n/
+
+SEMICOLON : ";"
+STOP : "."
+
+_NL_INDENT : _NL+ WS_INLINE
+_CONT_DECL : (SEMICOLON WS_INLINE | LINE_COMMENT WS_INLINE | _NL_INDENT)+
+_END_DECL : (STOP | LINE_COMMENT | _NL)+
+
+%ignore WS_INLINE
+%ignore LINE_COMMENT

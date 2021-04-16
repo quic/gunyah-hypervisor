@@ -1,0 +1,23 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module addrspace
+
+subscribe boot_cold_init()
+
+subscribe object_activate_thread
+
+subscribe object_deactivate_thread
+
+subscribe object_create_addrspace(addrspace_create)
+
+subscribe object_activate_addrspace
+	priority last
+
+subscribe object_deactivate_addrspace
+
+subscribe thread_load_state
+	handler addrspace_context_switch_load()
+
+subscribe rootvm_init(root_thread, root_cspace, env_data)

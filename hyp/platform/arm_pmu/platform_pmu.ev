@@ -1,0 +1,16 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_pmu
+
+subscribe boot_cpu_cold_init
+	handler platform_pmu_handle_boot_cpu_cold_init()
+
+subscribe boot_hypervisor_start
+	handler platform_pmu_handle_boot_hypervisor_start
+
+subscribe irq_received[HWIRQ_ACTION_PMU]
+	handler platform_pmu_handle_irq_received()
+
+subscribe power_cpu_suspend()

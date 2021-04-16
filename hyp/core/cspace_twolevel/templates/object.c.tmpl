@@ -1,0 +1,49 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <hyptypes.h>
+
+\#include <hyprights.h>
+
+\#include <panic.h>
+\#include <spinlock.h>
+\#include <list.h>
+
+\#include "event_handlers.h"
+\#include "cspace_object.h"
+
+#for obj in $object_list
+#set o = str(obj)
+
+error_t
+cspace_init_${o}_cap_list(${o}_create_t ${o}_create)
+{
+	${o}_t *obj = ${o}_create.${o};
+	spinlock_init(&obj->header.cap_list_lock);
+	list_init(&obj->header.cap_list);
+	return OK;
+}
+#end for
+
+\#pragma clang diagnostic push
+\#pragma clang diagnostic ignored "-Wswitch-enum"
+
+cap_rights_t
+cspace_get_rights_all(object_type_t type)
+{
+	cap_rights_t ret;
+
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		ret = cap_rights_${o}_raw(CAP_RIGHTS_${o.upper()}_ALL);
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+
+	return ret;
+}

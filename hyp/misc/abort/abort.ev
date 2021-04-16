@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module abort
+
+// This handler IPIs all cores to stop, it has high priority
+subscribe abort_kernel()
+	priority 1000
+
+subscribe ipi_received[IPI_REASON_ABORT_STOP]()

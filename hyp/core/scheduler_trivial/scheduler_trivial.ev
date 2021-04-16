@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module scheduler_trivial
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	unwinder scheduler_trivial_handle_object_deactivate_thread(thread)
+
+subscribe object_deactivate_thread
+
+subscribe boot_cold_init()
+
+subscribe ipi_received[IPI_REASON_RESCHEDULE]
+	handler scheduler_trivial_handle_ipi_reschedule()

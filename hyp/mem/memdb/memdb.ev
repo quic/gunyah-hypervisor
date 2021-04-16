@@ -1,0 +1,18 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module memdb
+
+subscribe rcu_update[RCU_UPDATE_CLASS_MEMDB_RELEASE_LEVEL]
+	handler memdb_deallocate_level(entry)
+
+subscribe boot_cold_init()
+	// Must run after pagetable init and hyp_aspace initialisation.
+	priority 10
+
+subscribe partition_add_ram_range(owner, phys_base, size)
+	unwinder memdb_handle_partition_remove_ram_range(owner, phys_base, size) public
+
+subscribe partition_remove_ram_range(owner, phys_base, size)
+	unwinder memdb_handle_partition_add_ram_range(owner, phys_base, size) public

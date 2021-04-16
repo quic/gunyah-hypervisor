@@ -1,0 +1,143 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+#extends hypercall_api
+#implements respond
+#def prefix: $internal_prefix
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypcall_def.h>
+\#include <compiler.h>
+\#include <thread.h>
+\#include <trace.h>
+
+\#include <events/thread.h>
+
+#def trace_in(hypcall_num, hypcall)
+    #set trace_fmt = "hypcall {:#x}:"
+    #for i, input in $hypcall.inputs[:4]
+        #if not $input.ignore
+            #set trace_fmt = trace_fmt + " {:#x}"
+        #end if
+    #end for
+    TRACE(USER, HYPERCALL, "${trace_fmt}", $hypcall_num
+    #for i, input in $hypcall.inputs[:4]
+        #if not $input.ignore
+        , (register_t)($register_expr($input))
+        #end if
+    #end for
+    );
+#end def
+
+#def trace_out(hypcall_num, hypcall)
+    #set trace_fmt = "hypcall ret {:#x}:"
+    #for i, input in $hypcall.outputs[:4]
+        #if not $input.ignore
+            #set trace_fmt = trace_fmt + " {:#x}"
+        #end if
+    #end for
+    TRACE(USER, HYPERCALL, "${trace_fmt}", $hypcall_num
+    #if len($hypcall.outputs) == 1
+        , (register_t)_ret
+    #else
+        #for i, output in $hypcall.outputs[:4]
+        , (register_t)_ret.$register_expr($output)
+        #end for
+    #end if
+    );
+#end def
+
+#set $wrapper_suffix = "__c_wrapper"
+#for hypcall_num in sorted($hypcall_dict.keys())
+    #set $hypcall = $hypcall_dict[$hypcall_num]
+    #if len($hypcall.outputs) > 1
+    static_assert(sizeof(${return_type($hypcall)}) <= 8 * sizeof(register_t),
+        "Return structure must fit in 8 machine registers");
+
+    #end if
+    #set $num_in = len($hypcall.inputs)
+    #set $num_out = len($hypcall.outputs)
+
+    #assert $num_in <= 8
+    #assert $num_out <= 8
+
+${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)};
+
+${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
+    #if $hypcall.outputs
+        $return_type($hypcall) _ret;
+    #end if
+
+    trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_HYPERCALL);
+
+    $trace_in($hypcall_num, $hypcall)
+
+    ## generate reserved input checks
+    #set has_ignores = False
+    #set error_ret = None
+    #for r, output in $hypcall.outputs
+        #if $output.ctype == 'error_t'
+            #set error_ret = $output
+            #break
+        #end if
+    #end for
+    #if error_ret
+        #for r, input in $hypcall.inputs
+            #if $input.ignore
+                #set has_ignores = True
+    if (compiler_unexpected(${input.name} != (${input.ctype})${input.default}U)) {
+                #if len($hypcall.outputs) == 1
+        _ret = ERROR_ARGUMENT_INVALID;
+                #else
+        _ret = ($return_type($hypcall)){ .${error_ret.name} = ERROR_ARGUMENT_INVALID };
+                #end if
+        goto out;
+    }
+            #end if
+        #end for
+    #else
+        // FIXME: unchecked reserved inputs
+        #for r, input in $hypcall.inputs
+            #if $input.ignore
+    (void)$input.name;
+            #end if
+        #end for
+    #end if
+
+    ## call the implementation
+    #if $hypcall.outputs
+    _ret =
+    #end if
+    $prefix${hypcall.name}(#slurp
+    #set sep=''
+    #for i, input in $hypcall.inputs
+        #if not $input.ignore
+            $sep$input.name
+            #set sep=', '
+        #end if
+    #end for
+    );
+
+    #if has_ignores:
+out:
+    #end if
+
+    $trace_out($hypcall_num, $hypcall)
+
+    trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_HYPERCALL);
+
+    ## return the result, if any
+    #if $hypcall.outputs
+    return _ret;
+    #else
+        #if has_ignores:
+    return;
+        #end if
+    #end if
+}
+
+#end for

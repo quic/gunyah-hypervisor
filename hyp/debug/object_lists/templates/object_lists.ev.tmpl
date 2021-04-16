@@ -1,0 +1,19 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module object_lists
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('hwirq',)
+#continue
+#end if
+
+subscribe object_create_${o}
+
+subscribe object_cleanup_${o}(${o})
+#end for
+
+subscribe boot_cold_init()

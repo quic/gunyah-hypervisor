@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define virt_range structure {
+	base uintptr;
+	size size;
+};
+
+define phys_range structure {
+	base type paddr_t;
+	size size;
+};

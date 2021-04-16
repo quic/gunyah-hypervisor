@@ -1,0 +1,23 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vdebug
+
+subscribe boot_cpu_cold_init()
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+
+subscribe thread_save_state
+
+subscribe thread_context_switch_post
+
+subscribe thread_load_state()
+
+subscribe vcpu_trap_sysreg_read
+	handler vdebug_handle_vcpu_trap_sysreg
+
+subscribe vcpu_trap_sysreg_write
+	handler vdebug_handle_vcpu_trap_sysreg

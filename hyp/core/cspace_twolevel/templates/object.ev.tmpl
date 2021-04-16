@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module cspace_twolevel
+
+#for obj in $object_list
+#set o = str(obj)
+subscribe object_create_${o}
+	handler cspace_init_${o}_cap_list(${o}_create)
+#end for

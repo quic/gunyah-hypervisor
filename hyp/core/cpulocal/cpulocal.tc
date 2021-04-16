@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define cpu_index_t public newtype uint16;
+
+define CPU_INDEX_INVALID constant type cpu_index_t = -1;
+
+extend thread object module cpulocal {
+	current_cpu type cpu_index_t;
+};

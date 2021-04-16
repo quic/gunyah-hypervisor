@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+void
+mutex_init(mutex_t *lock);
+
+void
+mutex_acquire(mutex_t *lock);
+
+bool
+mutex_trylock(mutex_t *lock);
+
+void
+mutex_release(mutex_t *lock);

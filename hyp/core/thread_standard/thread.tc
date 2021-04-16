@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object {
+	context	structure arch_context;
+};
+
+extend scheduler_block enumeration {
+	thread_lifecycle;
+};

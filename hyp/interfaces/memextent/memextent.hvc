@@ -1,0 +1,31 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define memextent_unmap_all hypercall {
+	call_num	0x30;
+	memextent	input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define memextent_configure hypercall {
+	call_num	0x31;
+	memextent	input type cap_id_t;
+	phys_base	input type paddr_t;
+	size		input size;
+	attributes	input bitfield memextent_attrs;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define memextent_configure_derive hypercall {
+	call_num	0x32;
+	memextent	input type cap_id_t;
+	parent_memextent input type cap_id_t;
+	offset		input size;
+	size		input size;
+	attributes	input bitfield memextent_attrs;
+	_res0		input uregister;
+	error		output enumeration error;
+};

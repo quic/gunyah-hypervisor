@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object module vdebug {
+	state		structure debug_common_registers;
+#if defined(CONFIG_AARCH64_32BIT_EL1)
+#error Context switch DBGVCR32_EL2 for 32-bit guests
+#endif
+	allowed		bool;
+	enabled		bool;
+};

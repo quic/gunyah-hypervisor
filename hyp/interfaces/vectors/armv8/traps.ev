@@ -1,0 +1,28 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vectors
+
+// Hypervisor trap events
+//
+// These are all called directly from the hypervisor exception. It is not safe
+// to call any function that might enable preemption.
+
+handled_event vectors_trap_unknown_el2
+	param frame: kernel_trap_frame_t *
+
+handled_event vectors_trap_illegal_state_el2
+
+handled_event vectors_trap_pf_abort_el2
+	param esr: ESR_EL2_t
+
+handled_event vectors_trap_pc_alignment_fault_el2
+
+handled_event vectors_trap_data_abort_el2
+	param esr: ESR_EL2_t
+
+handled_event vectors_trap_sp_alignment_fault_el2
+
+handled_event vectors_trap_brk_el2
+	param esr: ESR_EL2_t

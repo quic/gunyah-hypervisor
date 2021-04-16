@@ -1,0 +1,23 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// The container_of macros for the tagged types
+
+#for $d in $definitions
+#if hasattr($d, 'layout')
+#set outer_type = d.type_name + '_t'
+#for $name, $type, $offset in $d.layout
+#set inner_type = ' '.join(type.gen_type()[0])
+#if $type.is_contained
+static inline ${outer_type} *
+${d.type_name}_container_of_${name}(${inner_type} *ptr) {
+	return ((${outer_type} *)((uintptr_t)(ptr) - $offset));
+}
+#end if
+#end for
+#end if
+
+#end for

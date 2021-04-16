@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define BOOT_ENV_RANGES_NUM public constant = 32;
+
+define boot_env_phys_range public structure {
+	base type paddr_t;
+	size size;
+};
+
+define boot_env_data public structure {
+	free_ranges array(BOOT_ENV_RANGES_NUM) structure boot_env_phys_range;
+	free_ranges_count type count_t;
+};

@@ -1,0 +1,24 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface idle
+
+// Called repeatedly by the idle thread, interleaved with scheduler yields.
+// May also be called from non-idle threads if there is nothing else runnable
+// on a CPU.
+//
+// If a handler does not return IDLE_STATE_IDLE, the event will immediately
+// return, and the scheduler must be called if IDLE_STATE_RESCHEDULE was
+// returned. If all handlers return IDLE_STATE_IDLE, the architecture's basic
+// wait-for-event instruction will be executed.
+//
+// This event is triggered with preemption disabled. A handler may re-enable
+// preemption if necessary, but must arrange for any preemptions to
+// immediately return true.
+setup_event idle_yield
+	param in_idle_thread: bool
+	return: idle_state_t = IDLE_STATE_IDLE
+	success: IDLE_STATE_IDLE
+
+event idle_start

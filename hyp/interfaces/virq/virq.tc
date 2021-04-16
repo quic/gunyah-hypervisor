@@ -1,0 +1,24 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define virq_t public newtype uint32;
+
+define virq_trigger enumeration {
+	// Used for VIRQs with no virq_check_pending handler; if level
+	// triggered, the source must call virq_clear().
+	explicit;
+};
+
+define virq_source structure {
+	virq		type virq_t;
+	trigger		enumeration virq_trigger;
+	is_private	bool;
+	// RCU-protected pointer to the targeted controller.
+	vic		pointer(atomic) object vic;
+};
+
+extend error enumeration {
+	VIRQ_BOUND = 40;
+	VIRQ_NOT_BOUND = 41;
+};

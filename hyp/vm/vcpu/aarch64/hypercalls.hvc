@@ -1,0 +1,49 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vcpu_configure hypercall {
+	call_num	0x34;
+	cap_id		input type cap_id_t;
+	vcpu_options	input bitfield vcpu_option_flags;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define vcpu_set_affinity hypercall {
+	call_num	0x3d;
+	cap_id		input type cap_id_t;
+	affinity	input type cpu_index_t;
+	_res1		input uregister;
+	error		output enumeration error;
+};
+
+define vcpu_poweron hypercall {
+	call_num	0x38;
+	cap_id		input type cap_id_t;
+	entry_point	input uregister;
+	context		input uregister;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define vcpu_poweroff hypercall {
+	call_num	0x39;
+	cap_id		input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define vcpu_set_priority hypercall {
+	call_num	0x46;
+	cap_id		input type cap_id_t;
+	priority	input type priority_t;
+	error		output enumeration error;
+};
+
+define vcpu_set_timeslice hypercall {
+	call_num	0x47;
+	cap_id		input type cap_id_t;
+	timeslice	input type nanoseconds_t;
+	error		output enumeration error;
+};

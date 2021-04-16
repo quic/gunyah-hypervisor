@@ -1,0 +1,14 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module cspace_twolevel
+
+subscribe object_create_cspace
+
+subscribe object_activate_cspace
+
+subscribe object_cleanup_cspace(cspace)
+
+subscribe rcu_update[RCU_UPDATE_CLASS_CSPACE_RELEASE_LEVEL]
+	handler cspace_destroy_cap_table(entry)

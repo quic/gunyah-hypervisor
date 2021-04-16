@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module hyp_aspace
+
+#if ARCH_AARCH64_USE_PAN
+subscribe partition_add_ram_range(phys_base, size)
+	unwinder hyp_aspace_handle_partition_remove_ram_range(phys_base, size) public
+
+subscribe partition_remove_ram_range(phys_base, size)
+	unwinder hyp_aspace_handle_partition_add_ram_range(phys_base, size) public
+#endif

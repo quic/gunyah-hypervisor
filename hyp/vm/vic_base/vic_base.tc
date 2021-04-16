@@ -1,0 +1,35 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if VIC_BASE_FORWARD_PRIVATE
+// Forward private (per-CPU) HW interrupts using generic VIRQ APIs.
+
+extend virq_trigger enumeration {
+	vic_base_forward_private;
+};
+
+extend hwirq_action enumeration {
+	vic_base_forward_private;
+};
+
+extend hwirq object module vic_base {
+	// Pointer to an array of PPI sources, indexed by physical CPU.
+	forward_private	pointer structure vic_forward_private;
+};
+
+define vic_forward_private structure {
+	source		structure virq_source(contained);
+	pirq		type irq_t;
+	cpu		type cpu_index_t;
+	hw_active	bool(atomic);
+};
+
+#endif
+
+#if VIC_BASE_FORWARD_SHARED
+// Forward shared HW interrupts using generic VIRQ APIs.
+
+// Not needed for GICv3, so this is not implemented yet.
+#error unimplemented
+#endif

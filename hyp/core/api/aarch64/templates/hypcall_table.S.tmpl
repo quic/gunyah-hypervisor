@@ -1,0 +1,67 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+#extends hypercall_api
+#implements respond
+#def prefix: $internal_prefix
+
+\#include <hypconstants.h>
+\#include <asm/asm_defs.inc>
+
+#if len($hypcall_dict)
+	.balign 16
+	.global hypercall_table
+	.type hypercall_table, #function
+hypercall_table:
+#for hypcall_num in range(0, max($hypcall_dict.keys()) + 1)
+$hypcall_num:
+    #if $hypcall_num not in $hypcall_dict
+	mov	x0, ENUM_ERROR_UNIMPLEMENTED
+	b	vcpu_${prefix}return_sanitize_x1
+    #else
+	#set $hypcall = $hypcall_dict[$hypcall_num]
+	#set $num_out = len($hypcall.outputs)
+	#if $num_out <= 2
+	## return fits in registers
+	bl	${prefix}${hypcall.name}__c_wrapper
+	b	vcpu_${prefix}return_sanitize_x${num_out}
+	#else
+	## return is larger than two registers and must be indirect
+	adr	x9, ${prefix}${hypcall.name}__c_wrapper
+	b	vcpu_${prefix}slow_call
+	#end if
+    #end if
+.if . - ${hypcall_num}b != 8
+.err // bad alignment
+.endif
+#end for
+	.size hypercall_table, . - hypercall_table#slurp
+
+
+function vcpu_${prefix}slow_call
+	// Allocate stack space for the maximum allowed return size
+	sub	sp, sp, 64
+	mov	x8, sp
+
+	// Zero-initialise the allocated stack space, since any padding in the
+	// struct may be left uninitialised by the compiler
+	stp	xzr, xzr, [sp, #0]
+	stp	xzr, xzr, [sp, #16]
+	stp	xzr, xzr, [sp, #32]
+	stp	xzr, xzr, [sp, #48]
+
+	// Jump to the C handler
+	blr	x9
+
+	// Load x0..x7 from the return structure on the stack
+	ldp	x0, x1, [sp, #0]
+	ldp	x2, x3, [sp, #16]
+	ldp	x4, x5, [sp, #32]
+	ldp	x6, x7, [sp, #48]
+	add	sp, sp, 64
+
+	b	vcpu_${prefix}return_sanitize_x8
+function_end vcpu_${prefix}slow_call
+#end if

@@ -1,0 +1,22 @@
+# Ignore build products
+/build.ninja
+/.ninja_deps
+/.ninja_log
+/.sconsign.dblite
+/build*/
+
+# Ignore Python precompiled bitcode
+*.pyc
+
+# Ignore local editor configurations
+/compile_commands.json
+/.syntastic_*
+/.dir-locals.el
+/cscope*
+
+# Ignore cppcheck dumps
+*.c.dump
+
+# Ignore Vim temporary files
+.*.sw[a-p]
+.*.un~

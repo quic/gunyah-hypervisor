@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module power
+
+subscribe boot_cold_init
+	priority 100
+
+subscribe boot_cpu_cold_init
+
+subscribe boot_cpu_warm_init
+	priority 100
+
+subscribe power_cpu_resume()
+	priority first
+
+subscribe power_cpu_suspend(state)
+	priority last
+
+subscribe power_cpu_offline
+	priority last

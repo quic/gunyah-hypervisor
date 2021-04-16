@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define allocator_node structure {
+	size size;
+	next pointer structure allocator_node;
+};
+
+extend allocator structure {
+	heap pointer structure allocator_node;
+	lock structure spinlock;
+};

@@ -1,0 +1,23 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define doorbell_flags_t newtype uint64;
+
+extend cap_rights_doorbell bitfield {
+	0	send	bool;
+	1	receive	bool;
+	2	bind	bool; // right to bind virqs
+};
+
+extend doorbell object {
+	flags		uint64;
+	enable_mask	uint64;
+	ack_mask	uint64;
+	source		structure virq_source(contained);
+	lock		structure spinlock;
+};
+
+extend virq_trigger enumeration {
+	doorbell;
+};

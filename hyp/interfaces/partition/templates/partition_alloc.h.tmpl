@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#for obj in $object_list
+#set o = str(obj)
+
+${o}_ptr_result_t
+partition_allocate_${o}(partition_t *parent, ${o}_create_t create);
+#end for

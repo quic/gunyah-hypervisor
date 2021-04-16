@@ -1,0 +1,88 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface boot
+
+// Events triggered during CPU power-on sequences, either at boot or on resume
+// from a power-off idle state. The events are triggered in the order they are
+// listed here, but not every event is triggered in a given power-on sequence.
+//
+// All events other than boot_runtime_*_init are run in the context of the
+// CPU's idle thread. After all events are complete, the CPU will enter the
+// idle loop, which may immediately schedule and switch to a VCPU.
+//
+// The boot CPU's initial power-on sequence will complete all of these events
+// before any secondary CPU starts, but there is no other serialisation of
+// boot events; they may run concurrently on secondary CPUs and/or warm boots
+// of the boot CPU.
+
+// Runtime initialisation for the first power-on sequence.
+//
+// This should only be used to set up basic runtime support needed for
+// execution of C code.
+//
+// This event runs with no current thread. Accesses to thread-local or
+// CPU-local storage will not work; handlers must not call
+// cpulocal_get_index(), nor access variables declared as _Thread_local.
+event boot_runtime_first_init
+	param boot_cpu_index: cpu_index_t
+
+// Runtime initialisation for power-on sequences other than the first.
+//
+// This should only be used to set up basic runtime support needed for
+// execution of C code.
+//
+// This event runs with no current thread. Accesses to thread-local or
+// CPU-local storage will not work; handlers must not call
+// cpulocal_get_index(), nor access variables declared as _Thread_local.
+event boot_runtime_warm_init
+	param idle_thread: thread_t *
+
+// Prepare temporary boot-time CPU configuration.
+//
+// This runs for every power-on sequence after runtime initialisation.
+//
+// Accesses to thread-local storage can be used, but CPU-local storage will
+// not work.
+event boot_cpu_early_init
+
+// Global data initialisation; triggered on the boot CPU during its first
+// power-on sequence.
+//
+// This should be used to initialise global data structures sufficiently for
+// other boot handlers to function.
+//
+// Accesses to CPU-local storage using the normal mechanisms will not work.
+// The CPU index is provided as an input and may be used for manual accesses
+// to CPU-local storage in handlers.
+event boot_cold_init
+	param boot_cpu_index: cpu_index_t
+
+// CPU-local data initialisation; triggered on first power-on for each CPU.
+//
+// This should be used to initialise any CPU-local data structures, such as
+// the idle thread (which does not get the usual object_create_thread event).
+//
+// The CPU index is provided as an input and may be used for manual accesses
+// to CPU-local storage in handlers.
+event boot_cpu_cold_init
+	param cpu_index: cpu_index_t
+
+// CPU initialisation; triggered on every power-on sequence.
+//
+// This should initialise any CPU control registers and per-CPU device
+// registers which may be lost on entry to power-off states.
+event boot_cpu_warm_init
+
+// Hypervisor startup; sets up high-level hypervisor services.
+//
+// This runs only once, on the first power-on for the boot CPU. It is mostly
+// used for setting up the root VM's runtime environment.
+event boot_hypervisor_start
+
+// Clean up temporary boot-time CPU configuration.
+//
+// This runs at the end of every power-on sequence, immediately before
+// switching to the idle thread.
+event boot_cpu_start

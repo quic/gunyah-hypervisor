@@ -1,0 +1,12 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module partition_standard
+
+#for obj in $object_list
+#set o = str(obj)
+subscribe rcu_update[$obj.rcu_destroy_enum()]
+#set rcu_destroy_handler = "partition_destroy_{:s}(entry)".format(o)
+        handler $rcu_destroy_handler
+#end for

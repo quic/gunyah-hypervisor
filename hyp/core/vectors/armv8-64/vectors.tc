@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier; BSD-3-Clause
+
+// Don't change the order of the members below, they are used in assembly.
+
+define kernel_trap_frame structure (aligned(16)){
+	x		array(19) type register_t;
+	x29		type register_t;
+	x30		type register_t;
+	pc		bitfield ELR_EL2;
+	spsr_el2	bitfield SPSR_EL2_A64;
+};
+
+define kernel_trap_frame_full structure (aligned(16)){
+	x		array(31) type register_t;
+	sp_el2		bitfield SP_EL2;
+	pc		bitfield ELR_EL2;
+	spsr_el2	bitfield SPSR_EL2_A64;
+};

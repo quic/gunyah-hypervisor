@@ -1,0 +1,37 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define hwirq_bind_virq hypercall {
+	call_num 0x26;
+	hwirq	input type cap_id_t;
+	vic	input type cap_id_t;
+	virq	input type virq_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};
+
+define hwirq_unbind_virq hypercall {
+	call_num 0x27;
+	hwirq	input type cap_id_t;
+	_res0	input uregister;
+	error	output enumeration error;
+};
+
+define vic_configure hypercall {
+	call_num 0x28;
+	vic		input type cap_id_t;
+	max_vcpus	input type count_t;
+	max_virqs	input type count_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define vic_attach_vcpu hypercall {
+	call_num 0x29;
+	vic		input type cap_id_t;
+	vcpu		input type cap_id_t;
+	index		input type index_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};

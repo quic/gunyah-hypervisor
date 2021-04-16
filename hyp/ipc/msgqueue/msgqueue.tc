@@ -1,0 +1,52 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define MSGQUEUE_DELAY_UNCHANGED public constant type count_t = -1;
+define MSGQUEUE_THRESHOLD_UNCHANGED public constant type count_t = -1;
+define MSGQUEUE_THRESHOLD_MAXIMUM public constant type count_t = -2;
+define MSGQUEUE_MAX_QUEUE_DEPTH public constant type count_t = 256;
+define MSGQUEUE_MAX_MAX_MSG_SIZE public constant type count_t = 1024;
+
+extend cap_rights_msgqueue bitfield {
+	0	send		bool;
+	1	receive		bool;
+	2	bind_send	bool;
+	3	bind_receive	bool;
+};
+
+extend msgqueue object {
+	buf		pointer char;
+	count		type count_t;
+	queue_size	size;
+	max_msg_size	size;
+	queue_depth	type count_t;
+	head		type count_t;
+	tail		type count_t;
+	notfull_thd	type count_t;
+	notempty_thd	type count_t;
+	lock		structure spinlock;
+	send_source	structure virq_source(contained);
+	rcv_source	structure virq_source(contained);
+};
+
+define msgqueue_create_info public bitfield<64> {
+	15:0	queue_depth	uint16;
+	31:16	max_msg_size	uint16;
+	63:32	unknown=0;
+};
+
+extend virq_trigger enumeration {
+	msgqueue_tx;
+	msgqueue_rx;
+};
+
+define receive_info structure {
+	size		size;
+	notempty	bool;
+};
+
+extend error enumeration {
+	MSGQUEUE_EMPTY = 60;
+	MSGQUEUE_FULL = 61;
+};

@@ -1,0 +1,96 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <hyptypes.h>
+\#include <string.h>
+
+\#include <hypcontainers.h>
+
+\#include <atomic.h>
+\#include <object.h>
+\#include <partition.h>
+\#include <partition_alloc.h>
+\#include <rcu.h>
+\#include <refcount.h>
+\#include <spinlock.h>
+
+\#include <events/object.h>
+
+\#include "event_handlers.h"
+
+#for obj in $object_list
+#set o = str(obj)
+#if o == "thread"
+extern const size_t thread_size;
+extern const size_t thread_align;
+#end if
+
+${o}_ptr_result_t
+partition_allocate_${o}(partition_t *parent, ${o}_create_t create)
+{
+	void_ptr_result_t alloc_ret;
+	${o}_ptr_result_t obj_ret;
+	${o}_t *${o};
+
+#if o == "thread"
+	const size_t size = thread_size;
+	const size_t align = thread_align;
+#else
+	const size_t size = sizeof(${o}_t);
+	const size_t align = alignof(${o}_t);
+#end if
+	alloc_ret = partition_alloc(parent, size, align);
+
+	if (alloc_ret.e != OK) {
+		obj_ret = ${o}_ptr_result_error(alloc_ret.e);
+		goto allocate_${o}_error;
+	}
+	memset(alloc_ret.r, 0, size);
+
+	${o} = (${o}_t *)alloc_ret.r;
+
+	refcount_init(&${o}->header.refcount);
+	spinlock_init(&${o}->header.lock);
+	${o}->header.partition = object_get_partition_additional(parent);
+	${o}->header.type = $obj.type_enum();
+	atomic_init(&${o}->header.state, OBJECT_STATE_INIT);
+
+	create.${o} = $o;
+
+	error_t err = trigger_object_create_${o}_event(create);
+	if (err != OK) {
+		rcu_enqueue(&${o}->header.rcu_entry, $obj.rcu_destroy_enum());
+		obj_ret = ${o}_ptr_result_error(err);
+	} else {
+		obj_ret = ${o}_ptr_result_ok(${o});
+	}
+
+allocate_${o}_error:
+	return obj_ret;
+}
+
+rcu_update_status_t
+partition_destroy_${o}(rcu_entry_t *entry)
+{
+	${o}_t *${o};
+	object_header_t *header;
+	rcu_update_status_t ret = rcu_update_status_default();
+
+	header = object_header_container_of_rcu_entry(entry);
+	${o} = ${o}_container_of_header(header);
+
+	trigger_object_cleanup_${o}_event(&ret, ${o});
+
+	partition_t *parent = ${o}->header.partition;
+#if o == "thread"
+	partition_free(parent, ${o}, thread_size);
+#else
+	partition_free(parent, ${o}, sizeof(${o}_t));
+#end if
+	object_put_partition(parent);
+
+	return ret;
+}
+
+#end for

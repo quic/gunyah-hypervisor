@@ -1,0 +1,17 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module msgqueue
+
+subscribe object_create_msgqueue
+
+subscribe object_activate_msgqueue
+
+subscribe object_deactivate_msgqueue
+
+subscribe virq_check_pending[VIRQ_TRIGGER_MSGQUEUE_TX]
+	handler msgqueue_tx_handle_virq_check_pending(source, reasserted)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_MSGQUEUE_RX]
+	handler msgqueue_rx_handle_virq_check_pending(source, reasserted)

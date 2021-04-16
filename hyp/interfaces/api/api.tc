@@ -1,0 +1,43 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define hyp_variant public enumeration {
+	UNKNOWN		= 0;
+	GUNYAH		= 0x48;
+};
+
+define hyp_api_info public bitfield<64, const> {
+	13:0		api_version	uint16 = 1;
+	14		big_endian	bool = !ARCH_ENDIAN_LITTLE;
+	15		is_64bit	bool = ARCH_IS_64BIT;
+	55:16		unknown=0;
+	63:56		variant		enumeration hyp_variant = 0x48;
+};
+
+define hyp_api_flags0 public bitfield<64, const> {
+	0		partition_cspace bool = 0;
+	1		doorbell	bool = 0;
+	2		msgqueue	bool = 0;
+	3		vic		bool = 0;
+	4		vpm		bool = 0;
+	5		vcpu		bool = 0;
+	6		memextent	bool = 0;
+	7		trace_ctrl	bool = 0;
+	23:16		hyp_variant_reserved uint8 = 0;
+	31:28	scheduler	enumeration scheduler_variant = SCHEDULER_VARIANT;
+	others	unknown=0;
+};
+
+define hyp_api_flags1 public bitfield<64, const> {
+	63:0		res0_0		uint64 = 0;
+};
+
+define hyp_api_flags2 public bitfield<64, const> {
+	63:0		res0_0		uint64 = 0;
+};
+
+// Guest virtual address (Stage-1)
+define gvaddr_t newtype uregister;
+
+define user_ptr_t public newtype pointer char;

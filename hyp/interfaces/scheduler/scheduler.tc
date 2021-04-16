@@ -1,0 +1,24 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+define priority_t public newtype uint32;
+
+define scheduler_block enumeration {
+};
+
+define scheduler_variant public enumeration(explicit) {
+	trivial = 0x0;
+	fprr = 0x1;
+};
+
+extend thread object module scheduler {
+	affinity type cpu_index_t;
+};
+
+extend thread_create structure module scheduler {
+	affinity type cpu_index_t;
+	affinity_valid bool;
+};

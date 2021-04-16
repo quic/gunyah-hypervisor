@@ -1,0 +1,115 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// 2019 Cog Systems Pty Ltd.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+//define const3 constant 8;
+//define const4 constant 8;
+//define const5 constant 10;
+
+//define X bitfield<64> {
+//	5:0		C uint16 = const3;
+//	const3		D bool;
+//	const5:const4	E uint16;
+//};
+
+define enum2 enumeration(noprefix) {
+	TEST_VAL1 = 1;
+	TEST_VAL2 = 2;
+};
+
+// Bitfield must have complete coverage
+define X bitfield<64> {
+	7:0		A uint16;		// A[7..0] <= X[7..0] (.. is range short form)
+	15:8		B sint16 = 5;		// B[15..7] <= X[15], B[6..0] <= X[14..0] - initialized to 5 (no argument in init function)
+	23,19:16	C sint16;		// C[15..4] <= X[23], C[3..0] <= X[19..16]
+	26,25,24	D uint8;		// D[2..0] <= X[26..24] (Example long form)
+	27,31:29	E uint8;		// E[3] <= X[27], E[2..0] <= X[31..29]
+	28,22:20	0x3;			// const bits 0b0011, may be run-time checked in any operation
+	35:32		0b1010;			// const bits 0b1010, may be run-time checked
+	39:36		unknown=0;		// don't care bits, initialize to 0
+
+	43:40		F uint32 lsl(12);	// F[19..12] <= X[47..40], F[11..0] <= 0
+
+	48		G bool(writeonly);
+	49		H uint8(const);		// const (readonly)
+	50		I sint8;		// 0 or -1
+
+	63:51		unknown;		// don't care bits, initialized to unknown
+	// others	// not allowed unless there are 'auto' bit assignments
+
+	// Not defined yet - field type non-contiguous (e.g. embedded bitfield)
+	// 44<4>,<00>,41,40	Y uint16;
+};
+
+define Y bitfield<64,const> {
+	7:0		A uint16;		// A[7..0] <= X[7..0] (.. is range short form)
+	//15:8		B uint16(writeonly);		// A[7..0] <= X[7..0] (.. is range short form)
+	23:16		C uint16(const);		// A[7..0] <= X[7..0] (.. is range short form)
+	63:24		D uint64;
+};
+
+define Z bitfield<64> {
+	7:0		A uint16;		// A[7..0] <= X[7..0] (.. is range short form)
+	//15:8		B uint16(writeonly);		// A[7..0] <= X[7..0] (.. is range short form)
+	23:16		C uint16(const);		// A[7..0] <= X[7..0] (.. is range short form)
+	63:24		D uint64;
+};
+
+define defaults bitfield<64> {
+	7:0		A uint16 = 0xde;
+	15:8		B uint16(writeonly) = 0xad;
+	23:16		C uint16(const) = 0xbe;
+	63:24		unknown = 0x5555555555;
+};
+
+extend defaults bitfield {
+	delete		A;
+	7		F uint16 = 0x1;
+	47:40		D uint16 = 0x3;
+};
+
+define struct2 structure {
+	A	enumeration enum2;
+	B	bitfield Z;
+};
+
+define Ext0 bitfield<64> {
+	7:0		A0 enumeration enum2;
+	15:8		B0 sint16;
+	23:16		C0 uint16(const);
+	63:24		unknown=0;
+};
+
+extend Ext0 bitfield {
+	35:32		D0 uint16;
+};
+
+define Ext1 bitfield<64> {
+	7:0		A1 uint16;
+	auto<5>		B1 uint8;
+	auto		C1 enumeration enum2;
+	others		unknown=0;
+};
+
+extend Ext1 bitfield {
+	delete		A1;
+	15:8		D1 uint16;
+	auto		E1 uint8;
+};
+
+
+define Ext2 bitfield<64> {
+	3:0		A1 uint16;
+	auto<5>		B1 uint8;
+	auto		C1 uint32;
+	others		unknown=0;
+};
+
+extend Ext2 bitfield module ExtModule {
+	delete		A1;
+	7:0		A1 uint16;
+	15:8		D1 uint16;
+	auto		E1 uint8;
+};

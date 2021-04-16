@@ -1,0 +1,176 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <hyptypes.h>
+
+\#include <atomic.h>
+\#include <attributes.h>
+\#include <compiler.h>
+\#include <object.h>
+\#include <panic.h>
+\#include <rcu.h>
+\#include <refcount.h>
+\#include <spinlock.h>
+
+\#include <events/object.h>
+
+#for obj in $object_list
+#set o = str(obj)
+
+${o}_t *
+object_get_${o}_additional(${o}_t *${o})
+{
+	refcount_get_additional(&${o}->header.refcount);
+
+	return ${o};
+}
+
+bool
+object_get_${o}_safe(${o}_t *${o})
+{
+	return refcount_get_safe(&${o}->header.refcount);
+}
+
+static void NOINLINE
+_object_put_${o}(${o}_t *${o})
+{
+	object_state_t old_state = atomic_exchange_explicit(
+		&${o}->header.state, OBJECT_STATE_DESTROYING,
+		memory_order_relaxed);
+	if (old_state == OBJECT_STATE_ACTIVE) {
+		trigger_object_deactivate_${o}_event(${o});
+	}
+	rcu_enqueue(&${o}->header.rcu_entry, $obj.rcu_destroy_enum());
+}
+
+void
+object_put_${o}(${o}_t *${o})
+{
+	if (compiler_unexpected(refcount_put(&${o}->header.refcount))) {
+		_object_put_${o}(${o});
+	}
+}
+
+error_t
+object_activate_${o}(${o}_t *${o})
+{
+	object_ptr_t o = { .${o} = ${o} };
+	return object_activate($obj.type_enum(), o);
+}
+
+#end for
+
+\#pragma clang diagnostic push
+\#pragma clang diagnostic ignored "-Wswitch-enum"
+
+object_ptr_t
+object_get_additional(object_type_t type, object_ptr_t object)
+{
+	object_ptr_t ret;
+
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		ret.${o} = object_get_${o}_additional(object.${o});
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+
+	return ret;
+}
+
+bool
+object_get_safe(object_type_t type, object_ptr_t object)
+{
+	bool ret;
+
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		ret = object_get_${o}_safe(object.${o});
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+
+	return ret;
+}
+
+void
+object_put(object_type_t type, object_ptr_t object)
+{
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		object_put_${o}(object.${o});
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+}
+
+object_header_t *
+object_get_header(object_type_t type, object_ptr_t object)
+{
+	object_header_t *header;
+
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		header = &object.${o}->header;
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+
+	return header;
+}
+
+error_t
+object_activate(object_type_t type, object_ptr_t object)
+{
+	error_t ret;
+
+	switch (type) {
+#for obj in $object_list
+#set o = str(obj)
+	case $obj.type_enum():
+		spinlock_acquire(&object.${o}->header.lock);
+
+		if (atomic_load_relaxed(&object.${o}->header.state) ==
+					OBJECT_STATE_INIT) {
+			ret = trigger_object_activate_${o}_event(object.${o});
+
+			if (ret == OK) {
+				atomic_store_release(&object.${o}->header.state,
+						     OBJECT_STATE_ACTIVE);
+			} else {
+				atomic_store_relaxed(&object.${o}->header.state,
+						     OBJECT_STATE_FAILED);
+			}
+
+		} else {
+			ret = ERROR_OBJECT_STATE;
+		}
+
+		spinlock_release(&object.${o}->header.lock);
+		break;
+#end for
+	default:
+		panic("unknown object type");
+	}
+
+	return ret;
+}
+
+\#pragma clang diagnostic pop

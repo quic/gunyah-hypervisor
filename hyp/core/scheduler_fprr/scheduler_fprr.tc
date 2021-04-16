@@ -1,0 +1,80 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+define SCHEDULER_VARIANT constant enumeration scheduler_variant = 0x1;
+
+define SCHEDULER_NUM_PRIORITIES constant type priority_t = 64;
+define SCHEDULER_MIN_PRIORITY public constant type priority_t = 0;
+define SCHEDULER_MAX_PRIORITY public constant type priority_t = SCHEDULER_NUM_PRIORITIES - 1;
+define SCHEDULER_DEFAULT_PRIORITY public constant type priority_t = SCHEDULER_NUM_PRIORITIES / 2;
+
+define SCHEDULER_MAX_TIMESLICE public constant type nanoseconds_t = 100000000;	// 100ms
+define SCHEDULER_MIN_TIMESLICE public constant type nanoseconds_t = 1000000; // 1ms
+define SCHEDULER_DEFAULT_TIMESLICE public constant type nanoseconds_t = 5000000; // 5ms
+
+define SCHEDULER_NUM_BLOCK_BITS constant type index_t = maxof(enumeration scheduler_block) + 1;
+
+define sched_state bitfield<16> {
+	// True once a thread has been created.
+	auto init bool;
+	// True if a thread is currently running on a cpu.
+	auto running bool;
+	// True if the thread is currently queued on a cpu.
+	auto queued bool;
+	// True if the thread is running on a cpu and needs
+	// to be requeued after context switching away.
+	auto need_requeue bool;
+};
+
+define scheduler structure {
+	prio_bitmap BITMAP(SCHEDULER_NUM_PRIORITIES);
+	runqueue array(SCHEDULER_NUM_PRIORITIES) structure list;
+	active_thread pointer object thread;
+	timer structure timer;
+	timeout type ticks_t;
+	timeout_set bool;
+	lock structure spinlock;
+};
+
+extend thread object module scheduler {
+	block_bits BITMAP(SCHEDULER_NUM_BLOCK_BITS);
+	list_node structure list_node(contained);
+	rcu_entry structure rcu_entry(contained);
+	priority type priority_t;
+	base_timeslice type ticks_t;
+	active_timeslice type ticks_t;
+	schedtime type ticks_t;
+	lock structure spinlock;
+	pin_count type count_t;
+	yield_to pointer object thread;
+	yielded_from pointer object thread;
+	active_affinity type cpu_index_t(atomic);
+	prev_affinity type cpu_index_t;
+	state bitfield sched_state;
+};
+
+extend ipi_reason enumeration {
+	RESCHEDULE;
+};
+
+extend timer_action enumeration {
+	RESCHEDULE;
+};
+
+extend thread_create structure module scheduler {
+	priority type priority_t;
+	priority_valid bool;
+	timeslice type nanoseconds_t;
+	timeslice_valid bool;
+};
+
+extend scheduler_block enumeration {
+	affinity_changed;
+};
+
+extend rcu_update_class enumeration {
+	affinity_changed;
+};

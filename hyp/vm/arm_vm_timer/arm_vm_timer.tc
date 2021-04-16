@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object {
+	timer	structure timer(contained);
+	timer_virq_src	structure virq_source;
+};
+
+extend timer_action enumeration {
+	virtual_timer;
+};
+
+extend virq_trigger enumeration {
+	timer;
+};
+
+extend hwirq_action enumeration {
+	vm_timer;
+};

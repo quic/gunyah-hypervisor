@@ -1,0 +1,7 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+define BITMAP_WORD_BITS constant type index_t = sizeof(type register_t) * 8;

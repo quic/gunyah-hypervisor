@@ -1,0 +1,137 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// RCU based on a global quiescent state bitmap, as described in the PDCS '98
+// paper by MacKenney and Slingwine.
+//
+// The paper describes this as a suboptimal solution, but the "much better"
+// state counter algorithm used in Dynix/ptx (since 1994) relies on a periodic
+// timer tick on every CPU, as do the later improvements used in Linux. The
+// hypervisor currently does not have a periodic tick and we don't want to add
+// one just for RCU. The original state counter algorithm also assumes that
+// quiescent states are already counted for performance monitoring, which is
+// also not currently the case in the hypervisor.
+//
+// To avoid the performance issue with bitmaps that was identified in the
+// paper, in which a frequently quiescent CPU performs redundant and expensive
+// atomic bit clear operations on the global bitmap, we keep a count of CPUs
+// with pending updates, and track quiescent states only when this count is
+// nonzero. When the count transitions from zero to nonzero, we IPI all
+// online CPUs to ensure that their quiescent state tracking is updated.
+//
+// The hypervisor currently uses RCU only for object existence locks and, in
+// some cases, detaching object links. These do not happen as frequently as
+// as in a general purpose kernel such as Linux or Dynix/ptx, so the overhead
+// of RCU when updates are queued is of relatively little importance, as long
+// as the overhead is low when there are no updates.
+//
+// Also, we make use of some features described as part of the state counter
+// implementation that are not strictly specific to that algorithm: per-CPU
+// update batches, deferral of batch processing using a software interrupt
+// (i.e. ipi_relaxed()), and a generation count.
+
+#include <types/bitmap.h>
+#include <asm/cpu.h>
+
+extend rcu_entry structure {
+	// FIXME: We should pack the class in here so we can use a unified
+	// queue.
+	next pointer structure rcu_entry;
+};
+
+extend ipi_reason enumeration {
+	// Force a quiescent state. This is sent to all CPUs in the active
+	// bitmap after the waiter count transitions from 0 to 1.
+	rcu_quiesce;
+
+	// Trigger a grace period check. This is sent to any remote CPU that
+	// is known to be waiting for a grace period that has completed. It
+	// is also asserted (relaxed) on the current CPU when a new update is
+	// queued, and when a new grace period is requested.
+	rcu_notify;
+
+	// Process the current batch of updates. This is asserted (relaxed) on
+	// the current CPU when updates are moved into the current batch at
+	// the end of a grace period.
+	rcu_update;
+};
+
+// Internal rcu_bitmap structures
+
+// A batch of RCU updates, from one grace period on one CPU.
+define rcu_batch structure {
+	// FIXME: We have a list head for each update class.
+	heads array(maxof(enumeration rcu_update_class) + 1) pointer
+		structure rcu_entry;
+};
+
+// An atomically accessible structure representing the current grace period.
+// Note that we use a uint32 bitmap here rather than the generic bitmap type
+// because we want to be able to pack this into 64 bits, so that 64-bit
+// machines can access it with atomic load and store accesses.
+define rcu_grace_period structure(aligned(8)) {
+	generation type count_t;
+	cpu_bitmap uint32;
+};
+
+// The global state of RCU.
+define rcu_state structure {
+	// The number of CPUs that may have waiting updates. When this is 0
+	// (which is the common case in the hypervisor), all quiescent state
+	// detection and processing is skipped.
+	//
+	// This is strictly an upper bound; i.e. it is incremented before
+	// updates are queued and decremented after they are dequeued, so it
+	// never reaches 0 while CPUs are waiting.
+	waiter_count type count_t(atomic);
+
+	// The current grace period's generation number and cpu bitmap.
+	current_period structure rcu_grace_period(atomic);
+
+	// The highest grace period number any CPU is waiting for.
+	max_target type count_t(atomic);
+
+	// The set of CPUs that would need to acknowledge a grace period if it
+	// started now. This excludes CPUs that are offline or suspended. It
+	// also excludes CPUs that are in userspace or the idle thread.
+	active_cpus uint32(atomic);
+};
+
+// The CPU-local state of RCU.
+define rcu_cpu_state structure(aligned(1 << CPU_L1D_LINE_BITS)) {
+	// The total number of updates in this CPU's batches.
+	//
+	// This is strictly an upper bound; i.e. it is incremented before
+	// updates are queued and decremented after they are dequeued, so it
+	// never reaches 0 while updates are queued.
+	// FIXME: may not need to be atomic?
+	update_count type count_t(atomic);
+
+	// Local cache of this CPU's bit in the active set. This is used to
+	// avoid having to touch the shared variable frequently when RCU is
+	// idle. It should never be accessed across CPUs.
+	is_active bool;
+
+	// Local cache of whether ready_batch is non-empty. This is checked
+	// in rcu_bitmap_notify(), to ensure that rcu_bitmap_update() is
+	// completed first regardless of IPI processing order.
+	ready_updates bool;
+
+	// The grace period this CPU is currently waiting to reach. This is
+	// atomic because it may be read lock-free by remote CPUs that
+	// complete a grace period, to determine whether to IPI this CPU.
+	target type count_t(atomic);
+
+	// Update batch ready for processing now; if it is non-empty then an
+	// IPI with reason RCU_UPDATE should have been raised to process it,
+	// and ready_updates should be true.
+	ready_batch structure rcu_batch;
+
+	// Update batch that will be processed when target_period is reached.
+	waiting_batch structure rcu_batch;
+
+	// Update batch that is being accumulated for processing at the end of
+	// the next grace period.
+	next_batch structure rcu_batch;
+};

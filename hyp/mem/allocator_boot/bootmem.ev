@@ -1,0 +1,8 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module allocator_boot
+
+subscribe boot_runtime_first_init ()
+	priority first

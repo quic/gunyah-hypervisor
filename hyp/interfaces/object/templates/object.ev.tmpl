@@ -1,0 +1,30 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface object
+
+// Add rollback handlers
+#for obj in $object_list
+#set o = str(obj)
+
+setup_event object_create_$o
+	param ${o}_create: ${o}_create_t
+	return: error_t = OK
+	success: OK
+
+setup_event object_activate_$o
+	param ${o}: ${o}_t *
+	return: error_t = OK
+	success: OK
+
+event object_deactivate_$o
+	param ${o}: ${o}_t *
+
+event object_cleanup_$o
+	param status: rcu_update_status_t *
+	param ${o}: ${o}_t *
+
+event object_get_defaults_$o
+	param ${o}_create: ${o}_create_t *
+#end for

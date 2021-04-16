@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module hyp_aspace
+
+subscribe boot_cold_init()
+	// Must come after pagetable but before other events requiring the hyp
+	// address space to be initialised.
+	priority 20
