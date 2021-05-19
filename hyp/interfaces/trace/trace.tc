@@ -15,6 +15,7 @@ define trace_class enumeration() {
 define trace_id enumeration(explicit) {
 	INFO = 0;
 	WARN = 1;
+	DEBUG = 3;
 };
 
 #if defined(HYPERCALLS)
