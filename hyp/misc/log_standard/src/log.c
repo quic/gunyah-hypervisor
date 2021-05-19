@@ -79,7 +79,7 @@ log_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 		      arg3, arg4);
 	if (ret.e == ERROR_STRING_TRUNCATED) {
 		size = LOG_TEMP_BUFFER_SIZE;
-	} else if (ret.e == ERROR_STRING_MISSING_ARGUMENT) {
+	} else if ((ret.e == ERROR_STRING_MISSING_ARGUMENT) || (ret.r == 0U)) {
 		goto out;
 	} else {
 		size = ret.r + 1;

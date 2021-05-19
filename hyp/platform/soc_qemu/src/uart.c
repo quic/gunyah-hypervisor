@@ -75,11 +75,7 @@ soc_qemu_handle_log_message(trace_id_t id, const char *str)
 	soc_qemu_console_puts(str);
 #else
 	if ((id == TRACE_ID_WARN) || (id == TRACE_ID_PANIC) ||
-	    (id == TRACE_ID_ASSERT_FAILED) ||
-#if defined(INTERFACE_TESTS)
-	    (id == TRACE_ID_TEST) ||
-#endif
-	    (id == TRACE_ID_DEBUG)) {
+	    (id == TRACE_ID_ASSERT_FAILED) || (id == TRACE_ID_DEBUG)) {
 		soc_qemu_console_puts(str);
 	}
 #endif
