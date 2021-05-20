@@ -192,5 +192,24 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 	if (me_ret.e != OK) {
 		panic("Failed creation of gicr memextent");
 	}
+
+	// Derive extent for UART and share it with RM
+	me_ret = memextent_derive(me, PLATFORM_UART_BASE, PLATFORM_UART_SIZE,
+				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW);
+	if (me_ret.e != OK) {
+		panic("Failed creation of uart memextent");
+	}
+
+	// Create a master cap for the uart memextent
+	object_ptr_t obj_ptr;
+	obj_ptr.memextent	  = me_ret.r;
+	cap_id_result_t capid_ret = cspace_create_master_cap(
+		root_cspace, obj_ptr, OBJECT_TYPE_MEMEXTENT);
+	if (capid_ret.e != OK) {
+		panic("Error create memextent cap id.");
+	}
+
+	env_data->uart_address	= PLATFORM_UART_BASE;
+	env_data->uart_me_capid = capid_ret.r;
 }
 #endif

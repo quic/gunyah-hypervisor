@@ -10,6 +10,8 @@ extend boot_env_data structure {
 	hlos_vm_size		size;
 	hlos_dt_base		type vmaddr_t;
 	hlos_ramfs_base		type vmaddr_t;
+	uart_me_capid		type cap_id_t;
+	uart_address		type paddr_t;
 };
 
 #if defined (PLATFORM_PSCI_USE_ORIGINAL_POWERSTATE_FORMAT)
@@ -25,3 +27,8 @@ define psci_suspend_powerstate_stateid bitfield<16> {
 #endif
 
 define psci_cpu_state_t newtype uint8;
+
+define soc_qemu_uart structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	dr @0x0		uint32(atomic);
+	tfr @0x18	uint32(atomic);
+};
