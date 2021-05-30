@@ -45,7 +45,7 @@ Gunyah is architected to support other CPU architectures, so its core design ens
 
 Gunyah currently supports ARMv8.2+ platforms as it uses AArch64 EL2 in VHE mode. Some porting is required to support ARMv8.0.
 
-We have developed an initial port of Gunyah to the QEMU ARMv8 simulator. *Note QMEU v5+ is required*. Additional platforms are expected to be supported in future contributions.
+We have developed an initial port of Gunyah to the QEMU ARMv8 simulator. *Note QEMU v5+ is required*. Additional platforms are expected to be supported in future contributions.
 
 ## Getting Started
 - [Setup Instructions](docs/setup.md)
