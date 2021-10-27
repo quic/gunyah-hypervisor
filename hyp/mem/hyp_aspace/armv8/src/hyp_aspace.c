@@ -376,7 +376,9 @@ hyp_aspace_is_mapped(uintptr_t virt, size_t size, pgtable_access_t access)
 		goto is_mapped_return;
 	}
 
-	assert(!util_add_overflows(virt, size - 1U));
+	if (util_add_overflows(virt, size - 1U)) {
+		goto is_mapped_return;
+	}
 
 	// Set dummy values to stop warnings
 	expected_phys = 0;

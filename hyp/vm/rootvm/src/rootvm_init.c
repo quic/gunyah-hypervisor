@@ -36,7 +36,7 @@
 
 // FIXME: remove when we have a device tree where to read it from
 // dummy value.
-#define MAX_CAPS 1024
+#define MAX_CAPS 2048
 
 void NOINLINE
 rootvm_init(void)

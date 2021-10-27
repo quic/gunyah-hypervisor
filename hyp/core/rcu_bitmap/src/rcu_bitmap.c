@@ -327,7 +327,7 @@ rcu_bitmap_quiesce(void)
 		}
 	} while (!atomic_compare_exchange_strong_explicit(
 		&rcu_state.current_period, &current_period, next_period,
-		memory_order_release, memory_order_acquire));
+		memory_order_acq_rel, memory_order_acquire));
 
 	if (new_period) {
 		// This matches the thread fence in rcu_bitmap_deactivate_cpu.
