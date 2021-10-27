@@ -124,8 +124,9 @@ elf_get_phdr(void *elf_file, count_t index)
 }
 
 error_t
-elf_load_phys(void *elf_file, paddr_t phys_offset)
+elf_load_phys(void *elf_file, size_t elf_max_size, paddr_t phys_base)
 {
+	error_t	  ret;
 	index_t	  i;
 	uintptr_t elf_base = (uintptr_t)elf_file;
 	Elf_Ehdr *ehdr	   = (Elf_Ehdr *)(uintptr_t)elf_file;
@@ -143,11 +144,31 @@ elf_load_phys(void *elf_file, paddr_t phys_offset)
 			continue;
 		}
 
-		// FIXME: validate addresses target useable HYP memory
-		uintptr_t seg_base = elf_base + cur_phdr->p_offset;
-		paddr_t	  seg_dest = cur_phdr->p_paddr + phys_offset;
+		if (cur_phdr->p_filesz > cur_phdr->p_memsz) {
+			ret = ERROR_ARGUMENT_SIZE;
+			goto out;
+		}
 
-		error_t ret;
+		if (util_add_overflows(cur_phdr->p_paddr, cur_phdr->p_memsz) ||
+		    util_add_overflows(phys_base,
+				       cur_phdr->p_paddr + cur_phdr->p_memsz) ||
+		    ((cur_phdr->p_offset + cur_phdr->p_filesz) >
+		     elf_max_size)) {
+			ret = ERROR_ARGUMENT_SIZE;
+			goto out;
+		}
+
+		if (util_add_overflows(cur_phdr->p_offset, cur_phdr->p_memsz) ||
+		    util_add_overflows(elf_base, cur_phdr->p_offset +
+							 cur_phdr->p_memsz)) {
+			ret = ERROR_ARGUMENT_SIZE;
+			goto out;
+		}
+
+		uintptr_t seg_base = elf_base + cur_phdr->p_offset;
+		paddr_t	  seg_dest = phys_base + cur_phdr->p_paddr;
+
+		error_t err;
 
 		paddr_t map_base = util_balign_down(
 			seg_dest, (paddr_t)PGTABLE_HYP_PAGE_SIZE);
@@ -157,24 +178,25 @@ elf_load_phys(void *elf_file, paddr_t phys_offset)
 			map_base;
 
 		// FIXME: should we use phys_map and phys_access eventually?
-		ret = hyp_aspace_map_direct(map_base, map_size,
+		err = hyp_aspace_map_direct(map_base, map_size,
 					    PGTABLE_ACCESS_RW,
 					    PGTABLE_HYP_MEMTYPE_WRITETHROUGH,
 					    VMSA_SHAREABILITY_INNER_SHAREABLE);
-		assert(ret == OK);
+		assert(err == OK);
 
 		// copy elf segment data
 		memcpy((char *)seg_dest, (char *)seg_base, cur_phdr->p_filesz);
-		if (cur_phdr->p_memsz > cur_phdr->p_filesz) {
-			// zero bss
-			memset((char *)(seg_dest + cur_phdr->p_filesz), 0,
-			       cur_phdr->p_memsz - cur_phdr->p_filesz);
-		}
+		// zero bss
+		memset((char *)(seg_dest + cur_phdr->p_filesz), 0,
+		       cur_phdr->p_memsz - cur_phdr->p_filesz);
 
 		LOG(DEBUG, INFO, "Elf copied from {:#x} to {:#x} - size {:#x}",
 		    seg_base, seg_dest, cur_phdr->p_filesz);
-		ret = hyp_aspace_unmap_direct(map_base, map_size);
-		assert(ret == OK);
+		err = hyp_aspace_unmap_direct(map_base, map_size);
+		assert(err == OK);
 	}
-	return OK;
+
+	ret = OK;
+out:
+	return ret;
 }
