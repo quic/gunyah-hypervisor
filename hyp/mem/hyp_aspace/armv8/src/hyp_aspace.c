@@ -43,6 +43,8 @@ static uintptr_t  hyp_aspace_alloc_base;
 static uintptr_t  hyp_aspace_alloc_end;
 static _Atomic BITMAP_DECLARE(HYP_ASPACE_NUM_REGIONS, hyp_aspace_regions);
 
+static _Atomic bool hyp_aspace_direct_unmap;
+
 extern const char image_virt_start;
 extern const char image_virt_last;
 extern const char image_phys_start;
@@ -152,13 +154,14 @@ hyp_aspace_handle_partition_add_ram_range(paddr_t phys_base, size_t size)
 	}
 
 	pgtable_hyp_start();
-
+	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
+				 memory_order_acquire);
 	error_t err = pgtable_hyp_remap(
 		hyp_partition,
 		(uintptr_t)phys_base + HYP_ASPACE_PHYSACCESS_OFFSET, size,
 		phys_base, PGTABLE_HYP_MEMTYPE_WRITEBACK, PGTABLE_ACCESS_NONE,
 		VMSA_SHAREABILITY_INNER_SHAREABLE);
-
+	atomic_store_release(&hyp_aspace_direct_unmap, false);
 	pgtable_hyp_commit();
 
 	return err;
@@ -174,13 +177,14 @@ hyp_aspace_handle_partition_remove_ram_range(paddr_t phys_base, size_t size)
 	assert(util_is_baligned(phys_base, PGTABLE_HYP_PAGE_SIZE));
 	assert(util_is_baligned(size, PGTABLE_HYP_PAGE_SIZE));
 
-	pgtable_hyp_start();
-
 	// Remap the memory as DEVICE so that no speculative reads occur.
+	pgtable_hyp_start();
+	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
+				 memory_order_acquire);
 	pgtable_hyp_remap(hyp_partition, (uintptr_t)virt, size, phys_base,
 			  PGTABLE_HYP_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW,
 			  VMSA_SHAREABILITY_INNER_SHAREABLE);
-
+	atomic_store_release(&hyp_aspace_direct_unmap, false);
 	pgtable_hyp_commit();
 
 	// Clean the memory range being removed to ensure no future write-backs
@@ -349,14 +353,78 @@ hyp_aspace_unmap_direct(paddr_t phys, size_t size)
 
 	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
+	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
+				 memory_order_acquire);
 	pgtable_hyp_unmap(partition_get_private(), virt, size,
 			  PGTABLE_HYP_UNMAP_PRESERVE_NONE);
-
+	atomic_store_release(&hyp_aspace_direct_unmap, false);
 	pgtable_hyp_commit();
 	spinlock_release(&hyp_aspace_direct_lock);
 
 unmap_error:
 	return err;
+}
+
+// Retry faults if they may have been caused by break before make in the direct
+// physical access region
+bool
+hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
+{
+	bool			 handled = false;
+	ESR_EL2_ISS_DATA_ABORT_t iss =
+		ESR_EL2_ISS_DATA_ABORT_cast(ESR_EL2_get_ISS(&esr));
+	iss_da_ia_fsc_t fsc = ESR_EL2_ISS_DATA_ABORT_get_DFSC(&iss);
+
+	// Only translation faults can be caused by BBM
+	if ((fsc != ISS_DA_IA_FSC_TRANSLATION_1) &&
+	    (fsc != ISS_DA_IA_FSC_TRANSLATION_2) &&
+	    (fsc != ISS_DA_IA_FSC_TRANSLATION_3)) {
+		goto out;
+	}
+
+	// Only handle faults that are in the direct access region or the
+	// QHEE 1:1 mapping region
+	FAR_EL2_t far  = register_FAR_EL2_read_ordered(&asm_ordering);
+	uintptr_t addr = FAR_EL2_get_VirtualAddress(&far);
+	if (addr > (HYP_ASPACE_PHYSACCESS_OFFSET +
+		    util_bit(HYP_ASPACE_MAP_DIRECT_BITS) - 1)) {
+		goto out;
+	}
+
+	if (!atomic_load_acquire(&hyp_aspace_direct_unmap)) {
+		// There is no map in progress. Perform a lookup to see whether
+		// the accessed address is now mapped.
+		PAR_EL1_RAW_t saved_par =
+			register_PAR_EL1_RAW_read_ordered(&asm_ordering);
+		if (ESR_EL2_ISS_DATA_ABORT_get_WnR(&iss)) {
+			__asm__ volatile("at	S1E2W, %[addr]		;"
+					 "isb				;"
+					 : "+m"(asm_ordering)
+					 : [addr] "r"(addr));
+		} else {
+			__asm__ volatile("at	S1E2R, %[addr]		;"
+					 "isb				;"
+					 : "+m"(asm_ordering)
+					 : [addr] "r"(addr));
+		}
+		PAR_EL1_RAW_t par_raw =
+			register_PAR_EL1_RAW_read_ordered(&asm_ordering);
+		register_PAR_EL1_RAW_write_ordered(saved_par, &asm_ordering);
+
+		// If the accessed address is now mapped, we can just return
+		// from the fault. Otherwise we can consider the fault to be
+		// fatal, because there is no BBM operation still in progress.
+		PAR_EL1_F0_t par = PAR_EL1_F0_cast(PAR_EL1_RAW_raw(par_raw));
+		handled		 = !PAR_EL1_F0_get_F(&par);
+	} else {
+		// A map operation is in progress, so retry until it finishes.
+		// Note that we might get stuck here if the page table is
+		// corrupt!
+		handled = true;
+	}
+
+out:
+	return handled;
 }
 
 lookup_result_t
