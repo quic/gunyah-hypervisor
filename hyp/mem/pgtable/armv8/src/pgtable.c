@@ -3134,14 +3134,29 @@ pgtable_do_hyp_map(partition_t *partition, uintptr_t virtual_address,
 		pgt = &hyp_pgtable.bottom_control;
 	}
 
-	assert(!util_add_overflows(virtual_address, size - 1));
+	if (util_add_overflows(virtual_address, size - 1)) {
+		margs.error = ERROR_ADDR_OVERFLOW;
+		goto out;
+	}
 
-	assert(util_is_baligned(virtual_address, pgt->granule_size));
-	assert(util_is_baligned(phys, pgt->granule_size));
-	assert(util_is_baligned(size, pgt->granule_size));
+	if (!util_is_baligned(virtual_address, pgt->granule_size)) {
+		margs.error = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+	if (!util_is_baligned(phys, pgt->granule_size)) {
+		margs.error = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+	if (!util_is_baligned(size, pgt->granule_size)) {
+		margs.error = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
 
-	assert(addr_check(virtual_address, pgt->address_bits) &&
-	       addr_check(virtual_address + size - 1, pgt->address_bits));
+	if (!addr_check(virtual_address, pgt->address_bits) ||
+	    !addr_check(virtual_address + size - 1, pgt->address_bits)) {
+		margs.error = ERROR_ADDR_INVALID;
+		goto out;
+	}
 
 	memset(&margs, 0, sizeof(margs));
 	margs.orig_virtual_address = virtual_address;
@@ -3175,7 +3190,7 @@ pgtable_do_hyp_map(partition_t *partition, uintptr_t virtual_address,
 				  margs.partially_mapped_size,
 				  PGTABLE_HYP_UNMAP_PRESERVE_ALL);
 	}
-
+out:
 	return margs.error;
 }
 
@@ -3740,18 +3755,27 @@ pgtable_vm_map(partition_t *partition, pgtable_vm_t *pgtable,
 	assert(pgtable != NULL);
 	assert(partition != NULL);
 
-	assert(!util_add_overflows(virtual_address, size - 1));
+	if (!addr_check(virtual_address, pgtable->control.address_bits)) {
+		margs.error = ERROR_ADDR_INVALID;
+		goto fail;
+	}
 
-	assert(addr_check(virtual_address, pgtable->control.address_bits));
-	assert(addr_check(virtual_address + size - 1,
-			  pgtable->control.address_bits));
+	if (util_add_overflows(virtual_address, size - 1) ||
+	    !addr_check(virtual_address + size - 1,
+			pgtable->control.address_bits)) {
+		margs.error = ERROR_ADDR_OVERFLOW;
+		goto fail;
+	}
 
 	// FIXME: Supporting different granule sizes will need support and
 	// additional checking to be added to memextent code.
-	assert(util_is_baligned(virtual_address,
-				pgtable->control.granule_size));
-	assert(util_is_baligned(phys, pgtable->control.granule_size));
-	assert(util_is_baligned(size, pgtable->control.granule_size));
+
+	if (!util_is_baligned(virtual_address, pgtable->control.granule_size) ||
+	    !util_is_baligned(phys, pgtable->control.granule_size) ||
+	    !util_is_baligned(size, pgtable->control.granule_size)) {
+		margs.error = ERROR_ARGUMENT_ALIGNMENT;
+		goto fail;
+	}
 
 	// FIXME: how to check phys, read tcr in init?
 	// FIXME: no need to to check vm memtype, right?
@@ -3784,6 +3808,7 @@ pgtable_vm_map(partition_t *partition, pgtable_vm_t *pgtable,
 				 margs.partially_mapped_size);
 	}
 
+fail:
 	return margs.error;
 }
 

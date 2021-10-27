@@ -78,6 +78,7 @@ thread_standard_unwind_object_create_thread(error_t	    result,
 	if (thread->stack_base != (uintptr_t)0U) {
 		partition_free(thread->header.partition,
 			       (void *)thread->stack_base, thread->stack_size);
+		thread->stack_base = (uintptr_t)0U;
 	}
 }
 
@@ -113,6 +114,7 @@ thread_standard_handle_object_deactivate_thread(thread_t *thread)
 	if (thread->stack_base != (uintptr_t)0U) {
 		partition_free(thread->header.partition,
 			       (void *)thread->stack_base, thread->stack_size);
+		thread->stack_base = (uintptr_t)0U;
 	}
 }
 

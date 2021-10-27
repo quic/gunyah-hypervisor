@@ -240,12 +240,14 @@ vgic_handle_object_cleanup_vic(vic_t *vic)
 		size_t vcpus_size =
 			sizeof(vic->gicr_vcpus[0]) * vic->gicr_count;
 		partition_free(partition, vic->gicr_vcpus, vcpus_size);
+		vic->gicr_vcpus = NULL;
 	}
 
 	if (vic->sources != NULL) {
 		size_t sources_size =
 			sizeof(vic->sources[0]) * vic->sources_count;
 		partition_free(partition, vic->sources, sources_size);
+		vic->sources = NULL;
 	}
 }
 
