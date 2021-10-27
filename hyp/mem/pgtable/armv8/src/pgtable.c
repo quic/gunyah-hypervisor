@@ -513,8 +513,8 @@ map_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size, index_t idx,
 	     size_t *next_size, paddr_t *next_table);
 
 static pgtable_modifier_ret_t
-lookup_modifier(pgtable_t *pgt, index_t idx, index_t level,
-		vmsa_entry_type_t type, paddr_t table, void *data);
+lookup_modifier(pgtable_t *pgt, vmsa_general_entry_t cur_entry, index_t level,
+		vmsa_entry_type_t type, void *data);
 
 static void
 check_refcount(pgtable_t *pgt, partition_t *partition, vmaddr_t virtual_address,
@@ -1726,16 +1726,14 @@ out:
 // memory attribute should be the same, or else, it only return the attributes
 // of the last entry.
 pgtable_modifier_ret_t
-lookup_modifier(pgtable_t *pgt, index_t idx, index_t level,
-		vmsa_entry_type_t type, paddr_t table, void *data)
+lookup_modifier(pgtable_t *pgt, vmsa_general_entry_t cur_entry, index_t level,
+		vmsa_entry_type_t type, void *data)
 {
 	pgtable_lookup_modifier_args_t *margs =
 		(pgtable_lookup_modifier_args_t *)data;
-	const pgtable_level_info_t *cur_level_info = NULL;
-	vmsa_general_entry_t	    cur_entry;
-	vmsa_level_table_t *	    cur_table = NULL;
-	pgtable_modifier_ret_t	    vret      = PGTABLE_MODIFIER_RET_STOP;
-	error_t			    ret	      = OK;
+	const pgtable_level_info_t *cur_level_info = &level_conf[level];
+	pgtable_modifier_ret_t	    vret	   = PGTABLE_MODIFIER_RET_STOP;
+	error_t			    ret		   = OK;
 
 	// only handle several cases, valid arguments
 	if ((type != VMSA_ENTRY_TYPE_PAGE) && (type != VMSA_ENTRY_TYPE_BLOCK)) {
@@ -1747,19 +1745,6 @@ lookup_modifier(pgtable_t *pgt, index_t idx, index_t level,
 	}
 
 	assert(pgt != NULL);
-
-	cur_table = (vmsa_level_table_t *)partition_phys_map(table,
-							     pgt->granule_size);
-	if (cur_table == NULL) {
-		LOG(ERROR, WARN, "Failed to map physical memory({:x})\n",
-		    table);
-		vret = PGTABLE_MODIFIER_RET_ERROR;
-		goto out;
-	}
-
-	cur_level_info = &level_conf[level];
-
-	cur_entry = get_entry(cur_table, idx);
 
 	ret = get_entry_paddr(cur_level_info, &cur_entry, type, &margs->phys);
 	if (ret != OK) {
@@ -1773,20 +1758,10 @@ lookup_modifier(pgtable_t *pgt, index_t idx, index_t level,
 
 	margs->entry = cur_entry;
 
-	if ((type == VMSA_ENTRY_TYPE_PAGE) || (type == VMSA_ENTRY_TYPE_BLOCK)) {
-		// accumulate size & return for check
-		margs->size += cur_level_info->addr_size;
-	} else {
-		LOG(ERROR, WARN,
-		    "Unexpected entry type({:d}), stop looking up.\n", type);
-		vret = PGTABLE_MODIFIER_RET_ERROR;
-	}
+	// set size & return for check
+	margs->size = cur_level_info->addr_size;
 
 out:
-	if (cur_table != NULL) {
-		partition_phys_unmap(cur_table, table, pgt->granule_size);
-		cur_table = NULL;
-	}
 	return vret;
 }
 
@@ -2520,15 +2495,15 @@ translation_table_walk(pgtable_t *pgt, vmaddr_t virtual_address,
 		       pgtable_translation_table_walk_event_t event,
 		       pgtable_entry_types_t expected, void *data)
 {
-	paddr_t		    root_pa = pgt->root_pgtable;
-	vmsa_level_table_t *root    = pgt->root;
-	index_t		    level   = pgt->start_level;
-	index_t		    prev_level;
-	index_t		    prev_idx;
-	paddr_t		    prev_table_paddr = 0U;
-	vmaddr_t	    prev_virtual_address;
-	size_t		    prev_size;
-	vmsa_entry_type_t   prev_type;
+	paddr_t		     root_pa = pgt->root_pgtable;
+	vmsa_level_table_t * root    = pgt->root;
+	index_t		     level   = pgt->start_level;
+	index_t		     prev_level;
+	index_t		     prev_idx;
+	vmaddr_t	     prev_virtual_address;
+	size_t		     prev_size;
+	vmsa_general_entry_t prev_entry;
+	vmsa_entry_type_t    prev_type;
 
 	// loop control variable
 	index_t	 cur_level	     = level;
@@ -2592,9 +2567,9 @@ translation_table_walk(pgtable_t *pgt, vmaddr_t virtual_address,
 		prev_virtual_address = cur_virtual_address;
 		prev_level	     = cur_level;
 		prev_idx	     = cur_idx;
+		prev_entry	     = cur_entry;
 		prev_type	     = cur_type;
 		prev_size	     = cur_size;
-		prev_table_paddr     = cur_table_paddr;
 
 		switch (cur_type) {
 		case VMSA_ENTRY_TYPE_NEXT_LEVEL_TABLE:
@@ -2712,9 +2687,9 @@ translation_table_walk(pgtable_t *pgt, vmaddr_t virtual_address,
 						      &cur_size, true);
 				break;
 			case PGTABLE_TRANSLATION_TABLE_WALK_EVENT_LOOKUP:
-				vret = lookup_modifier(pgt, prev_idx,
+				vret = lookup_modifier(pgt, prev_entry,
 						       prev_level, prev_type,
-						       prev_table_paddr, data);
+						       data);
 				break;
 			case PGTABLE_TRANSLATION_TABLE_WALK_EVENT_PREALLOC:
 				vret = prealloc_modifier(
