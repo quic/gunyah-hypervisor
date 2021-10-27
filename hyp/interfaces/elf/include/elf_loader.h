@@ -20,4 +20,4 @@ elf_get_phdr(void *elf_file, count_t index);
 
 // Load the ELF file to its physical address as per its program headers
 error_t
-elf_load_phys(void *elf_file, paddr_t phys_offset);
+elf_load_phys(void *elf_file, size_t elf_max_size, paddr_t phys_base);

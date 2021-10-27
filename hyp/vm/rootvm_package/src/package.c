@@ -80,8 +80,9 @@ create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 }
 
 static paddr_t
-rootvm_package_load_elf(void *elf, addrspace_t *addrspace, vmaddr_t ipa_base,
-			paddr_t phys_offset, memextent_t *me_rm)
+rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
+			vmaddr_t ipa_base, paddr_t phys_offset,
+			memextent_t *me_rm)
 {
 	error_t err;
 	count_t i;
@@ -147,7 +148,7 @@ rootvm_package_load_elf(void *elf, addrspace_t *addrspace, vmaddr_t ipa_base,
 		panic("ELF segment out of range");
 	}
 
-	err = elf_load_phys(elf, phys_offset);
+	err = elf_load_phys(elf, elf_max_size, phys_offset);
 	if (err != OK) {
 		panic("Error loading ELF");
 	}
@@ -239,6 +240,13 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 			void *elf =
 				(void *)(map_base + pkg_hdr->list[i].offset);
 
+			if (pkg_hdr->list[i].offset > map_size) {
+				panic("ELF out of valid region");
+			}
+
+			size_t elf_max_size =
+				map_size - pkg_hdr->list[i].offset;
+
 			if (!elf_valid(elf)) {
 				panic("Invalid package ELF");
 			}
@@ -254,7 +262,8 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 				app_ipa = ipa + offset;
 			}
 
-			load_next = rootvm_package_load_elf(elf, addrspace, ipa,
+			load_next = rootvm_package_load_elf(elf, elf_max_size,
+							    addrspace, ipa,
 							    load_next, me);
 			break;
 		case ROOTVM_PACKAGE_IMAGE_TYPE_UNKNOWN:
