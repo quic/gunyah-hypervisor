@@ -29,7 +29,7 @@ void
 thread_standard_handle_boot_runtime_first_init(void)
 {
 	void_ptr_result_t ret;
-	thread_t *	  idle_thread;
+	thread_t	 *idle_thread;
 
 	// Allocate boot CPU idle thread and TLS out of bootmem.
 	ret = bootmem_allocate(thread_size, thread_align);
@@ -61,10 +61,5 @@ thread_boot_set_idle(void)
 	thread_t *thread = thread_get_self();
 	assert(thread == idle_thread());
 
-	// We must always take a reference to the target thread when switching,
-	// even if it is the same thread that is already (partly) current. This
-	// is because the generic thread start and thread switch functions will
-	// always release a reference to the old thread.
-	object_get_thread_additional(thread);
 	thread_arch_set_thread(thread);
 }

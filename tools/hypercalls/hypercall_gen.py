@@ -54,6 +54,7 @@ class HypercallObject:
         self.call_num = None
         self.inputs = []
         self.outputs = []
+        self.properties = {}
 
 
 def get_constant(c):
@@ -126,6 +127,18 @@ def get_hypercalls(tree, hypercalls, hyp_num, ir):
                         used_ids.add(call_num)
 
                         hypercalls[hyp_num].call_num = call_num
+                    elif node.data == "declaration_sensitive":
+                        hypercalls[hyp_num].properties['sensitive'] = True
+                    elif node.data == "declaration_vendor_hyp_call":
+                        if hypercalls[hyp_num].call_num is not None:
+                            logger.error(
+                                "Hypercall: %s call_num and "
+                                "vendor_hyp_call",
+                                hypercalls[hyp_num].name)
+                            sys.exit(1)
+                        hypercalls[hyp_num].call_num = 0
+                        hypercalls[hyp_num].properties['vendor_hyp_call'] = \
+                            True
                     else:
                         raise TypeError
                 elif isinstance(c.children[1], Tree):
@@ -217,13 +230,13 @@ def main():
         parse_tree = parser.parse(text)
         hypercalls, hyp_num = get_hypercalls(
             parse_tree, hypercalls, hyp_num, ir)
-        for h in hypercalls:
-            hyper = Hypercall(h.name, h.call_num, options.abi)
-            for i in h.inputs:
-                hyper.add_input(i)
-            for o in h.outputs:
-                hyper.add_output(o)
-            hyper.finalise()
+    for h in hypercalls:
+        hyper = Hypercall(h.name, h.call_num, h.properties, options.abi)
+        for i in h.inputs:
+            hyper.add_input(i)
+        for o in h.outputs:
+            hyper.add_output(o)
+        hyper.finalise()
 
     # Apply templates to generate the output code and format it
     result = apply_template(options.template)

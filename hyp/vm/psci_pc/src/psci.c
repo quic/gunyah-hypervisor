@@ -29,6 +29,7 @@
 #include <rcu.h>
 #include <scheduler.h>
 #include <spinlock.h>
+#include <task_queue.h>
 #include <thread.h>
 #include <timer_queue.h>
 #include <trace.h>
@@ -48,7 +49,7 @@
 
 // In this psci simple version, no affinity levels are supported
 
-_Atomic CPULOCAL_DECLARE_STATIC(count_t, vpm_active_vcpus);
+CPULOCAL_DECLARE_STATIC(_Atomic count_t, vpm_active_vcpus);
 static _Atomic register_t vpm_active_pcpus_bitmap;
 
 extern list_t partition_list;
@@ -71,12 +72,10 @@ psci_pc_handle_boot_cold_init(void)
 
 	psci_pm_list_init();
 
-#if !defined(QEMU) || !QEMU
+#if !defined(PSCI_SET_SUSPEND_MODE_NOT_SUPPORTED) ||                           \
+	!PSCI_SET_SUSPEND_MODE_NOT_SUPPORTED
 	error_t ret = platform_psci_set_suspend_mode(PSCI_MODE_OSI);
 	assert(ret == OK);
-#else
-	// Since QEMU does not support PSCI_SET_SUSPEND_MODE, then it must use
-	// plaform-coordinated mode
 #endif
 }
 
@@ -190,7 +189,7 @@ psci_pc_handle_vcpu_activate_thread(thread_t *thread)
 }
 
 void
-psci_pc_handle_scheduler_affinity_changed(thread_t *  thread,
+psci_pc_handle_scheduler_affinity_changed(thread_t   *thread,
 					  cpu_index_t prev_cpu, bool *need_sync)
 {
 	object_state_t state = atomic_load_acquire(&thread->header.state);
@@ -213,7 +212,7 @@ psci_pc_handle_scheduler_affinity_changed(thread_t *  thread,
 }
 
 void
-psci_pc_handle_scheduler_affinity_changed_sync(thread_t *  thread,
+psci_pc_handle_scheduler_affinity_changed_sync(thread_t	*thread,
 					       cpu_index_t next_cpu)
 {
 	if (thread->psci_migrate) {
@@ -249,7 +248,7 @@ psci_get_thread_by_mpidr(psci_mpidr_t mpidr)
 			cpu_index_result_t index =
 				platform_cpu_mpidr_to_index(mpidr);
 			if (index.e == OK) {
-				// RCU protects psci_state->psci_cpus[i]
+				// RCU protects psci_group->psci_cpus[i]
 				rcu_read_start();
 
 				result = atomic_load_consume(
@@ -275,29 +274,25 @@ psci_get_thread_by_mpidr(psci_mpidr_t mpidr)
 static bool
 psci_is_hlos(void)
 {
-	cpulocal_begin();
+	thread_t *vcpu = thread_get_self();
 
-	thread_t *hlos	  = scheduler_get_primary_vcpu(cpulocal_get_index());
-	bool	  is_hlos = thread_get_self() == hlos;
-
-	cpulocal_end();
-
-	return is_hlos;
+	return vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options);
 }
 
-uint32_t
-psci_version(void)
+bool
+psci_version(uint32_t *ret0)
 {
-	// PSCI 1.1 implemented
-	return 0x00010001U;
+	*ret0 = PSCI_VERSION;
+	return true;
 }
 
 static psci_ret_t
 psci_suspend(psci_suspend_powerstate_t suspend_state,
 	     paddr_t entry_point_address, register_t context_id)
+	EXCLUDE_PREEMPT_DISABLED
 {
 	psci_ret_t ret	   = PSCI_RET_SUCCESS;
-	thread_t * current = thread_get_self();
+	thread_t	 *current = thread_get_self();
 
 	assert(current->psci_group != NULL);
 
@@ -342,12 +337,20 @@ out:
 static psci_ret_t
 psci_cpu_suspend(psci_suspend_powerstate_t suspend_state,
 		 paddr_t entry_point_address, register_t context_id)
+	EXCLUDE_PREEMPT_DISABLED
 {
-	thread_t *current = thread_get_self();
+	psci_ret_t ret;
+	thread_t	 *current = thread_get_self();
 
-	assert(current->psci_group != NULL);
+	if (current->psci_group == NULL) {
+		ret = PSCI_RET_NOT_SUPPORTED;
+		goto out;
+	}
 
-	return psci_suspend(suspend_state, entry_point_address, context_id);
+	ret = psci_suspend(suspend_state, entry_point_address, context_id);
+
+out:
+	return ret;
 }
 
 uint32_t
@@ -355,13 +358,8 @@ psci_cpu_suspend_32_features(void)
 {
 	uint32_t ret;
 
-	if (psci_is_hlos()) {
-		// HLOS supports OS-Initiated mode, extended StateID
-		ret = 3U;
-	} else {
-		// Only Platform Co-ordinated mode, extended StateID
-		ret = 2U;
-	}
+	// Only Platform-coordinated mode, extended StateID
+	ret = 2U;
 
 	return ret;
 }
@@ -372,28 +370,38 @@ psci_cpu_suspend_64_features(void)
 	return psci_cpu_suspend_32_features();
 }
 
-uint32_t
-psci_cpu_suspend_32(uint32_t arg1, uint32_t arg2, uint32_t arg3)
+bool
+psci_cpu_suspend_32(uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_suspend(psci_suspend_powerstate_cast(arg1),
 					  arg2, arg3);
-	return (uint32_t)ret;
+	*ret0	       = (uint32_t)ret;
+	return true;
 }
 
-uint64_t
-psci_cpu_suspend_64(uint64_t arg1, uint64_t arg2, uint64_t arg3)
+bool
+psci_cpu_suspend_64(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_suspend(
 		psci_suspend_powerstate_cast((uint32_t)arg1), arg2, arg3);
-	return (uint64_t)ret;
+	*ret0 = (uint64_t)ret;
+	return true;
 }
 
 // Same as psci_cpu_suspend, but it sets the suspend state to the deepest
 // cpu-level.
 static psci_ret_t
 psci_cpu_default_suspend(paddr_t entry_point_address, register_t context_id)
+	EXCLUDE_PREEMPT_DISABLED
 {
-	cpu_index_t cpu = cpulocal_get_index();
+	psci_ret_t  ret;
+	thread_t	 *current = thread_get_self();
+	cpu_index_t cpu	    = cpulocal_get_index();
+
+	if (current->psci_group == NULL) {
+		ret = PSCI_RET_NOT_SUPPORTED;
+		goto out;
+	}
 
 	psci_suspend_powerstate_t pstate = psci_suspend_powerstate_default();
 	psci_suspend_powerstate_stateid_t stateid =
@@ -402,21 +410,25 @@ psci_cpu_default_suspend(paddr_t entry_point_address, register_t context_id)
 	psci_suspend_powerstate_set_StateType(
 		&pstate, PSCI_SUSPEND_POWERSTATE_TYPE_POWERDOWN);
 
-	return psci_suspend(pstate, entry_point_address, context_id);
+	ret = psci_suspend(pstate, entry_point_address, context_id);
+out:
+	return ret;
 }
 
-uint32_t
-psci_cpu_default_suspend_32(uint32_t arg1, uint32_t arg2)
+bool
+psci_cpu_default_suspend_32(uint32_t arg1, uint32_t arg2, uint32_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_default_suspend(arg1, arg2);
-	return (uint32_t)ret;
+	*ret0	       = (uint32_t)ret;
+	return true;
 }
 
-uint64_t
-psci_cpu_default_suspend_64(uint64_t arg1, uint64_t arg2)
+bool
+psci_cpu_default_suspend_64(uint64_t arg1, uint64_t arg2, uint64_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_default_suspend(arg1, arg2);
-	return (uint64_t)ret;
+	*ret0	       = (uint64_t)ret;
+	return true;
 }
 
 static psci_ret_t
@@ -424,7 +436,7 @@ psci_switch_suspend_mode(psci_mode_t new_mode)
 {
 	psci_ret_t ret = PSCI_RET_SUCCESS;
 
-	thread_t *   thread	= thread_get_self();
+	thread_t	 *thread	= thread_get_self();
 	vpm_group_t *psci_group = thread->psci_group;
 	cpu_index_t  vcpu_id	= thread->psci_index;
 
@@ -463,8 +475,8 @@ out:
 	return ret;
 }
 
-uint32_t
-psci_set_suspend_mode(uint32_t arg1)
+bool
+psci_set_suspend_mode(uint32_t arg1, uint32_t *ret0)
 {
 	psci_ret_t ret;
 
@@ -501,13 +513,14 @@ psci_set_suspend_mode(uint32_t arg1)
 	}
 
 out:
-	return (uint32_t)ret;
+	*ret0 = (uint32_t)ret;
+	return true;
 }
 
-uint32_t
-psci_cpu_off(void)
+bool
+psci_cpu_off(uint32_t *ret0)
 {
-	thread_t *   current	= thread_get_self();
+	thread_t	 *current	= thread_get_self();
 	cpu_index_t  cpu	= cpulocal_get_index();
 	vpm_group_t *psci_group = current->psci_group;
 
@@ -527,14 +540,15 @@ psci_cpu_off(void)
 		// If we return, the only reason should be DENIED
 		assert(ret == ERROR_DENIED);
 	}
-	return (uint32_t)PSCI_RET_DENIED;
+	*ret0 = (uint32_t)PSCI_RET_DENIED;
+	return true;
 }
 
 static psci_ret_t
 psci_cpu_on(psci_mpidr_t cpu, paddr_t entry_point_address,
 	    register_t context_id)
 {
-	thread_t * thread = psci_get_thread_by_mpidr(cpu);
+	thread_t	 *thread = psci_get_thread_by_mpidr(cpu);
 	psci_ret_t ret;
 
 	if (thread == NULL) {
@@ -561,18 +575,20 @@ psci_cpu_on(psci_mpidr_t cpu, paddr_t entry_point_address,
 	return ret;
 }
 
-uint32_t
-psci_cpu_on_32(uint32_t arg1, uint32_t arg2, uint32_t arg3)
+bool
+psci_cpu_on_32(uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_on(psci_mpidr_cast(arg1), arg2, arg3);
-	return (uint32_t)ret;
+	*ret0	       = (uint32_t)ret;
+	return true;
 }
 
-uint64_t
-psci_cpu_on_64(uint64_t arg1, uint64_t arg2, uint64_t arg3)
+bool
+psci_cpu_on_64(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t *ret0)
 {
 	psci_ret_t ret = psci_cpu_on(psci_mpidr_cast(arg1), arg2, arg3);
-	return (uint64_t)ret;
+	*ret0	       = (uint64_t)ret;
+	return true;
 }
 
 static psci_ret_t
@@ -604,42 +620,24 @@ psci_affinity_info(psci_mpidr_t affinity, uint32_t lowest_affinity_level)
 	return ret;
 }
 
-uint32_t
-psci_affinity_info_32(uint32_t arg1, uint32_t arg2)
+bool
+psci_affinity_info_32(uint32_t arg1, uint32_t arg2, uint32_t *ret0)
 {
 	psci_ret_t ret = psci_affinity_info(psci_mpidr_cast(arg1), arg2);
-	return (uint32_t)ret;
+	*ret0	       = (uint32_t)ret;
+	return true;
 }
 
-uint64_t
-psci_affinity_info_64(uint64_t arg1, uint64_t arg2)
+bool
+psci_affinity_info_64(uint64_t arg1, uint64_t arg2, uint64_t *ret0)
 {
 	psci_ret_t ret =
 		psci_affinity_info(psci_mpidr_cast(arg1), (uint32_t)arg2);
-	return (uint64_t)ret;
+	*ret0 = (uint64_t)ret;
+	return true;
 }
 
-static uint32_t
-psci_feature_hlos_only(void)
-{
-	uint32_t ret;
-
-	if (psci_is_hlos()) {
-		ret = 0U;
-	} else {
-		ret = SMCCC_UNKNOWN_FUNCTION32;
-	}
-
-	return ret;
-}
-
-uint32_t
-psci_system_off_features(void)
-{
-	return psci_feature_hlos_only();
-}
-
-uint32_t
+bool
 psci_system_off(void)
 {
 	if (!psci_is_hlos()) {
@@ -651,24 +649,17 @@ psci_system_off(void)
 	panic("system_off event returned");
 }
 
-uint32_t
-psci_system_reset_features(void)
-{
-	return psci_feature_hlos_only();
-}
-
-uint32_t
+bool
 psci_system_reset(void)
 {
-	// FIXME: when doing system_reset on QEMU, hypervisor was starting in the
-	// correct entry point, but the static variables did not seem to be
-	// reinitialized. When this is fixed, uncomment this code to support
-	// this call. Also only allow a system_reset for the primary VM.
-	//
-	// platform_system_reset();
-	// panic("system_reset event returned");
+	if (!psci_is_hlos()) {
+		return (uint32_t)PSCI_RET_NOT_SUPPORTED;
+	}
 
-	return (uint32_t)PSCI_RET_NOT_SUPPORTED;
+	error_t ret = OK;
+	(void)trigger_power_system_reset_event(PSCI_REQUEST_SYSTEM_RESET, 0U,
+					       &ret);
+	panic("system_reset event returned");
 }
 
 static uint32_t
@@ -692,33 +683,23 @@ psci_system_reset2(uint64_t reset_type, uint64_t cookie)
 	return ret;
 }
 
-uint32_t
-psci_system_reset2_32_features(void)
+bool
+psci_system_reset2_32(uint32_t arg1, uint32_t arg2, uint32_t *ret0)
 {
-	return psci_feature_hlos_only();
+	*ret0 = psci_system_reset2(arg1, arg2);
+	return true;
 }
 
-uint32_t
-psci_system_reset2_32(uint32_t arg1, uint32_t arg2)
+bool
+psci_system_reset2_64(uint64_t arg1, uint64_t arg2, uint64_t *ret0)
 {
-	return psci_system_reset2(arg1, arg2);
-}
-
-uint32_t
-psci_system_reset2_64_features(void)
-{
-	return psci_feature_hlos_only();
-}
-
-uint64_t
-psci_system_reset2_64(uint64_t arg1, uint64_t arg2)
-{
-	return psci_system_reset2(
+	*ret0 = psci_system_reset2(
 		(uint32_t)arg1 | PSCI_REQUEST_SYSTEM_RESET2_64, arg2);
+	return true;
 }
 
-uint32_t
-psci_features(uint32_t arg1)
+bool
+psci_features(uint32_t arg1, uint32_t *ret0)
 {
 	smccc_function_id_t fn_id = smccc_function_id_cast(arg1);
 	uint32_t	    ret	  = SMCCC_UNKNOWN_FUNCTION32;
@@ -729,49 +710,14 @@ psci_features(uint32_t arg1)
 	if ((smccc_function_id_get_interface_id(&fn_id) ==
 	     SMCCC_INTERFACE_ID_STANDARD) &&
 	    smccc_function_id_get_is_fast(&fn_id) &&
-	    ((fn >= PSCI_FUNCTION_PSCI_VERSION) &&
-	     (fn <= PSCI_FUNCTION_LAST_ID))) {
+	    (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		ret = smccc_function_id_get_is_smc64(&fn_id)
 			      ? trigger_psci_features64_event(fn)
 			      : trigger_psci_features32_event(fn);
 	}
 
-	return ret;
-}
-
-bool
-psci_pc_handle_smccc_call_fast_32(smccc_function_t function, uint32_t arg1,
-				  uint32_t arg2, uint32_t arg3, uint32_t *ret0)
-{
-	bool handled = false;
-
-	if ((function >= PSCI_FUNCTION_PSCI_VERSION) &&
-	    (function <= PSCI_FUNCTION_LAST_ID) &&
-	    (thread_get_self()->psci_group != NULL)) {
-		TRACE(PSCI, INFO, "psci 32: {:#x} {:#x} {:#x} {:#x}", function,
-		      arg1, arg2, arg3);
-
-		*ret0	= trigger_psci_call32_event(function, arg1, arg2, arg3);
-		handled = true;
-	}
-	return handled;
-}
-
-bool
-psci_pc_handle_smccc_call_fast_64(smccc_function_t function, uint64_t arg1,
-				  uint64_t arg2, uint64_t arg3, uint64_t *ret0)
-{
-	bool handled = false;
-	if ((function >= PSCI_FUNCTION_PSCI_VERSION) &&
-	    (function <= PSCI_FUNCTION_LAST_ID) &&
-	    (thread_get_self()->psci_group != NULL)) {
-		TRACE(PSCI, INFO, "psci 64: {:#x} {:#x} {:#x} {:#x}", function,
-		      arg1, arg2, arg3);
-
-		*ret0	= trigger_psci_call64_event(function, arg1, arg2, arg3);
-		handled = true;
-	}
-	return handled;
+	*ret0 = ret;
+	return true;
 }
 
 error_t
@@ -782,6 +728,17 @@ psci_pc_handle_object_create_thread(thread_create_t thread_create)
 
 	// Default thread to be of IDLE mode
 	thread->psci_mode = VPM_MODE_IDLE;
+
+	psci_suspend_powerstate_t pstate = psci_suspend_powerstate_default();
+	psci_suspend_powerstate_stateid_t stateid =
+		platform_psci_deepest_cpu_level_stateid(
+			thread->scheduler_affinity);
+	psci_suspend_powerstate_set_StateID(&pstate, stateid);
+	psci_suspend_powerstate_set_StateType(
+		&pstate, PSCI_SUSPEND_POWERSTATE_TYPE_POWERDOWN);
+
+	// Initialize to deepest possible state
+	thread->psci_suspend_state = pstate;
 
 	return OK;
 }
@@ -798,7 +755,7 @@ psci_pc_handle_object_activate_thread(thread_t *thread)
 		assert(scheduler_is_blocked(thread, SCHEDULER_BLOCK_VCPU_OFF));
 
 		cpu_index_t index    = thread->psci_index;
-		thread_t *  tmp_null = NULL;
+		thread_t	 *tmp_null = NULL;
 
 		if (!cpulocal_index_valid(index)) {
 			err = ERROR_OBJECT_CONFIG;
@@ -821,7 +778,7 @@ psci_pc_handle_object_deactivate_thread(thread_t *thread)
 	assert(thread != NULL);
 
 	if (thread->psci_group != NULL) {
-		thread_t *  tmp	  = thread;
+		thread_t	 *tmp	  = thread;
 		cpu_index_t index = thread->psci_index;
 
 		atomic_compare_exchange_strong_explicit(
@@ -829,7 +786,9 @@ psci_pc_handle_object_deactivate_thread(thread_t *thread)
 			memory_order_relaxed, memory_order_relaxed);
 		object_put_vpm_group(thread->psci_group);
 
+		scheduler_lock(thread);
 		psci_pm_list_delete(scheduler_get_affinity(thread), thread);
+		scheduler_unlock(thread);
 	}
 }
 
@@ -907,6 +866,7 @@ psci_pc_handle_object_activate_vpm_group(vpm_group_t *pg)
 {
 	spinlock_init(&pg->psci_lock);
 	pg->psci_system_suspend_count = 0;
+	task_queue_init(&pg->psci_virq_task, TASK_QUEUE_CLASS_VPM_GROUP_VIRQ);
 
 	// Default psci mode to be platfom-coordinated
 	pg->psci_mode = PSCI_MODE_PC;
@@ -969,48 +929,17 @@ vpm_attach(vpm_group_t *pg, thread_t *thread, index_t index)
 	return err;
 }
 
-void
-psci_vpm_system_suspended(void)
+error_t
+psci_pc_handle_task_queue_execute(task_queue_entry_t *task_entry)
 {
-	thread_t *   current   = thread_get_self();
-	vpm_group_t *vpm_group = current->psci_group;
+	assert(task_entry != NULL);
+	vpm_group_t *vpm_group =
+		vpm_group_container_of_psci_virq_task(task_entry);
 
-	if (vpm_group != NULL) {
-		spinlock_acquire(&vpm_group->psci_lock);
+	virq_assert(&vpm_group->psci_system_suspend_virq, true);
+	object_put_vpm_group(vpm_group);
 
-		if (vpm_group->psci_system_suspend_signal) {
-			vpm_group->psci_system_suspend_signal = false;
-
-			trigger_vpm_system_suspended_event();
-
-			virq_assert(&vpm_group->psci_system_suspend_virq,
-				    false);
-		}
-
-		spinlock_release(&vpm_group->psci_lock);
-	}
-}
-
-void
-psci_vpm_system_resumed(void)
-{
-	thread_t *   current   = thread_get_self();
-	vpm_group_t *vpm_group = current->psci_group;
-
-	if (vpm_group != NULL) {
-		spinlock_acquire(&vpm_group->psci_lock);
-
-		if (vpm_group->psci_system_resume_signal) {
-			vpm_group->psci_system_resume_signal = false;
-
-			trigger_vpm_system_resumed_event();
-
-			virq_assert(&vpm_group->psci_system_suspend_virq,
-				    false);
-		}
-
-		spinlock_release(&vpm_group->psci_lock);
-	}
+	return OK;
 }
 
 vpm_state_t
@@ -1069,12 +998,16 @@ out:
 static error_t
 psci_vcpu_suspend(thread_t *current)
 {
+	if (current->psci_mode != VPM_MODE_PSCI) {
+		goto out;
+	}
+
 	assert(current->psci_group != NULL);
 
 	// Decrement refcount of the PCPU
 	psci_vpm_active_vcpus_put(cpulocal_get_index(), current);
 
-	vpm_group_t *	 vpm_group = current->psci_group;
+	vpm_group_t	    *vpm_group = current->psci_group;
 	cpu_index_t	 vcpu_id   = current->psci_index;
 	psci_cpu_state_t cpu_state =
 		platform_psci_get_cpu_state(current->psci_suspend_state);
@@ -1093,6 +1026,7 @@ psci_vcpu_suspend(thread_t *current)
 		&vpm_group->psci_vm_suspend_state, &old_state, new_state,
 		memory_order_relaxed, memory_order_relaxed));
 
+out:
 	return OK;
 }
 
@@ -1120,21 +1054,34 @@ psci_pc_unwind_vcpu_suspend(void)
 	psci_vcpu_wakeup(current, cpulocal_get_index());
 }
 
-static void
-psci_resume_vcpu(thread_t *vcpu)
+bool
+psci_pc_handle_trapped_idle(void)
 {
-	cpu_index_t target_cpu = scheduler_get_active_affinity(vcpu);
+	thread_t *current = thread_get_self();
+	bool	  handled = false;
 
-	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_SUSPEND)) {
-		TRACE(PSCI, PSCI_VPM_VCPU_RESUME,
-		      "psci vcpu resume: {:#x} - VM {:d} - VCPU {:d}",
-		      (uintptr_t)vcpu, vcpu->addrspace->vmid, vcpu->psci_index);
-		psci_vcpu_wakeup(vcpu, target_cpu);
-		vcpu_resume(vcpu);
-	} else if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_WFI) &&
-		   (vcpu->psci_mode == VPM_MODE_IDLE)) {
-		psci_vpm_active_vcpus_get(target_cpu, vcpu);
+	if (current->psci_mode == VPM_MODE_IDLE) {
+		psci_vpm_active_vcpus_put(cpulocal_get_index(), current);
+		error_t err = vcpu_suspend();
+		if ((err != OK) && (err != ERROR_BUSY)) {
+			panic("unhandled vcpu_suspend error (WFI)");
+		}
+		handled = true;
 	}
+
+	return handled;
+}
+
+void
+psci_pc_handle_vcpu_resume(void)
+{
+	thread_t *vcpu = thread_get_self();
+
+	TRACE(PSCI, PSCI_VPM_VCPU_RESUME,
+	      "psci vcpu resume: {:#x} - VM {:d} - VCPU {:d}", (uintptr_t)vcpu,
+	      vcpu->addrspace->vmid, vcpu->psci_index);
+
+	psci_vcpu_wakeup(vcpu, cpulocal_get_index());
 }
 
 void
@@ -1142,9 +1089,8 @@ psci_pc_handle_vcpu_started(void)
 {
 	thread_t *current = thread_get_self();
 
-	// The VCPU has been warm-reset if it has not returned to the specified
-	// entry point, therefore it has already called psci_vcpu_wakeup
-	// previously.
+	// If the VCPU has been warm-reset, it has already called
+	// psci_vcpu_wakeup in the above vcpu_resume event handler.
 	if (!current->vcpu_warm_reset) {
 		TRACE(PSCI, PSCI_VPM_VCPU_RESUME,
 		      "psci vcpu started: {:#x} - VM {:d}", (uintptr_t)current,
@@ -1159,7 +1105,9 @@ psci_pc_handle_vcpu_started(void)
 void
 psci_pc_handle_vcpu_wakeup(thread_t *vcpu)
 {
-	psci_resume_vcpu(vcpu);
+	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_SUSPEND)) {
+		vcpu_resume(vcpu);
+	}
 }
 
 void
@@ -1199,9 +1147,8 @@ out:
 }
 
 error_t
-psci_pc_handle_vcpu_poweroff(bool force)
+psci_pc_handle_vcpu_poweroff(thread_t *vcpu, bool force)
 {
-	thread_t *   vcpu	= thread_get_self();
 	error_t	     ret	= OK;
 	vpm_group_t *psci_group = vcpu->psci_group;
 
@@ -1211,7 +1158,7 @@ psci_pc_handle_vcpu_poweroff(bool force)
 		do {
 			assert(online_cpus > 0U);
 			if (!force && (online_cpus == 1U)) {
-				ret = ERROR_BUSY;
+				ret = ERROR_DENIED;
 				goto out;
 			}
 		} while (!atomic_compare_exchange_weak_explicit(
@@ -1223,22 +1170,6 @@ psci_pc_handle_vcpu_poweroff(bool force)
 	}
 out:
 	return ret;
-}
-
-idle_state_t
-psci_pc_handle_vcpu_idle_fastpath(void)
-{
-	idle_state_t state   = IDLE_STATE_IDLE;
-	thread_t *   current = thread_get_self();
-
-	if (current->psci_mode == VPM_MODE_IDLE) {
-		state = IDLE_STATE_RESCHEDULE;
-		scheduler_lock(current);
-		psci_vpm_active_vcpus_put(cpulocal_get_index(), current);
-		scheduler_unlock(current);
-	}
-
-	return state;
 }
 
 idle_state_t
@@ -1260,7 +1191,7 @@ psci_pc_handle_idle_yield(bool in_idle_thread)
 	}
 
 	thread_t *vcpu	       = NULL;
-	list_t *  psci_pm_list = psci_pm_list_get_self();
+	list_t   *psci_pm_list = psci_pm_list_get_self();
 	assert(psci_pm_list != NULL);
 
 	psci_suspend_powerstate_t pstate = psci_suspend_powerstate_default();
@@ -1442,7 +1373,7 @@ psci_pc_handle_rootvm_init_early(partition_t *root_partition,
 }
 
 void
-psci_pc_handle_rootvm_init_late(cspace_t *	 root_cspace,
+psci_pc_handle_rootvm_init_late(cspace_t	 *root_cspace,
 				boot_env_data_t *env_data)
 {
 	// Activate the secondary VCPU objects

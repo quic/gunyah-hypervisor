@@ -10,6 +10,7 @@
 #include <compiler.h>
 #include <cpulocal.h>
 #include <irq.h>
+#include <object.h>
 #include <panic.h>
 #include <partition.h>
 #include <partition_alloc.h>
@@ -56,6 +57,10 @@ platform_pmu_handle_boot_hypervisor_start()
 		panic("Failed to create PMU IRQ");
 	}
 
+	if (object_activate_hwirq(ret.r) != OK) {
+		panic("Failed to activate PMU IRQ");
+	}
+
 	pmu_hwirq = ret.r;
 
 	irq_enable_local(pmu_hwirq);
@@ -98,8 +103,8 @@ platform_pmu_handle_irq_received(void)
 		CPULOCAL(pmu_irq_active) = true;
 		trigger_platform_pmu_counter_overflow_event();
 
-		//  Leave the IRQ active until the guest has cleared the
-		//  corresponding overflow flag.
+		// Leave the IRQ active until the guest has cleared the
+		// corresponding overflow flag.
 		deactivate = false;
 	} else {
 		TRACE(DEBUG, INFO, "Spurious PMU IRQ");

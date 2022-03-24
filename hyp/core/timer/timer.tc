@@ -18,3 +18,7 @@ define timer_queue structure {
 	list		structure list;
 	lock		structure spinlock;
 };
+
+extend boot_env_data structure {
+	timer_freq	uint64;
+};

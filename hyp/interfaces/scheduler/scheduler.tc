@@ -9,6 +9,12 @@ define priority_t public newtype uint32;
 define scheduler_block enumeration {
 };
 
+define scheduler_block_properties bitfield<32> {
+	// Scheduler must respect block flag even
+	// if the thread has been killed.
+	auto	non_killable	bool;
+};
+
 define scheduler_variant public enumeration(explicit) {
 	trivial = 0x0;
 	fprr = 0x1;
@@ -21,4 +27,22 @@ extend thread object module scheduler {
 extend thread_create structure module scheduler {
 	affinity type cpu_index_t;
 	affinity_valid bool;
+};
+
+extend cap_rights_thread bitfield {
+	4	yield_to	bool;
+};
+
+define scheduler_yield_control public bitfield<32> {
+	15:0		hint		enumeration scheduler_yield_hint;
+	30:16		unknown=0;
+	// Implementation defined scheduler hints set impl_def
+	31		impl_def	bool;
+};
+
+// Standard yield hints
+define scheduler_yield_hint public enumeration(explicit) {
+	yield		= 0x0;		// generic yield
+	yield_to_thread	= 0x1;		// yield to target thread
+	yield_lower	= 0x2;		// yield to lower priority
 };

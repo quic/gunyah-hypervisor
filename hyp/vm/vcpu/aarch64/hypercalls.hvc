@@ -34,6 +34,13 @@ define vcpu_poweroff hypercall {
 	error		output enumeration error;
 };
 
+define vcpu_kill hypercall {
+	call_num	0x3a;
+	cap_id		input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
 define vcpu_set_priority hypercall {
 	call_num	0x46;
 	cap_id		input type cap_id_t;

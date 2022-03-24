@@ -9,6 +9,9 @@ subscribe power_cpu_online
 
 subscribe power_cpu_suspend(may_poweroff)
 	unwinder(may_poweroff)
+	require_preempt_disabled
 
 subscribe power_cpu_resume(was_poweroff)
+	require_preempt_disabled
+
 #endif

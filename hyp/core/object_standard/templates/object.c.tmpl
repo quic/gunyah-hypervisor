@@ -33,7 +33,7 @@ object_get_${o}_safe(${o}_t *${o})
 }
 
 static void NOINLINE
-_object_put_${o}(${o}_t *${o})
+object_free_${o}(${o}_t *${o})
 {
 	object_state_t old_state = atomic_exchange_explicit(
 		&${o}->header.state, OBJECT_STATE_DESTROYING,
@@ -48,7 +48,7 @@ void
 object_put_${o}(${o}_t *${o})
 {
 	if (compiler_unexpected(refcount_put(&${o}->header.refcount))) {
-		_object_put_${o}(${o});
+		object_free_${o}(${o});
 	}
 }
 

@@ -21,6 +21,7 @@ import logging
 import sys
 import inspect
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,10 @@ def main():
                       type=argparse.FileType('w', encoding='utf-8'))
     args.add_argument("-D", dest='defines', help="Define config variable",
                       action=DefineAction)
+    args.add_argument("-imacros",
+                      type=argparse.FileType('r', encoding='utf-8'),
+                      help="parse imacros CPP file",
+                      default=None)
     args.add_argument("-a", dest='archs', help="Define architecture name",
                       action='append')
     args.add_argument("-f", "--formatter",
@@ -70,8 +75,34 @@ def main():
 
     options = args.parse_args()
 
+    defines = {}
+
+    if options.defines:
+        defines.update(options.defines)
+
+    if options.imacros:
+        d = re.compile(r'#define (?P<def>\w+)(\s+\"?(?P<val>[\w0-9\ ]+)\"?)?')
+        for line in options.imacros.readlines():
+            match = d.search(line)
+            define = match.group('def')
+            val = match.group('val')
+            try:
+                try:
+                    val = int(val.rstrip('uU'), 0)
+                except TypeError:
+                    pass
+                except AttributeError:
+                    pass
+            except ValueError:
+                val = True
+
+            if define in defines:
+                raise Exception("multiply defined: {}\n", define)
+
+            defines[define] = val
+
     output = str(Template(file=options.template,
-                          searchList=(options.defines,
+                          searchList=(defines,
                                       {'arch_list': options.archs})))
 
     if options.formatter:
@@ -79,7 +110,7 @@ def main():
                              stdout=subprocess.PIPE)
         output = ret.stdout.decode("utf-8")
         if ret.returncode != 0:
-            raise Exception("failed to format output:\n ", ret.stderr)
+            raise Exception("failed to format output:\n", ret.stderr)
 
     if options.deps is not None:
         deps = set()
@@ -94,6 +125,10 @@ def main():
             if f.startswith('../'):
                 continue
             deps.add(f)
+        deps.add(options.template.name)
+        if options.imacros:
+            deps.add(options.imacros.name)
+
         options.deps.write(options.output.name + ' : ')
         options.deps.write(' '.join(sorted(deps)))
         options.deps.write('\n')

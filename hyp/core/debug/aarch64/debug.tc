@@ -18,7 +18,7 @@ define OSLSR_EL1_OSLM enumeration {
 };
 
 define OSLSR_EL1 bitfield<64> {
-	0,3	oslm	enumeration OSLSR_EL1_OSLM;
+	3,0	oslm	enumeration OSLSR_EL1_OSLM;
 	1	oslk	bool;
 	2	nTT	bool(const) = 0;
 	63:4	unknown=0;

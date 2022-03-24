@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module memextent
+
+#if defined(UNIT_TESTS)
+
+subscribe tests_init
+	handler tests_memextent_init()
+
+subscribe tests_start
+	handler tests_memextent()
+
+#endif

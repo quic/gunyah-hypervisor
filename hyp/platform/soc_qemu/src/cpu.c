@@ -62,11 +62,11 @@ error_t
 platform_cpu_on(cpu_index_t cpu)
 {
 	psci_mpidr_t mpidr  = platform_cpu_index_to_mpidr(cpu);
-	thread_t *   thread = idle_thread_for(cpu);
+	thread_t	 *thread = idle_thread_for(cpu);
 	uintptr_t    entry_virt =
-		CPULOCAL_BY_INDEX(cpu_started, cpu)
-			? (uintptr_t)&soc_qemu_entry_warm
-			: (uintptr_t)&soc_qemu_entry_cold_secondary;
+		   CPULOCAL_BY_INDEX(cpu_started, cpu)
+			   ? (uintptr_t)&soc_qemu_entry_warm
+			   : (uintptr_t)&soc_qemu_entry_cold_secondary;
 	return psci_smc_cpu_on(mpidr,
 			       partition_virt_to_phys(partition_get_private(),
 						      entry_virt),
@@ -131,9 +131,9 @@ platform_cpu_suspend(psci_suspend_powerstate_t power_state)
 	ret = thread_freeze(psci_smc_cpu_suspend_arg,
 			    psci_suspend_powerstate_raw(power_state), ~0U);
 
-	return (ret == 0U) ? bool_result_ok(false)
-			   : (ret == ~0U) ? bool_result_ok(true)
-					  : bool_result_error((error_t)ret);
+	return (ret == 0U)    ? bool_result_ok(false)
+	       : (ret == ~0U) ? bool_result_ok(true)
+			      : bool_result_error((error_t)ret);
 }
 
 error_t
@@ -167,9 +167,9 @@ platform_cpu_default_suspend(void)
 	assert(idle_is_current());
 	ret = thread_freeze(psci_smc_cpu_default_suspend_arg, 0U, ~0U);
 
-	return (ret == 0U) ? bool_result_ok(false)
-			   : (ret == ~0U) ? bool_result_ok(true)
-					  : bool_result_error((error_t)ret);
+	return (ret == 0U)    ? bool_result_ok(false)
+	       : (ret == ~0U) ? bool_result_ok(true)
+			      : bool_result_error((error_t)ret);
 }
 #endif
 

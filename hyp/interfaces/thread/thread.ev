@@ -109,3 +109,27 @@ event thread_entry_from_user
 // because an exception or hypercall has caused the context to be reset.
 event thread_exit_to_user
 	param reason: thread_entry_reason_t
+
+// Return the address to map the thread's kernel stack at.
+//
+// This is called during thread activation. The thread's stack will be mapped
+// at the returned address, and used at this location while the thread is
+// running. The base address must be aligned to THREAD_STACK_MAP_ALIGN, and
+// handlers must ensure there are sufficient guard pages between each mapping.
+selector_event thread_get_stack_base
+	selector kind: thread_kind_t
+	param thread: thread_t *
+	return: uintptr_t = 0
+
+// Facilitate a thread's exit after it has been killed.
+//
+// This event is triggered upon calling thread_kill(). Handlers can use this
+// event to ensure that it exits in a timely manner.
+event thread_killed
+	param thread: thread_t *
+
+// Handle a thread's exit.
+//
+// This event is triggered for the current thread upon calling thread_exit().
+// It is called with preemption disabled.
+event thread_exited

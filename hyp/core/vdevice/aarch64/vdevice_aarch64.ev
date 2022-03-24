@@ -4,4 +4,4 @@
 
 module vdevice
 
-subscribe vcpu_trap_data_abort_guest(esr, ipa)
+subscribe vcpu_trap_data_abort_guest(esr, ipa, far)

@@ -13,11 +13,14 @@ subscribe object_create_thread
 
 subscribe object_activate_thread
 
-#if defined(HYPERCALLS)
+#if defined(INTERFACE_VCPU)
 subscribe vcpu_activate_thread
 	unwinder scheduler_fprr_handle_object_deactivate_thread(thread)
-	// Run after the platform soc_* handler.
-	priority -10
+
+subscribe vcpu_wakeup
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_expects_wakeup
 #endif
 
 subscribe object_deactivate_thread
@@ -25,19 +28,42 @@ subscribe object_deactivate_thread
 subscribe thread_context_switch_pre
 	unwinder()
 	priority first
+	require_preempt_disabled
 
 subscribe thread_context_switch_post
 	priority last
+	require_preempt_disabled
 
 subscribe ipi_received[IPI_REASON_RESCHEDULE]
 	handler scheduler_fprr_handle_ipi_reschedule()
 
 subscribe timer_action[TIMER_ACTION_RESCHEDULE]
-	handler scheduler_fppr_handle_timer_reschedule()
+	handler scheduler_fprr_handle_timer_reschedule()
+	require_preempt_disabled
 
 subscribe rcu_update[RCU_UPDATE_CLASS_AFFINITY_CHANGED]
-	handler scheduler_fppr_handle_affinity_change_update(entry)
+	handler scheduler_fprr_handle_affinity_change_update(entry)
 
-#if !defined(UNIT_TESTS)
-subscribe vcpu_idle_fastpath
+subscribe thread_killed
+	// Run last so other handlers can prepare for the thread
+	// running with block flags and other state ignored.
+	priority last
+
+subscribe thread_exited
+	require_preempt_disabled
+
+subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_AFFINITY_CHANGED]
+
+#if defined(UNIT_TESTS)
+subscribe tests_init
+	handler tests_scheduler_init()
+
+subscribe tests_start
+	handler tests_scheduler_start()
+
+subscribe thread_get_entry_fn[THREAD_KIND_SCHED_TEST]
+	handler sched_test_get_entry_fn
+
+subscribe thread_get_stack_base[THREAD_KIND_SCHED_TEST]
+	handler sched_test_get_stack_base
 #endif

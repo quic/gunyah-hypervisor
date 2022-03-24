@@ -16,8 +16,16 @@
     #set $hypcall = $hypcall_dict[$hypcall_num]
     $type_signature($hypcall) {
     #set has_pointer = False
+    #set outregs=[]
+    #for $out_reg, _ in $hypcall.outputs
+        #set outregs+=[$out_reg]
+    #end for
     #for $in_reg, $input in $hypcall.inputs
-        const register uint${input.size * 8}_t#slurp
+        #if in_reg in outregs
+        const
+        #end if
+#slurp
+        register uint${input.size * 8}_t#slurp
         _in_$in_reg __asm__("$in_reg") = #slurp
         #if $input.ignore
         ${hex(input.default)}U;
@@ -43,13 +51,21 @@
         $sep"=r"(_out_$out_reg) #slurp
         #set sep = ', '
     #end for
+    #for $in_reg, _ in $hypcall.inputs
+	#if in_reg not in outregs
+        ${sep}"+r"(_in_$in_reg) #slurp
+        #set sep = ', '
+        #end if
+    #end for
         : #slurp
     #set sep = ''
     #for $in_reg, _ in $hypcall.inputs
-        $sep"r"(_in_$in_reg) #slurp
+	#if in_reg in outregs
+        ${sep}"r"(_in_$in_reg) #slurp
         #set sep = ', '
+        #end if
     #end for
-    : ${', '.join('"{:s}"'.format(c) for c in sorted($hypcall.clobbers))}
+    : ${', '.join('"{:s}"'.format(c) for c in sorted($hypcall.clobbers, key=lambda x: int(x[1:])))}
 #if $has_pointer
     , "memory"
 #end if

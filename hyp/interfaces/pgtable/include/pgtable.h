@@ -37,6 +37,11 @@
 // call _inter-thread happens before_ (as defined by C18), or for any call
 // to lookup() or lookup_range() that completes after an RCU grace period has
 // elapsed after the commit function returns.
+//
+// In general, any function in this file that returns error_t or bool will
+// validate its arguments and fail with an error code or false result if
+// they are invalid. Any function that returns void will panic on invalid
+// inputs.
 
 //
 // Hypervisor page table management.
@@ -51,14 +56,14 @@
 // should only be permitted to access the mapping on behalf of a VM, and will
 // take specific action to enable and disable such accesses (e.g. clearing and
 // setting PAN on ARMv8.1). Not all architectures support this; a different
-// technique must be used for useracces on those that do not.
+// technique must be used for useraccess on those that do not.
 //
 
 // Returns false if the specified address is unmapped.
 bool
 pgtable_hyp_lookup(uintptr_t virt, paddr_t *mapped_base, size_t *mapped_size,
 		   pgtable_hyp_memtype_t *mapped_memtype,
-		   pgtable_access_t *	  mapped_access);
+		   pgtable_access_t	    *mapped_access);
 
 // Returns false if there is no mapping in the specified range. If a mapping
 // is found and can be efficiently determined to be the last mapping in the
@@ -68,10 +73,10 @@ pgtable_hyp_lookup(uintptr_t virt, paddr_t *mapped_base, size_t *mapped_size,
 bool
 pgtable_hyp_lookup_range(uintptr_t virt_base, size_t virt_size,
 			 uintptr_t *mapped_virt, paddr_t *mapped_phys,
-			 size_t *		mapped_size,
+			 size_t		*mapped_size,
 			 pgtable_hyp_memtype_t *mapped_memtype,
-			 pgtable_access_t *	mapped_access,
-			 bool *			remainder_unmapped);
+			 pgtable_access_t	  *mapped_access,
+			 bool		      *remainder_unmapped);
 
 // Creates page table levels owned by the given partition which are able to
 // directly map entries covering the given size, but don't actually map
@@ -80,20 +85,25 @@ pgtable_hyp_lookup_range(uintptr_t virt_base, size_t virt_size,
 error_t
 pgtable_hyp_preallocate(partition_t *partition, uintptr_t virt, size_t size);
 
+extern opaque_lock_t pgtable_hyp_map_lock;
+
 // Flag the start of one of more map or unmap calls.
 void
-pgtable_hyp_start(void);
+pgtable_hyp_start(void) ACQUIRE_LOCK(pgtable_hyp_map_lock);
 
 // Creates a new mapping, assuming no existing mappings in the range. May
 // use the given partition to allocate levels if needed.
 error_t
 pgtable_hyp_map(partition_t *partition, uintptr_t virt, size_t size,
 		paddr_t phys, pgtable_hyp_memtype_t memtype,
-		pgtable_access_t access, vmsa_shareability_t shareability);
+		pgtable_access_t access, vmsa_shareability_t shareability)
+	REQUIRE_LOCK(pgtable_hyp_map_lock);
+
 error_t
 pgtable_hyp_remap(partition_t *partition, uintptr_t virt, size_t size,
 		  paddr_t phys, pgtable_hyp_memtype_t memtype,
-		  pgtable_access_t access, vmsa_shareability_t shareability);
+		  pgtable_access_t access, vmsa_shareability_t shareability)
+	REQUIRE_LOCK(pgtable_hyp_map_lock);
 
 // Removes all mappings in the given range. Frees levels into the specified
 // partition's allocators, but only if they cannot be used to create mappings
@@ -102,13 +112,13 @@ pgtable_hyp_remap(partition_t *partition, uintptr_t virt, size_t size,
 // call to the specified partition.
 void
 pgtable_hyp_unmap(partition_t *partition, uintptr_t virt, size_t size,
-		  size_t preserved_prealloc);
+		  size_t preserved_prealloc) REQUIRE_LOCK(pgtable_hyp_map_lock);
 #define PGTABLE_HYP_UNMAP_PRESERVE_ALL	0U
 #define PGTABLE_HYP_UNMAP_PRESERVE_NONE util_bit((sizeof(uintptr_t) * 8U) - 1U)
 
 // Ensure that all previous hypervisor map and unmap calls are complete.
 void
-pgtable_hyp_commit(void);
+pgtable_hyp_commit(void) RELEASE_LOCK(pgtable_hyp_map_lock);
 
 //
 // VM page table management.
@@ -140,13 +150,16 @@ pgtable_vm_lookup_range(pgtable_vm_t *pgtable, vmaddr_t virt_base,
 			size_t virt_size, vmaddr_t *mapped_virt,
 			paddr_t *mapped_phys, size_t *mapped_size,
 			pgtable_vm_memtype_t *mapped_memtype,
-			pgtable_access_t *    mapped_vm_kernel_access,
-			pgtable_access_t *    mapped_vm_user_access,
-			bool *		      remainder_unmapped);
+			pgtable_access_t	 *mapped_vm_kernel_access,
+			pgtable_access_t	 *mapped_vm_user_access,
+			bool		     *remainder_unmapped);
+
+extern opaque_lock_t pgtable_vm_map_lock;
 
 // Flag the start of one of more map or unmap calls.
 void
-pgtable_vm_start(pgtable_vm_t *pgtable);
+pgtable_vm_start(pgtable_vm_t *pgtable) ACQUIRE_LOCK(pgtable)
+	ACQUIRE_LOCK(pgtable_vm_map_lock);
 
 // Creates a new mapping. If try_map is set, it returns an error if any existing
 // mappings are present in the range. If try_map is false, any existing mappings
@@ -156,23 +169,27 @@ error_t
 pgtable_vm_map(partition_t *partition, pgtable_vm_t *pgtable, vmaddr_t virt,
 	       size_t size, paddr_t phys, pgtable_vm_memtype_t memtype,
 	       pgtable_access_t vm_kernel_access,
-	       pgtable_access_t vm_user_access, bool try_map);
+	       pgtable_access_t vm_user_access, bool try_map)
+	REQUIRE_LOCK(pgtable) REQUIRE_LOCK(pgtable_vm_map_lock);
 
 // Removes all mappings in the given range. pgtable_vm_start() must have been
 // called before this call.
 void
 pgtable_vm_unmap(partition_t *partition, pgtable_vm_t *pgtable, vmaddr_t virt,
-		 size_t size);
+		 size_t size) REQUIRE_LOCK(pgtable)
+	REQUIRE_LOCK(pgtable_vm_map_lock);
 
 // Remove only mappings that match the physical address within the specified
 // range
 void
 pgtable_vm_unmap_matching(partition_t *partition, pgtable_vm_t *pgtable,
-			  vmaddr_t virt, paddr_t phys, size_t size);
+			  vmaddr_t virt, paddr_t phys, size_t size)
+	REQUIRE_LOCK(pgtable) REQUIRE_LOCK(pgtable_vm_map_lock);
 
 // Ensure that all previous VM map and unmap calls are complete.
 void
-pgtable_vm_commit(pgtable_vm_t *pgtable);
+pgtable_vm_commit(pgtable_vm_t *pgtable) RELEASE_LOCK(pgtable)
+	RELEASE_LOCK(pgtable_vm_map_lock);
 
 // Set VTCR and VTTBR registers with page table vtcr and vttbr bitfields values.
 void

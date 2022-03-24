@@ -47,3 +47,13 @@
 .endif
 	add	\reg, \reg, :tprel_lo12_nc:\sym
 .endm
+
+// Branch target identification helpers
+#if defined(ARCH_ARM_8_5_BTI)
+#define BRANCH_TARGET(type, ...)	\
+	bti	type;			\
+	__VA_ARGS__
+#else
+#define BRANCH_TARGET(type, ...)	\
+	__VA_ARGS__
+#endif

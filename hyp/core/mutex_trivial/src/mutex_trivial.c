@@ -22,7 +22,7 @@ mutex_init(mutex_t *lock)
 }
 
 void
-mutex_acquire(mutex_t *lock)
+mutex_acquire(mutex_t *lock) LOCK_IMPL
 {
 	trigger_mutex_acquire_event(lock);
 	spinlock_acquire(&lock->lock);
@@ -30,7 +30,7 @@ mutex_acquire(mutex_t *lock)
 }
 
 bool
-mutex_trylock(mutex_t *lock)
+mutex_trylock(mutex_t *lock) LOCK_IMPL
 {
 	trigger_mutex_acquire_event(lock);
 	if (!spinlock_trylock(&lock->lock)) {
@@ -42,7 +42,7 @@ mutex_trylock(mutex_t *lock)
 }
 
 void
-mutex_release(mutex_t *lock)
+mutex_release(mutex_t *lock) LOCK_IMPL
 {
 	trigger_mutex_release_event(lock);
 	spinlock_release(&lock->lock);

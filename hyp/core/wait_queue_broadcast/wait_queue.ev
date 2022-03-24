@@ -1,0 +1,8 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module wait_queue_broadcast
+
+subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_WAIT_QUEUE]
+	handler wait_queue_handle_scheduler_get_block_properties

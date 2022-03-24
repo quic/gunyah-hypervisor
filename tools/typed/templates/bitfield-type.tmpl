@@ -6,7 +6,35 @@
 # SPDX-License-Identifier: BSD-3-Clause
 *#
 
+#set unit_postfix=''
+#if $unit_cnt > 1
+#set unit_postfix=' x{:d}'.format($unit_cnt)
+#end if
+// Bitfield: $type_name <${unit_type}${unit_postfix}>
 typedef struct ${type_name} {
+#set decs = []
+#for $d in $declarations:
+#if $d.field_maps
+#set decs+=[$d]
+#end if
+#end for
+#for $d in sorted($decs, key=lambda x: x.field_maps[0]):
+#if $d.is_ignore
+#continue
+#end if
+#set sep=''
+#set maps=''
+#for $map in sorted($d.field_maps, key=lambda x: -x.field_bit)
+#set maps+=$sep
+#if $map.length == 1
+#set maps+='{:d}'.format($map.mapped_bit)
+#else
+#set maps+='{:d}:{:d}'.format($map.mapped_bit+$map.length-1,$map.mapped_bit)
+#end if
+#set sep=','
+#end for
+	// ${'{:9s}'.format($maps)} $d.compound_type.gen_declaration($d.field_name)
+#end for
 	${unit_type} bf[${unit_cnt}];
 } ${type_name}_t;
 
@@ -33,118 +61,87 @@ val_$i#slurp
 } }
 
 #if $unit_cnt == 1
-static inline ${unit_type}
-${type_name}_raw(${type_name}_t bit_field) {
-	return bit_field.bf[0];
-}
+${unit_type}
+${type_name}_raw(${type_name}_t bit_field);
 
-static inline _Atomic ${unit_type} *
-${type_name}_atomic_ptr_raw(_Atomic ${type_name}_t *ptr) {
-	return (_Atomic ${unit_type} *)&((${type_name}_t *)ptr)->bf[0];
-}
+_Atomic ${unit_type} *
+${type_name}_atomic_ptr_raw(_Atomic ${type_name}_t *ptr);
 
 #end if
-static inline void
-${type_name}_init(${type_name}_t *bit_field) {
-	*bit_field = ${type_name}_default();
-}
+void
+${type_name}_init(${type_name}_t *bit_field);
 
-static inline bool
-${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2) {
-    return#slurp
-#set trivial = True
-#set sep = ''
-#for i in range($unit_cnt)
-#if $compare_masks[$i] != 0
-#set mask = hex($compare_masks[$i])
-#set trivial = False
-	$sep ((b1.bf[$i] & ${mask}U) == (b2.bf[$i] & ${mask}U))
-#set sep = '&&'
-#end if
-#end for
-#if trivial
-	true
-#end if
-    ;
-#if trivial
-	(void)b1;
-	(void)b2;
-#end if
-}
-#if $all_fields_boolean
+${type_name}_t
+${type_name}_clean(${type_name}_t val);
 
-static inline ${type_name}_t
-${type_name}_union(${type_name}_t b1, ${type_name}_t b2)
-{
-	return (${type_name}_t){ .bf = { #slurp
-#for i in range($unit_cnt)
-		b1.bf[$i] | b2.bf[$i],
-#end for
-	} };
-}
+bool
+${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2);
 
-static inline ${type_name}_t
-${type_name}_intersection(${type_name}_t b1, ${type_name}_t b2)
-{
-	return (${type_name}_t){ .bf = { #slurp
-#for i in range($unit_cnt)
-		b1.bf[$i] & b2.bf[$i],
-#end for
-	} };
-}
+#if $has_set_ops
+// Union of boolean fields of two ${type_name}_t values
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are preserved from the left-hand argument, and
+// discarded from the right-hand argument.
+#end if
+${type_name}_t
+${type_name}_union(${type_name}_t b1, ${type_name}_t b2);
 
-static inline ${type_name}_t
-${type_name}_inverse(${type_name}_t b)
-{
-	return (${type_name}_t){ .bf = { #slurp
-#set trivial = True
-#for i in range($unit_cnt)
-#if $compare_masks[$i] != 0
-#set mask = hex($compare_masks[$i])
-#set trivial = False
-	[$i] = ~b.bf[$i] & ${mask}U,
+// Intersection of boolean fields of two ${type_name}_t values
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are preserved from the left-hand argument, and
+// discarded from the right-hand argument.
 #end if
-#end for
-#if trivial
-	0
-#end if
-	} };
-#if trivial
-	(void)b;
-#end if
-}
+${type_name}_t
+${type_name}_intersection(${type_name}_t b1, ${type_name}_t b2);
 
-static inline ${type_name}_t
-${type_name}_difference(${type_name}_t b1, ${type_name}_t b2)
-{
-	${type_name}_t not_b2 = ${type_name}_inverse(b2);
-	return ${type_name}_intersection(b1, not_b2);
-}
+// Invert all boolean fields in a ${type_name}_t value
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are preserved.
+#end if
+${type_name}_t
+${type_name}_inverse(${type_name}_t b);
+
+// Set difference of boolean fields of two ${type_name}_t values
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are preserved from the left-hand argument, and
+// discarded from the right-hand argument.
+#end if
+${type_name}_t
+${type_name}_difference(${type_name}_t b1, ${type_name}_t b2);
 #if $unit_cnt == 1
+#set mask = hex($boolean_masks[0])
 
-static inline ${type_name}_t
-${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
-{
-	_Atomic ${unit_type} *bf = (_Atomic ${unit_type} *) & ((${type_name}_t *) b1)->bf[0];
-	return (${type_name}_t){ .bf = { #slurp
-		atomic_fetch_or_explicit(bf, b2.bf[0], order)
-	} };
-}
+// Atomically replace a ${type_name}_t value with the union of its boolean
+// fields with a given ${type_name}_t value, and return the previous value.
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are not modified.
+#end if
+${type_name}_t
+${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order);
 
-static inline ${type_name}_t
-${type_name}_atomic_intersection(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
-{
-	_Atomic ${unit_type} *bf = (_Atomic ${unit_type} *) & ((${type_name}_t *) b1)->bf[0];
-	return (${type_name}_t){ .bf = { #slurp
-		atomic_fetch_and_explicit(bf, b2.bf[0], order)
-	} };
-}
+// Atomically replace a ${type_name}_t value with the intersection of its
+// boolean fields with a given ${type_name}_t value, and return the previous
+// value.
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are not modified.
+#end if
+${type_name}_t
+${type_name}_atomic_intersection(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order);
 
-static inline ${type_name}_t
-${type_name}_atomic_difference(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
-{
-	${type_name}_t not_b2 = ${type_name}_inverse(b2);
-	return ${type_name}_atomic_intersection(b1, not_b2, order);
-}
+// Atomically replace a ${type_name}_t value with the set difference of its
+// boolean fields and a given ${type_name}_t value, and return the previous
+// value.
+#if not $all_fields_boolean
+//
+// Note: non-boolean fields are not modified.
+#end if
+${type_name}_t
+${type_name}_atomic_difference(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order);
 #end if
 #end if

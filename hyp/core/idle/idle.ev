@@ -11,11 +11,8 @@ subscribe boot_hypervisor_start
 
 subscribe thread_get_entry_fn[THREAD_KIND_IDLE]
 
+subscribe thread_get_stack_base[THREAD_KIND_IDLE]
+
 subscribe idle_start
 
 subscribe boot_cold_init
-
-#if !defined(UNIT_TESTS)
-subscribe vcpu_idle_fastpath
-	priority last
-#endif

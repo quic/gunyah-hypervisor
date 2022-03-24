@@ -19,5 +19,9 @@ ${sep}${p.type}${space}${p.name}#slurp
 #else
 void#slurp
 #end if
-);
+)#slurp
+#for l in $e.lock_opts
+ ${l.action.upper()}_${l.kind.upper()}(${l.lock})#slurp
+#end for
+;
 #end for

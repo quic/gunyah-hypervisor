@@ -5,6 +5,7 @@
 #include <hypconstants.h>
 
 #include <asm/asm_defs.inc>
+#include <asm/panic.inc>
 
 #include "vectors_el2.inc"
 #include "vectors_vcpu.inc"
@@ -14,10 +15,13 @@
 
 // Returning from a guest exception
 function vcpu_exception_return, align=32
+	BRANCH_TARGET(c,)
 	thread_get_self	x30, offset=OFS_THREAD_VCPU_REGS_GPR
 
 	// Load ELR_EL2, SPSR_EL2
 	ldp	x27, x28, [x30, OFS_VCPU_GPR_PC]
+
+	vcpu_pauth_exit_thread x30, x0, x1, x28, x2
 
 	// Restore the general purpose registers
 	ldp	x0, x1, [x30, OFS_VCPU_GPR_X(0)]
@@ -65,6 +69,8 @@ function_chain vcpu_hypercall_return_sanitize_x2, vcpu_hypercall_return_sanitize
 	// Restore ELR_EL2, SPSR_EL2
 	ldp	x9, x10, [sp], #16
 
+	vcpu_pauth_exit x19, x20, x21, x10, x22
+
 	// Sanitise the AAPCS64-defined caller-saved registers to prevent
 	// information leakage from compiled hypervisor code to the guest.
 	// X30 is also caller-saved but was saved and restored above, as was
@@ -101,3 +107,9 @@ function_chain vcpu_hypercall_return_sanitize_x2, vcpu_hypercall_return_sanitize
 
 	eret
 function_end vcpu_hypercall_return_sanitize_x8
+
+#if defined(ARCH_ARM_8_3_PAUTH)
+function vcpu_pauth_exit_failed
+	panic	"Invalid SPSR_EL2.M in VCPU exception return"
+function_end vcpu_pauth_exit_failed
+#endif

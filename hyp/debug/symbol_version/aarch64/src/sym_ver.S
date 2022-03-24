@@ -12,7 +12,7 @@
 	adrp x0, hyp_sym_version_pointer
 
 // We use a random value as the symbols version, put it directly in a symbol and
-// in memory. The external debugger reads the values of this symbol and the memory.
-// If they don't match it means the user has loaded the wrong symbols.
+// in memory. The external debugger reads the values of this symbol and the
+// memory. If they don't match it means the user has loaded the wrong symbols.
 .equ	hyp_sym_version, HYP_SYM_VERSION
 const64 hyp_sym_version_pointer, HYP_SYM_VERSION

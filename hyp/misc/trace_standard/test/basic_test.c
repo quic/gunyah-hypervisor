@@ -83,7 +83,7 @@ void *
 thread_run(void *val)
 {
 	int	      i		= 0;
-	int *	      tid	= (int *)val;
+	int	    *tid	= (int *)val;
 	trace_class_t class_map = 0L;
 	trace_id_t    id	= 0;
 

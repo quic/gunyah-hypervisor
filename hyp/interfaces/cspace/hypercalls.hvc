@@ -36,3 +36,11 @@ define cspace_attach_thread hypercall {
 	_res0		input uregister;
 	error		output enumeration error;
 };
+
+define cspace_revoke_caps_from hypercall {
+	call_num	0x59;
+	src_cspace	input type cap_id_t;
+	master_cap	input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};

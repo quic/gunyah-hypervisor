@@ -2,6 +2,6 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define mutex structure {
+define mutex structure(lockable) {
 	lock structure spinlock;
 };

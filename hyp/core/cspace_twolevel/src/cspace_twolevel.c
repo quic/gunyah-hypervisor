@@ -254,8 +254,8 @@ cspace_allocate_cap_table(cspace_t *cspace, cap_table_t **table,
 	error_t		  err;
 	void_ptr_result_t ret;
 	index_t		  index;
-	cap_table_t *	  new_table;
-	partition_t *	  partition = cspace->header.partition;
+	cap_table_t	    *new_table;
+	partition_t	    *partition = cspace->header.partition;
 
 	do {
 		if (!bitmap_atomic_ffc(cspace->allocated_tables,
@@ -295,14 +295,14 @@ rcu_update_status_t
 cspace_destroy_cap_table(rcu_entry_t *entry)
 {
 	index_t		    index;
-	cap_table_t *	    table     = cap_table_container_of_rcu_entry(entry);
-	partition_t *	    partition = table->partition;
+	cap_table_t	    *table     = cap_table_container_of_rcu_entry(entry);
+	partition_t	    *partition = table->partition;
 	rcu_update_status_t ret	      = rcu_update_status_default();
 
 	// If called via cspace destroy, there may still
 	// be valid caps which also require destruction.
 	for (; table->cap_count > 0U; table->cap_count--) {
-		cap_t *		 cap;
+		cap_t	      *cap;
 		cap_data_t	 data;
 		object_type_t	 type;
 		object_header_t *header;
@@ -445,7 +445,7 @@ cspace_lookup_object(cspace_t *cspace, cap_id_t cap_id, object_type_t type,
 		     cap_rights_t rights, bool active_only)
 {
 	error_t		    err;
-	cap_t *		    cap;
+	cap_t	      *cap;
 	cap_data_t	    cap_data;
 	object_ptr_result_t ret;
 
@@ -490,9 +490,10 @@ cspace_lookup_object_any(cspace_t *cspace, cap_id_t cap_id,
 			 cap_rights_generic_t rights, object_type_t *type)
 {
 	error_t		    err;
-	cap_t *		    cap;
+	cap_t	      *cap;
 	cap_data_t	    cap_data;
 	object_ptr_result_t ret;
+	object_type_t	    obj_type = OBJECT_TYPE_ANY;
 
 	assert(type != NULL);
 	// Only valid generic object rights may be specified
@@ -507,10 +508,10 @@ cspace_lookup_object_any(cspace_t *cspace, cap_id_t cap_id,
 		goto lookup_object_error;
 	}
 
-	cap_data	       = atomic_load_consume(&cap->data);
-	object_type_t obj_type = cap_info_get_type(&cap_data.info);
-	err = cspace_check_cap_data(cap_data, OBJECT_TYPE_ANY,
-				    cap_rights_generic_raw(rights));
+	cap_data = atomic_load_consume(&cap->data);
+	obj_type = cap_info_get_type(&cap_data.info);
+	err	 = cspace_check_cap_data(cap_data, OBJECT_TYPE_ANY,
+					 cap_rights_generic_raw(rights));
 	if (compiler_unexpected(err != OK)) {
 		ret = object_ptr_result_error(err);
 		goto lookup_object_error;
@@ -519,10 +520,10 @@ cspace_lookup_object_any(cspace_t *cspace, cap_id_t cap_id,
 		ret = object_ptr_result_error(ERROR_CSPACE_CAP_NULL);
 		goto lookup_object_error;
 	}
-	ret   = object_ptr_result_ok(cap_data.object);
-	*type = obj_type;
+	ret = object_ptr_result_ok(cap_data.object);
 
 lookup_object_error:
+	*type = obj_type;
 	rcu_read_finish();
 
 	return ret;
@@ -588,7 +589,7 @@ cspace_create_master_cap(cspace_t *cspace, object_ptr_t object,
 			 object_type_t type)
 {
 	error_t		err;
-	cap_t *		new_cap;
+	cap_t	      *new_cap;
 	cap_data_t	cap_data;
 	cap_id_t	new_cap_id;
 	cap_id_result_t ret;
@@ -630,7 +631,7 @@ cspace_copy_cap(cspace_t *target_cspace, cspace_t *parent_cspace,
 		cap_id_t parent_id, cap_rights_t rights_mask)
 {
 	error_t		 err;
-	cap_t *		 new_cap, *parent_cap;
+	cap_t	      *new_cap, *parent_cap;
 	cap_data_t	 cap_data;
 	cap_id_t	 new_cap_id;
 	object_header_t *header;
@@ -704,7 +705,7 @@ error_t
 cspace_delete_cap(cspace_t *cspace, cap_id_t cap_id)
 {
 	error_t	      err;
-	cap_t *	      cap;
+	cap_t	      *cap;
 	cap_data_t    cap_data, null_cap_data = { 0 };
 	cap_state_t   state;
 	object_type_t type;
@@ -765,7 +766,7 @@ error_t
 cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 {
 	error_t		 err;
-	cap_t *		 master_cap;
+	cap_t	      *master_cap;
 	cap_data_t	 master_cap_data;
 	object_header_t *header;
 
@@ -824,7 +825,7 @@ cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 		// cap must be destroyed before the cspace can be, and
 		// this cannot happen while we have the cap list lock.
 		cspace_t *curr_cspace = cspace_get_cap_table(curr_cap)->cspace;
-		spinlock_acquire(&curr_cspace->revoked_cap_list_lock);
+		spinlock_acquire_nopreempt(&curr_cspace->revoked_cap_list_lock);
 
 		// Child cap data won't change while we hold the locks,
 		// so just atomically store the invalid data.
@@ -832,7 +833,7 @@ cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 		list_delete_node(&header->cap_list, &curr_cap->cap_list_node);
 		list_insert_at_head(&curr_cspace->revoked_cap_list,
 				    &curr_cap->cap_list_node);
-		spinlock_release(&curr_cspace->revoked_cap_list_lock);
+		spinlock_release_nopreempt(&curr_cspace->revoked_cap_list_lock);
 	}
 
 	spinlock_release(&header->cap_list_lock);
@@ -858,4 +859,17 @@ cspace_attach_thread(cspace_t *cspace, thread_t *thread)
 	thread->cspace_cspace = object_get_cspace_additional(cspace);
 
 	return OK;
+}
+
+void
+cspace_twolevel_handle_object_deactivate_thread(thread_t *thread)
+{
+	assert(thread != NULL);
+
+	cspace_t *cspace = thread->cspace_cspace;
+
+	if (cspace != NULL) {
+		object_put_cspace(thread->cspace_cspace);
+		thread->cspace_cspace = NULL;
+	}
 }

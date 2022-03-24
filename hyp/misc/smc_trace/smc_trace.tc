@@ -6,7 +6,7 @@ define SMC_TRACE_REG_MAX constant type count_t = 14;
 
 define smc_trace_entry structure {
 	// Using explicit sized registers rather than a bitfield for debuggers
-	id		uint16;
+	id		enumeration smc_trace_id;
 	pcpu		uint8;
 	vcpu		uint8;
 	vmid		type vmid_t;

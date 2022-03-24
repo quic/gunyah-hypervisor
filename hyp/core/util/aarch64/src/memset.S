@@ -7,6 +7,13 @@
 #include <asm/panic.inc>
 
 
+#if defined(ARCH_ARM_8_5_BTI)
+// Two instructions per jump
+#define JUMP_SHIFT	3
+#else
+#define JUMP_SHIFT	2
+#endif
+
 // memset to zeros of no more than 31 bytes
 function memset_zeros_below32
 	// Assume the target is size-aligned and do the largest stores first.
@@ -58,7 +65,7 @@ function_chain memset_zeros_alignable, memset_zeros_align16
 	cmp	x1, 1 << CPU_DCZVA_BITS
 	and	x2, x3, ((1 << CPU_DCZVA_BITS) - 1)
 
-// If we have less than a DC ZVA block left to copy, don't align up.
+	// If we have less than a DC ZVA block left to copy, don't align up.
 	b.lt	LOCAL(memset_zeros_no_dczva)
 
 	// Align up to the DC ZVA size by calculating a jump into an stp
@@ -68,15 +75,20 @@ function_chain memset_zeros_alignable, memset_zeros_align16
 	adr	x5, 1f
 	sub	x1, x1, x2
 	add	x0, x0, x2
-	sub	x6, x5, x2, lsr #(4 - 2)
+	sub	x5, x5, x2, lsr #(4 - JUMP_SHIFT)
 	cmp	x1, 1 << CPU_DCZVA_BITS
-	br	x6
+	br	x5
+0:
 .equ LOCAL(offset), 16 - (1 << CPU_DCZVA_BITS)
 .rept (1 << (CPU_DCZVA_BITS - 4) - 1)
-	stp	xzr, xzr, [x0, LOCAL(offset)]
+	BRANCH_TARGET(j, stp	xzr, xzr, [x0, LOCAL(offset)])
 .equ LOCAL(offset), LOCAL(offset) + 16
 .endr
 1:
+.if	(. - 0b) != (((1 << (CPU_DCZVA_BITS - 4)) - 1) * (1 << JUMP_SHIFT))
+.error "Jump table error"
+.endif
+	BRANCH_TARGET(j,)
 	b.lt	LOCAL(memset_zeros_no_dczva)
 function_chain memset_zeros_align16, memset_zeros_dczva
 	bic	x2, x1, ((1 << CPU_DCZVA_BITS) - 1)
@@ -92,18 +104,23 @@ function_chain memset_zeros_align16, memset_zeros_dczva
 local memset_zeros_no_dczva:
 	// Less than one DC ZVA block left, so calculate a jump into an stp
 	// sequence based on the number of remaining 16-byte chunks.
-	lsr	x4, x1, 4
+	bic	x4, x1, (1 << 4) - 1
 	adr	x5, 1f
-	sub	x1, x1, x4, lsl 4
-	add	x0, x0, x4, lsl 4
-	sub	x6, x5, x4, lsl 2
-	br	x6
+	sub	x1, x1, x4
+	sub	x5, x5, x4, lsr #(4 - JUMP_SHIFT)
+	add	x0, x0, x4
+	br	x5
+0:
 .equ LOCAL(offset), 16 - (1 << CPU_DCZVA_BITS)
 .rept (1 << (CPU_DCZVA_BITS - 4)) - 1
-	stp	xzr, xzr, [x0, LOCAL(offset)]
+	BRANCH_TARGET(j, stp	xzr, xzr, [x0, LOCAL(offset)])
 .equ LOCAL(offset), LOCAL(offset) + 16
 .endr
 1:
+.if	(. - 0b) != (((1 << (CPU_DCZVA_BITS - 4)) - 1) * (1 << JUMP_SHIFT))
+.error "Jump table error"
+.endif
+	BRANCH_TARGET(j,)
 	// There must be less than 16 bytes left now.
 	cbnz	x1, LOCAL(memset_zeros_below16)
 local return:
@@ -206,21 +223,22 @@ function_chain memset_alignable, memset_align16
 	adr	x5, 1f
 	sub	x2, x2, x4, lsl 4
 	add	x0, x0, x4, lsl 4
-	sub	x6, x5, x4, lsl 2
+	sub	x6, x5, x4, lsl JUMP_SHIFT
 	br	x6
 .equ LOCAL(offset), 0x10 - LOCAL(chunk)
 .rept (LOCAL(chunk) / 0x10) - 1
-	stp	x1, x1, [x0, LOCAL(offset)]
+	BRANCH_TARGET(j, stp	x1, x1, [x0, LOCAL(offset)])
 .equ LOCAL(offset), LOCAL(offset) + 0x10
 .endr
 1:
 	// There must be less than 16 bytes left now.
+	BRANCH_TARGET(j,)
 	cbnz	x2, LOCAL(memset_below16)
 	ret
 function_end memset_align16
 
-// FIXME: Optimize memset_s to perform size, alignment and store zero checks
-// and call optimized functions above.
+// Optimize memset_s to perform size, alignment and store zero checks and call
+// optimized functions above.
 function memset_s
 	cbz	x0, LOCAL(memset_s_null)
 	uxtb	w2, w2

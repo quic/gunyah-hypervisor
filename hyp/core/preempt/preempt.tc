@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define preempt_bits enumeration {
+	count_max = 15;
+	cpu_init;
+	in_interrupt;
+	abort_kernel;
+};

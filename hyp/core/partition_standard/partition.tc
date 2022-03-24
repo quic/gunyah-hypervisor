@@ -2,15 +2,30 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+define PARTITION_NUM_MAPPED_RANGE constant type count_t = 8;
+
 extend object_header structure {
 	partition	pointer object partition;
 };
 
+define partition_mapped_range structure {
+	virt		uintptr;
+	phys		type paddr_t;
+	size		size;
+};
+
 extend partition object {
 	allocator	structure allocator;
-	virt_offset	size;
+	mapped_ranges	array(PARTITION_NUM_MAPPED_RANGE)
+				structure partition_mapped_range;
+	options		bitfield partition_option_flags;
 };
 
 extend cap_rights_partition bitfield {
 	0	object_create	bool;
+};
+
+define partition_option_flags bitfield<64> {
+	0	privileged	bool = 0;
+	others	unknown = 0;
 };

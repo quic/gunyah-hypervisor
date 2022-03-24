@@ -9,9 +9,13 @@
 
 #include <compiler.h>
 #include <log.h>
+#include <preempt.h>
 #include <thread.h>
 #include <trace.h>
 #include <vcpu.h>
+#if defined(ARCH_ARM_8_5_MEMTAG)
+#include <arm_mte.h>
+#endif
 
 #include <asm/sysregs.h>
 #include <asm/system_registers.h>
@@ -24,7 +28,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 {
 	register_t val	   = 0U;
 	bool	   handled = true;
-	thread_t * thread  = thread_get_self();
+	thread_t	 *thread  = thread_get_self();
 
 	switch (ESR_EL2_ISS_MSR_MRS_raw(iss)) {
 	// Trapped with HCR_EL2.TID1
@@ -39,7 +43,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	case ISS_MRS_MSR_ID_AA64PFR0_EL1: {
 		ID_AA64PFR0_EL1_t pfr0 = ID_AA64PFR0_EL1_default();
 		ID_AA64PFR0_EL1_set_EL0(&pfr0, 2U);
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 		ID_AA64PFR0_EL1_set_EL1(&pfr0, 2U);
 #else
 		ID_AA64PFR0_EL1_set_EL1(&pfr0, 1U);
@@ -51,20 +55,32 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_AA64PFR0_EL1_set_AdvSIMD(&pfr0, 1U);
 #endif
 		ID_AA64PFR0_EL1_set_GIC(&pfr0, 1U);
+
+		if (vcpu_option_flags_get_ras_error_handler(
+			    &thread->vcpu_options)) {
+#if defined(ARCH_ARM_8_4_RAS)
+			ID_AA64PFR0_EL1_set_RAS(&pfr0, 2);
+#elif defined(ARCH_ARM_8_2_RAS)
+			ID_AA64PFR0_EL1_set_RAS(&pfr0, 1);
+#else
+			// Nothing to do, the field is already 0
+#endif
+		}
+
 #if defined(ARCH_ARM_8_4_SECEL2)
 		ID_AA64PFR0_EL1_set_SEL2(&pfr0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_DIT)
+#if defined(ARCH_ARM_8_4_DIT)
 		ID_AA64PFR0_EL1_set_DIT(&pfr0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_CSV2)
+#if defined(ARCH_ARM_8_0_CSV2)
 #if defined(ARM_ARM_8_0_CSV2_SCXTNUM)
 		ID_AA64PFR0_EL1_set_CSV2(&pfr0, 2U);
 #else
 		ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
 #endif
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_CSV3)
+#if defined(ARCH_ARM_8_0_CSV3)
 		ID_AA64PFR0_EL1_set_CSV3(&pfr0, 1U);
 #endif
 		val = ID_AA64PFR0_EL1_raw(pfr0);
@@ -72,15 +88,22 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	}
 	case ISS_MRS_MSR_ID_AA64PFR1_EL1: {
 		ID_AA64PFR1_EL1_t pfr1 = ID_AA64PFR1_EL1_default();
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_8_5_BTI)
 		ID_AA64PFR1_EL1_set_BT(&pfr1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_SSBS)
+#if defined(ARCH_ARM_8_0_SSBS)
 #if defined(ARCH_ARM_8_0_SSBS_MSR_MRS)
 		ID_AA64PFR1_EL1_set_SSBS(&pfr1, 2U);
 #else
 		ID_AA64PFR1_EL1_set_SSBS(&pfr1, 1U);
 #endif
+#endif
+#if defined(ARCH_ARM_8_5_MEMTAG)
+		if (arm_mte_is_allowed()) {
+			ID_AA64PFR1_EL1_t hw_pfr1 =
+				register_ID_AA64PFR1_EL1_read();
+			ID_AA64PFR1_EL1_copy_MTE(&pfr1, &hw_pfr1);
+		}
 #endif
 		val = ID_AA64PFR1_EL1_raw(pfr1);
 		break;
@@ -101,10 +124,10 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_AA64ISAR0_EL1_set_SHA2(&isar0, 1U);
 #endif
 		ID_AA64ISAR0_EL1_set_CRC32(&isar0, 1U);
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_8_1_VHE)
 		ID_AA64ISAR0_EL1_set_Atomic(&isar0, 2U);
 #endif
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_RDMA)
+#if defined(ARCH_ARM_8_1_RDMA)
 		ID_AA64ISAR0_EL1_set_RDM(&isar0, 1U);
 #endif
 #if defined(ARCH_ARM_8_2_SHA)
@@ -114,19 +137,18 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_AA64ISAR0_EL1_set_SM3(&isar0, 1U);
 		ID_AA64ISAR0_EL1_set_SM4(&isar0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_2_DOTPROD)
+#if defined(ARCH_ARM_8_2_DOTPROD)
 		ID_AA64ISAR0_EL1_set_DP(&isar0, 1U);
 #endif
-#if defined(ARCH_ARM_8_2_FP16) &&                                              \
-	((ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_2_FHM))
+#if defined(ARCH_ARM_8_2_FHM)
 		ID_AA64ISAR0_EL1_set_FHM(&isar0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_5_CONDM)
+#if defined(ARCH_ARM_8_5_CONDM)
 		ID_AA64ISAR0_EL1_set_TS(&isar0, 2U);
-#elif (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_CONDM)
+#elif defined(ARCH_ARM_8_4_CONDM)
 		ID_AA64ISAR0_EL1_set_TS(&isar0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_TLBI)
+#if defined(ARCH_ARM_8_4_TLBI)
 		ID_AA64ISAR0_EL1_set_TLB(&isar0, 2U);
 #endif
 #if defined(ARCH_ARM_8_5_RNG)
@@ -136,31 +158,48 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		break;
 	}
 	case ISS_MRS_MSR_ID_AA64ISAR1_EL1: {
-		ID_AA64ISAR1_EL1_t isar1 = ID_AA64ISAR1_EL1_default();
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_2_DCCVADP)
+		ID_AA64ISAR1_EL1_t isar1    = ID_AA64ISAR1_EL1_default();
+		ID_AA64ISAR1_EL1_t hw_isar1 = register_ID_AA64ISAR1_EL1_read();
+		(void)hw_isar1;
+#if defined(ARCH_ARM_8_2_DCCVADP)
 		ID_AA64ISAR1_EL1_set_DPB(&isar1, 2U);
-#elif (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_DCPOP)
+#elif defined(ARCH_ARM_8_2_DCPOP)
 		ID_AA64ISAR1_EL1_set_DPB(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_JSCONV)
+#if defined(ARCH_ARM_8_3_JSCONV)
 		ID_AA64ISAR1_EL1_set_JSCVT(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_COMPNUM)
+#if defined(ARCH_ARM_8_3_COMPNUM)
 		ID_AA64ISAR1_EL1_set_FCMA(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_RCPC)
+#if defined(ARCH_ARM_8_4_RCPC)
 		ID_AA64ISAR1_EL1_set_LRCPC(&isar1, 2U);
-#elif (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_RCPC)
+#elif defined(ARCH_ARM_8_3_RCPC)
 		ID_AA64ISAR1_EL1_set_LRCPC(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_5_FRINT)
+#if defined(ARCH_ARM_8_5_FRINT)
 		ID_AA64ISAR1_EL1_set_FRINTTS(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_SB)
+#if defined(ARCH_ARM_8_0_SB)
 		ID_AA64ISAR1_EL1_set_SB(&isar1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_PREDINV)
+#if defined(ARCH_ARM_8_0_PREDINV)
 		ID_AA64ISAR1_EL1_set_SPECRES(&isar1, 1U);
+#endif
+#if defined(ARCH_ARM_8_3_PAUTH)
+		ID_AA64ISAR1_EL1_copy_APA(&isar1, &hw_isar1);
+		ID_AA64ISAR1_EL1_copy_API(&isar1, &hw_isar1);
+		ID_AA64ISAR1_EL1_copy_GPA(&isar1, &hw_isar1);
+		ID_AA64ISAR1_EL1_copy_GPI(&isar1, &hw_isar1);
+#endif
+#if defined(ARCH_ARM_8_0_DGH)
+		ID_AA64ISAR1_EL1_set_DGH(&isar1, 1U);
+#endif
+#if defined(ARCH_ARM_8_2_BF16)
+		ID_AA64ISAR1_EL1_set_BF16(&isar1, 1U);
+#endif
+#if defined(ARCH_ARM_8_2_I8MM)
+		ID_AA64ISAR1_EL1_set_I8MM(&isar1, 1U);
 #endif
 		val = ID_AA64ISAR1_EL1_raw(isar1);
 		break;
@@ -173,7 +212,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_AA64MMFR0_EL1_set_ASIDBits(&mmfr0, 2U);
 #endif
 		ID_AA64MMFR0_EL1_set_TGran16(&mmfr0, 1U);
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_5_CSEH)
+#if defined(ARCH_ARM_8_5_CSEH)
 		ID_AA64MMFR0_EL1_set_ExS(&mmfr0, 1U);
 #endif
 		val = ID_AA64MMFR0_EL1_raw(mmfr0);
@@ -181,31 +220,30 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	}
 	case ISS_MRS_MSR_ID_AA64MMFR1_EL1: {
 		ID_AA64MMFR1_EL1_t mmfr1 = ID_AA64MMFR1_EL1_default();
-#if defined(ARCH_ARM_8_1_TTHM_HD)
-		ID_AA64MMFR1_EL1_set_HAFDBS(&mmfr1, 2U);
-#elif defined(ARCH_ARM_8_1_TTHM)
-		ID_AA64MMFR1_EL1_set_HAFDBS(&mmfr1, 1U);
+#if defined(ARCH_ARM_8_1_TTHM)
+		ID_AA64MMFR1_EL1_t hw_mmfr1 = register_ID_AA64MMFR1_EL1_read();
+		ID_AA64MMFR1_EL1_copy_HAFDBS(&mmfr1, &hw_mmfr1);
 #endif
 #if defined(ARCH_ARM_8_1_VMID16)
 		ID_AA64MMFR1_EL1_set_VMIDBits(&mmfr1, 2U);
 #endif
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_8_1_VHE)
 		ID_AA64MMFR1_EL1_set_VH(&mmfr1, 1U);
 #endif
 #if defined(ARCH_ARM_8_2_TTPBHA)
 		ID_AA64MMFR1_EL1_set_HPDS(&mmfr1, 2U);
-#elif (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_HPD)
+#elif defined(ARCH_ARM_8_1_HPD)
 		ID_AA64MMFR1_EL1_set_HPDS(&mmfr1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 81)
+#if defined(ARCH_ARM_8_1_LOR)
 		ID_AA64MMFR1_EL1_set_LO(&mmfr1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_ATS1E1)
+#if defined(ARCH_ARM_8_2_ATS1E1)
 		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 2U);
-#elif (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_PAN)
+#elif defined(ARCH_ARM_8_1_PAN)
 		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 1U);
 #endif
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_TTS2UXN)
+#if defined(ARCH_ARM_8_2_TTS2UXN)
 		ID_AA64MMFR1_EL1_set_XNX(&mmfr1, 1U);
 #endif
 		val = ID_AA64MMFR1_EL1_raw(mmfr1);
@@ -213,10 +251,10 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	}
 	case ISS_MRS_MSR_ID_AA64MMFR2_EL1: {
 		ID_AA64MMFR2_EL1_t mmfr2 = ID_AA64MMFR2_EL1_default();
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_TTCNP)
+#if defined(ARCH_ARM_8_2_TTCNP)
 		ID_AA64MMFR2_EL1_set_CnP(&mmfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_UAO)
+#if defined(ARCH_ARM_8_2_UAO)
 		ID_AA64MMFR2_EL1_set_UAO(&mmfr2, 1U);
 #endif
 #if defined(ARCH_ARM_8_2_LSMAOC)
@@ -236,32 +274,31 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 #elif defined(ARCH_ARM_8_3_NV)
 		ID_AA64MMFR2_EL1_set_NV(&mmfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_TTST)
+#if defined(ARCH_ARM_8_4_TTST)
 		ID_AA64MMFR2_EL1_set_ST(&mmfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_LSE)
+#if defined(ARCH_ARM_8_4_LSE)
 		ID_AA64MMFR2_EL1_set_AT(&mmfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_IDST)
+#if defined(ARCH_ARM_8_4_IDST)
 		ID_AA64MMFR2_EL1_set_IDS(&mmfr2, 1U);
 #endif
 #if defined(ARCH_ARM_8_4_SECEL2)
 		ID_AA64MMFR2_EL1_set_FWB(&mmfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_TTL)
+#if defined(ARCH_ARM_8_4_TTL)
 		ID_AA64MMFR2_EL1_set_IDS(&mmfr2, 1U);
 #endif
-#if defined(ARCH_ARM_8_4_TTREM_LEVEL2)
-		ID_AA64MMFR2_EL1_set_BBM(&mmfr2, 2U);
-#elif defined(ARCH_ARM_8_4_TTREM)
-		ID_AA64MMFR2_EL1_set_BBM(&mmfr2, 1U);
+#if defined(ARCH_ARM_8_4_TTREM) || defined(ARCH_ARM_8_2_EVT)
+		ID_AA64MMFR2_EL1_t hw_mmfr2 = register_ID_AA64MMFR2_EL1_read();
+#if defined(ARCH_ARM_8_4_TTREM)
+		ID_AA64MMFR2_EL1_copy_BBM(&mmfr2, &hw_mmfr2);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_2_EVT_TTLB)
-		ID_AA64MMFR2_EL1_set_EVT(&mmfr2, 2U);
-#elif defined(ARCH_ARM_8_2_EVT)
-		ID_AA64MMFR2_EL1_set_EVT(&mmfr2, 1U);
+#if defined(ARCH_ARM_8_2_EVT)
+		ID_AA64MMFR2_EL1_copy_EVT(&mmfr2, &hw_mmfr2);
 #endif
-#if (ARCH_ARM_VER >= 85)
+#endif
+#if defined(ARCH_ARM_8_5_E0PD)
 		ID_AA64MMFR2_EL1_set_E0PD(&mmfr2, 1U);
 #endif
 		val = ID_AA64MMFR2_EL1_raw(mmfr2);
@@ -272,18 +309,28 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_PFR0_EL1_set_State0(&pfr0, 1U);
 		ID_PFR0_EL1_set_State1(&pfr0, 3U);
 		ID_PFR0_EL1_set_State2(&pfr0, 1U);
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_CSV2)
+#if defined(ARCH_ARM_8_0_CSV2)
 		ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_DIT)
+#if defined(ARCH_ARM_8_4_DIT)
 		ID_PFR0_EL1_set_DIT(&pfr0, 1U);
 #endif
+		if (vcpu_option_flags_get_ras_error_handler(
+			    &thread->vcpu_options)) {
+#if defined(ARCH_ARM_8_4_RAS)
+			ID_PFR0_EL1_set_RAS(&pfr0, 2);
+#elif defined(ARCH_ARM_8_2_RAS)
+			ID_PFR0_EL1_set_RAS(&pfr0, 1);
+#else
+			// Nothing to do, the field is already 0
+#endif
+		}
 		val = ID_PFR0_EL1_raw(pfr0);
 		break;
 	}
 	case ISS_MRS_MSR_ID_PFR1_EL1: {
 		ID_PFR1_EL1_t pfr1 = ID_PFR1_EL1_default();
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 		ID_PFR1_EL1_set_ProgMod(&pfr1, 1U);
 		ID_PFR1_EL1_set_Security(&pfr1, 1U);
 		ID_PFR1_EL1_set_Virtualization(&pfr1, 1U);
@@ -295,10 +342,10 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	}
 	case ISS_MRS_MSR_ID_PFR2_EL1: {
 		ID_PFR2_EL1_t pfr2 = ID_PFR2_EL1_default();
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_CSV3)
+#if defined(ARCH_ARM_8_0_CSV3)
 		ID_PFR2_EL1_set_CSV3(&pfr2, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_SSBS)
+#if defined(ARCH_ARM_8_0_SSBS)
 		ID_PFR2_EL1_set_SSBS(&pfr2, 1U);
 #endif
 		val = ID_PFR2_EL1_raw(pfr2);
@@ -355,7 +402,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_ISAR4_EL1_set_Unpriv(&isar4, 2U);
 		ID_ISAR4_EL1_set_WithShifts(&isar4, 4U);
 		ID_ISAR4_EL1_set_Writeback(&isar4, 1U);
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 		ID_ISAR4_EL1_set_SMC(&isar4, 1U);
 #endif
 		ID_ISAR4_EL1_set_Barrier(&isar4, 1U);
@@ -375,10 +422,10 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_ISAR5_EL1_set_SHA2(&isar5, 1U);
 #endif
 		ID_ISAR5_EL1_set_CRC32(&isar5, 1U);
-#if (ARCH_ARM_VER >= 81)
+#if defined(ARCH_ARM_8_1_RDMA)
 		ID_ISAR5_EL1_set_RDM(&isar5, 1U);
 #endif
-#if (ARCH_ARM_VER >= 83)
+#if defined(ARCH_ARM_8_3_COMPNUM)
 		ID_ISAR5_EL1_set_VCMA(&isar5, 2U);
 #endif
 		val = ID_ISAR5_EL1_raw(isar5);
@@ -386,20 +433,19 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	}
 	case ISS_MRS_MSR_ID_ISAR6_EL1: {
 		ID_ISAR6_EL1_t isar6 = ID_ISAR6_EL1_default();
-#if (ARCH_ARM_VER >= 83)
+#if defined(ARCH_ARM_8_3_JSCONV)
 		ID_ISAR6_EL1_set_JSCVT(&isar6, 1U);
 #endif
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_2_DOTPROD)
+#if defined(ARCH_ARM_8_2_DOTPROD)
 		ID_ISAR6_EL1_set_DP(&isar6, 1U);
 #endif
-#if defined(ARCH_ARM_8_2_FP16) &&                                              \
-	((ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_2_FHM))
+#if defined(ARCH_ARM_8_2_FHM)
 		ID_ISAR6_EL1_set_FHM(&isar6, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_SB)
+#if defined(ARCH_ARM_8_0_SB)
 		ID_ISAR6_EL1_set_SB(&isar6, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_0_PREDINV)
+#if defined(ARCH_ARM_8_0_PREDINV)
 		ID_ISAR6_EL1_set_SPECRES(&isar6, 1U);
 #endif
 		val = ID_ISAR6_EL1_raw(isar6);
@@ -435,9 +481,9 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_MMFR3_EL1_set_CMaintSW(&mmfr3, 1U);
 		ID_MMFR3_EL1_set_BPMaint(&mmfr3, 2U);
 		ID_MMFR3_EL1_set_MaintBcst(&mmfr3, 2U);
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_ATS1E1)
+#if defined(ARCH_ARM_8_2_ATS1E1)
 		ID_MMFR3_EL1_set_PAN(&mmfr3, 2U);
-#elif (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_PAN)
+#elif defined(ARCH_ARM_8_1_PAN)
 		ID_MMFR3_EL1_set_PAN(&mmfr3, 1U);
 #endif
 		ID_MMFR3_EL1_set_CohWalk(&mmfr3, 1U);
@@ -448,10 +494,10 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 	case ISS_MRS_MSR_ID_MMFR4_EL1: {
 		ID_MMFR4_EL1_t mmfr4 = ID_MMFR4_EL1_default();
 		ID_MMFR4_EL1_set_AC2(&mmfr4, 1U);
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_TTS2UXN)
+#if defined(ARCH_ARM_8_2_TTS2UXN)
 		ID_MMFR4_EL1_set_XNX(&mmfr4, 1U);
 #endif
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_TTCNP)
+#if defined(ARCH_ARM_8_2_TTCNP)
 		ID_MMFR4_EL1_set_CnP(&mmfr4, 1U);
 #endif
 #if defined(ARCH_ARM_8_2_TTPBHA)
@@ -465,10 +511,9 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 #if defined(ARCH_ARM_8_3_CCIDX)
 		ID_MMFR4_EL1_set_CCIDX(&mmfr4, 1U);
 #endif
-#if (ARCH_ARM_VER >= 85) || defined(ARCH_ARM_8_2_EVT_TTLB)
-		ID_MMFR4_EL1_set_EVT(&mmfr4, 2U);
-#elif defined(ARCH_ARM_8_2_EVT)
-		ID_MMFR4_EL1_set_EVT(&mmfr4, 1U);
+#if defined(ARCH_ARM_8_2_EVT)
+		ID_MMFR4_EL1_t hw_mmfr4 = register_ID_MMFR4_EL1_read();
+		ID_MMFR4_EL1_copy_EVT(&mmfr4, &hw_mmfr4);
 #endif
 		val = ID_MMFR4_EL1_raw(mmfr4);
 		break;
@@ -501,7 +546,7 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 {
 	register_t	   val	  = 0ULL; // Default action is RAZ
 	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_EMULATED;
-	thread_t *	   thread = thread_get_self();
+	thread_t		 *thread = thread_get_self();
 
 	// Assert this is a read
 	assert(ESR_EL2_ISS_MSR_MRS_get_Direction(&iss));
@@ -526,14 +571,14 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_ID_PFR0_EL1: {
 		ID_PFR0_EL1_t id_pfr0 = register_ID_PFR0_EL1_read();
 
-#if (ARCH_ARM_VER < 82) && defined(ARCH_ARM_8_2_RAS)
-		// Tell non-HLOS guests that there is no RAS. This field is
-		// allowed to be zero only in ARMv8.0 and ARMv8.1.
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
+#if defined(ARCH_ARM_8_2_RAS) || defined(ARCH_ARM_8_4_RAS)
+		// Tell non-RAS handler guests there is no RAS.
+		if (!vcpu_option_flags_get_ras_error_handler(
+			    &thread->vcpu_options)) {
 			ID_PFR0_EL1_set_RAS(&id_pfr0, 0);
 		}
 #endif
-#if defined(ARCH_ARM_8_4_AMU)
+#if defined(ARCH_ARM_8_4_AMU) || defined(ARCH_ARM_8_6_AMU)
 		// Tell non-HLOS guests that there is no AMU
 		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
 			ID_PFR0_EL1_set_AMU(&id_pfr0, 0);
@@ -549,6 +594,17 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		val = ID_PFR1_EL1_raw(id_pfr1);
 		break;
 	}
+	case ISS_MRS_MSR_ID_PFR2_EL1: {
+		ID_PFR2_EL1_t pfr2 = ID_PFR2_EL1_default();
+#if defined(ARCH_ARM_8_0_CSV3)
+		ID_PFR2_EL1_set_CSV3(&pfr2, 1U);
+#endif
+#if defined(ARCH_ARM_8_0_SSBS)
+		ID_PFR2_EL1_set_SSBS(&pfr2, 1U);
+#endif
+		val = ID_PFR2_EL1_raw(pfr2);
+		break;
+	}
 	case ISS_MRS_MSR_ID_DFR0_EL1: {
 		ID_DFR0_EL1_t id_dfr0 = register_ID_DFR0_EL1_read();
 
@@ -556,29 +612,37 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		// the values reported by the hardware. All we do here is to
 		// zero out fields for features we don't support.
 
-#if !VCPU_DEBUG_CONTEXT_SAVED
+#if !defined(MODULE_VM_VDEBUG)
 		// Note that ARMv8-A does not allow 0 (not implemented) in the
 		// CopDbg field. So this configuration is not really supported.
-		ID_DFR0_EL1_set_CopDbg(&id_aa64dfr0, 0U);
-		ID_DFR0_EL1_set_CopSDbg(&id_aa64dfr0, 0U);
+		ID_DFR0_EL1_set_CopDbg(&id_dfr0, 0U);
+		ID_DFR0_EL1_set_CopSDbg(&id_dfr0, 0U);
 		ID_DFR0_EL1_set_MMapDbg(&id_dfr0, 0U);
 		ID_DFR0_EL1_set_MProfDbg(&id_dfr0, 0U);
 #endif
 
-#if VCPU_TRACE_CONTEXT_SAVED
+#if defined(MODULE_VM_VETE)
 		// Only the HLOS VM is allowed to trace
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
+		if (!vcpu_option_flags_get_trace_allowed(
+			    &thread->vcpu_options)) {
 			ID_DFR0_EL1_set_CopTrc(&id_dfr0, 0U);
-			ID_DFR0_EL1_set_MMapTrc(&id_dfr0, 0U);
 			ID_DFR0_EL1_set_TraceFilt(&id_dfr0, 0U);
 		}
 #else
 		ID_DFR0_EL1_set_CopTrc(&id_dfr0, 0U);
-		ID_DFR0_EL1_set_MMapTrc(&id_dfr0, 0U);
 		ID_DFR0_EL1_set_TraceFilt(&id_dfr0, 0U);
 #endif
+#if defined(MODULE_VM_VETM)
+		// Only the HLOS VM is allowed to trace
+		if (!vcpu_option_flags_get_trace_allowed(
+			    &thread->vcpu_options)) {
+			ID_DFR0_EL1_set_MMapTrc(&id_dfr0, 0U);
+		}
+#else
+		ID_DFR0_EL1_set_MMapTrc(&id_dfr0, 0U);
+#endif
 
-		// FIXME: for now we will give all VMs full control of PMU
+		// In the first release we will give all VMs full control of PMU
 		// hardware, therefore the code below is commented out until
 		// advance PMU support has been added to the hypervisor.
 		// No PMU support
@@ -638,18 +702,27 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_ID_AA64PFR0_EL1: {
 		ID_AA64PFR0_EL1_t id_aa64pfr0 = register_ID_AA64PFR0_EL1_read();
 
-		// No for SVE or MPAM
-		ID_AA64PFR0_EL1_set_SVE(&id_aa64pfr0, 0);
+		// No MPAM
 		ID_AA64PFR0_EL1_set_MPAM(&id_aa64pfr0, 0);
 
-#if (ARCH_ARM_VER >= 82) || defined(ARCH_ARM_8_2_RAS) ||                       \
-	defined(ARCH_ARM_8_4_RAS)
-		// Tell non-HLOS guests that there is no RAS
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
+#if defined(ARCH_ARM_8_2_SVE)
+		// Tell non-SVE allowed guests that there is no SVE
+		if (!vcpu_option_flags_get_sve_allowed(&thread->vcpu_options)) {
+			ID_AA64PFR0_EL1_set_SVE(&id_aa64pfr0, 0);
+		}
+#else
+		// No SVE
+		ID_AA64PFR0_EL1_set_SVE(&id_aa64pfr0, 0);
+#endif
+
+#if defined(ARCH_ARM_8_2_RAS) || defined(ARCH_ARM_8_4_RAS)
+		// Tell non-RAS handler guests there is no RAS
+		if (!vcpu_option_flags_get_ras_error_handler(
+			    &thread->vcpu_options)) {
 			ID_AA64PFR0_EL1_set_RAS(&id_aa64pfr0, 0);
 		}
 #endif
-#if defined(ARCH_ARM_8_4_AMU)
+#if defined(ARCH_ARM_8_4_AMU) || defined(ARCH_ARM_8_6_AMU)
 		// Tell non-HLOS guests that there is no AMU
 		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
 			ID_AA64PFR0_EL1_set_AMU(&id_aa64pfr0, 0);
@@ -659,44 +732,66 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		val = ID_AA64PFR0_EL1_raw(id_aa64pfr0);
 		break;
 	}
-	case ISS_MRS_MSR_ID_AA64PFR1_EL1:
-		sysreg64_read(ID_AA64PFR1_EL1, val);
+	case ISS_MRS_MSR_ID_AA64PFR1_EL1: {
+		ID_AA64PFR1_EL1_t pfr1 = register_ID_AA64PFR1_EL1_read();
+#if defined(ARCH_ARM_8_5_MEMTAG)
+		if (!arm_mte_is_allowed()) {
+			ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
+		}
+#else
+		ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
+#endif
+		val = ID_AA64PFR1_EL1_raw(pfr1);
+		break;
+	}
+	case ISS_MRS_MSR_ID_AA64ZFR0_EL1:
+#if defined(ARCH_ARM_8_2_SVE)
+		// The SVE module will handle this register
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+#else
+		// When SVE is not implemented this register is RAZ, do nothing
+#endif
 		break;
 	case ISS_MRS_MSR_ID_AA64DFR0_EL1: {
+		ID_AA64DFR0_EL1_t id_ret      = ID_AA64DFR0_EL1_default();
 		ID_AA64DFR0_EL1_t id_aa64dfr0 = register_ID_AA64DFR0_EL1_read();
 
 		// The debug, trace, PMU and SPE modules must correctly support
 		// the values reported by the hardware. All we do here is to
 		// zero out fields for missing modules.
 
-#if !VCPU_DEBUG_CONTEXT_SAVED
+#if defined(MODULE_VM_VDEBUG)
 		// Note that ARMv8-A does not allow 0 (not implemented) in this
-		// field. So this configuration is not really supported.
-		ID_AA64DFR0_EL1_set_DebugVer(&id_aa64dfr0, 0U);
-#endif
+		// field. So without this module is not really supported.
+		ID_AA64DFR0_EL1_copy_DebugVer(&id_ret, &id_aa64dfr0);
 
-#if VCPU_TRACE_CONTEXT_SAVED
-		// Only the HLOS VM is allowed to trace
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
-			ID_AA64DFR0_EL1_set_TraceVer(&id_aa64dfr0, 0U);
-			ID_AA64DFR0_EL1_set_TraceFilt(&id_aa64dfr0, 0U);
+		ID_AA64DFR0_EL1_copy_BRPs(&id_ret, &id_aa64dfr0);
+		ID_AA64DFR0_EL1_copy_WRPs(&id_ret, &id_aa64dfr0);
+		ID_AA64DFR0_EL1_copy_CTX_CMPs(&id_ret, &id_aa64dfr0);
+		ID_AA64DFR0_EL1_copy_DoubleLock(&id_ret, &id_aa64dfr0);
+#endif
+#if defined(MODULE_VM_ARM_VM_PMU)
+		ID_AA64DFR0_EL1_copy_PMUVer(&id_ret, &id_aa64dfr0);
+#endif
+#if defined(INTERFACE_VET)
+		// Set IDs for VMs allowed to trace
+		if (vcpu_option_flags_get_trace_allowed(
+			    &thread->vcpu_options)) {
+#if defined(MODULE_VM_VETE)
+			ID_AA64DFR0_EL1_copy_TraceVer(&id_ret, &id_aa64dfr0);
+			ID_AA64DFR0_EL1_copy_TraceFilt(&id_ret, &id_aa64dfr0);
+#endif
+#if defined(MODULE_VM_VTBRE)
+			ID_AA64DFR0_EL1_copy_TraceBuffer(&id_ret, &id_aa64dfr0);
+#endif
 		}
-#else
-		ID_AA64DFR0_EL1_set_TraceVer(&id_aa64dfr0, 0U);
-		ID_AA64DFR0_EL1_set_TraceFilt(&id_aa64dfr0, 0U);
 #endif
 
-		// FIXME: for now we will give all VMs full control of PMU
-		// hardware, therefore the code below is commented out until
-		// advance PMU support has been added to the hypervisor.
-		// No PMU support
-		// ID_AA64DFR0_EL1_set_PMUVer(&id_aa64dfr0, 0);
-
-#if !defined(MODULE_SPE)
-		ID_AA64DFR0_EL1_set_PMSVer(&id_aa64dfr0, 0U);
+#if defined(MODULE_SPE)
+		ID_AA64DFR0_EL1_copy_PMSVer(&id_ret, &id_aa64dfr0);
 #endif
 
-		val = ID_AA64DFR0_EL1_raw(id_aa64dfr0);
+		val = ID_AA64DFR0_EL1_raw(id_ret);
 		break;
 	}
 	case ISS_MRS_MSR_ID_AA64DFR1_EL1:
@@ -712,10 +807,13 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		break;
 	case ISS_MRS_MSR_ID_AA64ISAR1_EL1:
 		sysreg64_read(ID_AA64ISAR1_EL1, val);
-#if defined(QEMU) && QEMU
+#if !defined(ARCH_ARM_8_3_PAUTH)
+		// When no PAUTH is enabled, hide it from the VM
 		ID_AA64ISAR1_EL1_t isar1 = ID_AA64ISAR1_EL1_cast(val);
 		ID_AA64ISAR1_EL1_set_APA(&isar1, 0U);
+		ID_AA64ISAR1_EL1_set_API(&isar1, 0U);
 		ID_AA64ISAR1_EL1_set_GPA(&isar1, 0U);
+		ID_AA64ISAR1_EL1_set_GPI(&isar1, 0U);
 		val = ID_AA64ISAR1_EL1_raw(isar1);
 #endif
 		break;
@@ -736,15 +834,14 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		crn  = ESR_EL2_ISS_MSR_MRS_get_CRn(&iss);
 		crm  = ESR_EL2_ISS_MSR_MRS_get_CRm(&iss);
 
-		if ((opc0 == 3) && (opc1 == 0) && (crn == 0) && (crm >= 2) &&
+		if ((opc0 == 3) && (opc1 == 0) && (crn == 0) && (crm >= 1) &&
 		    (crm <= 7)) {
-			// It is IMPLEMENTATION DEFINED whether HC_EL2.TID3
+			// It is IMPLEMENTATION DEFINED whether HCR_EL2.TID3
 			// traps MRS accesses to the registers in this range
 			// (that have not been handled above). If we ever get
 			// here print a debug message so we can investigate.
 			TRACE_AND_LOG(DEBUG, WARN,
-				      "sysreg_read: unhandled TID3 trap, "
-				      "ISS: {:#x}. RAZ",
+				      "Emulated RAZ for ID register: ISS {:#x}",
 				      ESR_EL2_ISS_MSR_MRS_raw(iss));
 			val = 0U;
 		} else {
@@ -769,7 +866,7 @@ vcpu_trap_result_t
 sysreg_read_fallback(ESR_EL2_ISS_MSR_MRS_t iss)
 {
 	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_UNHANDLED;
-	thread_t *	   thread = thread_get_self();
+	thread_t		 *thread = thread_get_self();
 
 	if (ESR_EL2_ISS_MSR_MRS_get_Op0(&iss) == 2U) {
 		// Debug registers, RAZ by default
@@ -784,7 +881,12 @@ vcpu_trap_result_t
 sysreg_write(ESR_EL2_ISS_MSR_MRS_t iss)
 {
 	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_EMULATED;
-	thread_t *	   thread = thread_get_self();
+	thread_t		 *thread = thread_get_self();
+
+	if (compiler_expected(ESR_EL2_ISS_MSR_MRS_get_Op0(&iss) != 1U)) {
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+		goto out;
+	}
 
 	// Assert this is a write
 	assert(!ESR_EL2_ISS_MSR_MRS_get_Direction(&iss));
@@ -811,9 +913,11 @@ sysreg_write(ESR_EL2_ISS_MSR_MRS_t iss)
 		// (because DC ISW is upgraded to DC CISW in hardware) so we
 		// disable the trap after the first warning (except on physical
 		// CPUs with an erratum that makes all set/way ops unsafe).
+		preempt_disable();
 		thread->vcpu_regs_el2.hcr_el2 = register_HCR_EL2_read();
 		HCR_EL2_set_TSW(&thread->vcpu_regs_el2.hcr_el2, false);
 		register_HCR_EL2_write(thread->vcpu_regs_el2.hcr_el2);
+		preempt_enable();
 		ret = VCPU_TRAP_RESULT_RETRY;
 		break;
 	default:
@@ -821,6 +925,7 @@ sysreg_write(ESR_EL2_ISS_MSR_MRS_t iss)
 		break;
 	}
 
+out:
 	return ret;
 }
 
@@ -828,7 +933,7 @@ vcpu_trap_result_t
 sysreg_write_fallback(ESR_EL2_ISS_MSR_MRS_t iss)
 {
 	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_EMULATED;
-	thread_t *	   thread = thread_get_self();
+	thread_t		 *thread = thread_get_self();
 
 	// Read the thread's register
 	uint8_t	   reg_num = ESR_EL2_ISS_MSR_MRS_get_Rt(&iss);
@@ -841,10 +946,17 @@ sysreg_write_fallback(ESR_EL2_ISS_MSR_MRS_t iss)
 
 	switch (ESR_EL2_ISS_MSR_MRS_raw(temp_iss)) {
 	// The registers trapped with HCR_EL2.TVM
-	case ISS_MRS_MSR_SCTLR_EL1:
-		// FIXME: Act on the guest's modification of SCTLR_EL1
-		register_SCTLR_EL1_write(SCTLR_EL1_cast(val));
+	case ISS_MRS_MSR_SCTLR_EL1: {
+		SCTLR_EL1_t sctrl = SCTLR_EL1_cast(val);
+		// If HCR_EL2.DC is set, prevent VM's enabling Stg-1 MMU
+		if (HCR_EL2_get_DC(&thread->vcpu_regs_el2.hcr_el2) &&
+		    SCTLR_EL1_get_M(&sctrl)) {
+			ret = VCPU_TRAP_RESULT_UNHANDLED;
+		} else {
+			register_SCTLR_EL1_write(sctrl);
+		}
 		break;
+	}
 	case ISS_MRS_MSR_TTBR0_EL1:
 		register_TTBR0_EL1_write(TTBR0_EL1_cast(val));
 		break;

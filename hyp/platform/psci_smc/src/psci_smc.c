@@ -7,6 +7,7 @@
 #include <hypconstants.h>
 
 #include <panic.h>
+#include <smccc.h>
 
 #include "psci_smc.h"
 #include "psci_smc_arch.h"

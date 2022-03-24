@@ -33,7 +33,12 @@ extend msgqueue object {
 define msgqueue_create_info public bitfield<64> {
 	15:0	queue_depth	uint16;
 	31:16	max_msg_size	uint16;
-	63:32	unknown=0;
+	others	unknown=0;
+};
+
+define msgqueue_send_flags public bitfield<32> {
+	0	push		bool;
+	others	unknown=0;
 };
 
 extend virq_trigger enumeration {

@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define task_queue_entry_bf bitfield<128> {
+	63:4	next	pointer structure task_queue_entry;
+	auto	class	enumeration task_queue_class;
+	127:68	prev	pointer structure task_queue_entry;
+	auto<msb(PLATFORM_MAX_CORES)+1>
+		cpu	type cpu_index_t;
+};
+
+extend task_queue_entry structure {
+	bf bitfield task_queue_entry_bf(aligned(16));
+};
+
+extend task_queue_class enumeration {
+	// Internal class used for the head of the per-CPU queues. This helps
+	// to avoid special cases for the first queue element.
+	HEAD = 0;
+};
+
+extend ipi_reason enumeration {
+	task_queue;
+};

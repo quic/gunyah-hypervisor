@@ -41,14 +41,14 @@ is_before(count_t a, count_t b)
 }
 
 void
-rcu_read_start(void)
+rcu_read_start(void) LOCK_IMPL
 {
 	preempt_disable();
 	trigger_rcu_read_start_event();
 }
 
 void
-rcu_read_finish(void)
+rcu_read_finish(void) LOCK_IMPL
 {
 	trigger_rcu_read_finish_event();
 	preempt_enable();
@@ -89,7 +89,7 @@ rcu_enqueue(rcu_entry_t *rcu_entry, rcu_update_class_t rcu_update_class)
 
 	cpu_index_t	 cpu	  = cpulocal_get_index();
 	rcu_cpu_state_t *my_state = &CPULOCAL_BY_INDEX(rcu_state, cpu);
-	rcu_batch_t *	 batch	  = &my_state->next_batch;
+	rcu_batch_t	    *batch	  = &my_state->next_batch;
 
 	if (atomic_fetch_add_explicit(&my_state->update_count, 1U,
 				      memory_order_relaxed) == 0U) {
@@ -119,7 +119,7 @@ rcu_enqueue(rcu_entry_t *rcu_entry, rcu_update_class_t rcu_update_class)
 
 // Events that activate a CPU (i.e. mark it as needing to ack GPs)
 static void
-rcu_bitmap_activate_cpu(void)
+rcu_bitmap_activate_cpu(void) REQUIRE_PREEMPT_DISABLED
 {
 	assert_cpulocal_safe();
 	cpu_index_t	 cpu	  = cpulocal_get_index();
@@ -185,7 +185,7 @@ rcu_bitmap_handle_power_cpu_online(void)
 
 // Events that deactivate a CPU (i.e. mark it as not needing to ack GPs)
 static void
-rcu_bitmap_deactivate_cpu(void)
+rcu_bitmap_deactivate_cpu(void) REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 	cpu_index_t	 cpu	  = cpulocal_get_index();
@@ -224,15 +224,9 @@ rcu_bitmap_handle_idle_yield(void)
 	return IDLE_STATE_IDLE;
 }
 
-#if !defined(UNIT_TESTS)
-idle_state_t
-rcu_bitmap_handle_vcpu_idle_fastpath(void)
-{
-	return IDLE_STATE_IDLE;
-}
-
+#if defined(INTERFACE_VCPU)
 void
-rcu_bitmap_unwind_vcpu_idle_fastpath(void)
+rcu_bitmap_handle_vcpu_block_finish(void)
 {
 	rcu_bitmap_activate_cpu();
 }
@@ -370,6 +364,7 @@ rcu_bitmap_quiesce(void)
 
 static void
 rcu_bitmap_request_grace_period(rcu_cpu_state_t *my_state, count_t current_gen)
+	REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 
@@ -495,8 +490,8 @@ rcu_bitmap_update(void)
 			// object.
 			struct rcu_entry *next = entry->next;
 			status		       = rcu_update_status_union(
-				trigger_rcu_update_event(update_class, entry),
-				status);
+						trigger_rcu_update_event(update_class, entry),
+						status);
 			entry = next;
 			update_count++;
 		}

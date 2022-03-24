@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#if ARCH_AARCH64_USE_VHE
+#if defined(ARCH_ARM_8_1_VHE)
 define HYP_ASPACE_LOW_BITS constant type count_t =
 	HYP_ASPACE_MAP_DIRECT_BITS + 1;
 define HYP_ASPACE_HIGH_BITS constant type count_t = 39;

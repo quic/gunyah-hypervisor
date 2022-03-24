@@ -19,7 +19,6 @@ addrspace_attach_thread(addrspace_t *addrspace, thread_t *thread);
 error_t
 addrspace_configure(addrspace_t *addrspace, vmid_t vmid);
 
-#if !defined(UNIT_TESTS)
 // Translate a VA to PA in the current guest address space.
 paddr_result_t
 addrspace_va_to_pa_read(gvaddr_t addr);
@@ -27,4 +26,3 @@ addrspace_va_to_pa_read(gvaddr_t addr);
 // Translate a VA to IPA in the current guest address space.
 vmaddr_result_t
 addrspace_va_to_ipa_read(gvaddr_t addr);
-#endif

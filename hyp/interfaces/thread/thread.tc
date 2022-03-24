@@ -2,6 +2,12 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+define THREAD_STACK_MAX_BITS constant type count_t = 15;
+define THREAD_STACK_MAX_SIZE constant size = 1 << THREAD_STACK_MAX_BITS;
+
+define THREAD_STACK_MAP_ALIGN_BITS constant type count_t = THREAD_STACK_MAX_BITS + 1;
+define THREAD_STACK_MAP_ALIGN constant type count_t = 1 << THREAD_STACK_MAP_ALIGN_BITS;
+
 define thread_kind enumeration {
 	none = 0;
 };
@@ -22,7 +28,7 @@ define thread_entry_reason enumeration {
 };
 
 extend thread object {
-	state enumeration thread_state;
+	state enumeration thread_state(atomic);
 	kind enumeration thread_kind;
 	params uintptr;
 	stack_base uintptr;

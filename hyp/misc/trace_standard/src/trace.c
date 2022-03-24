@@ -51,8 +51,8 @@ static trace_buffer_header_t *trace_buffer_global;
 // construct the correct parameter to call the API.
 
 static void
-trace_init_common(void *base, size_t size, count_t buffer_count,
-		  trace_buffer_header_t *tbuffers[])
+trace_init_common(partition_t *partition, void *base, size_t size,
+		  count_t buffer_count, trace_buffer_header_t *tbuffers[])
 {
 	count_t global_entries, local_entries;
 
@@ -76,9 +76,9 @@ trace_init_common(void *base, size_t size, count_t buffer_count,
 		local_entries = PER_CPU_TRACE_ENTRIES;
 	}
 
-	hyp_trace.header      = (trace_buffer_header_t *)base;
-	hyp_trace.header_phys = partition_virt_to_phys(partition_get_private(),
-						       (uintptr_t)base);
+	hyp_trace.header = (trace_buffer_header_t *)base;
+	hyp_trace.header_phys =
+		partition_virt_to_phys(partition, (uintptr_t)base);
 
 	count_t		       entries;
 	trace_buffer_header_t *ptr = (trace_buffer_header_t *)base;
@@ -121,6 +121,9 @@ trace_boot_init(void)
 #endif
 #if defined(VERBOSE_TRACE) && VERBOSE_TRACE
 	TRACE_SET_CLASS(flags, DEBUG);
+#if !defined(UNITTESTS) || !UNITTESTS
+	TRACE_SET_CLASS(flags, USER);
+#endif
 #endif
 	atomic_init(&hyp_trace.enabled_class_flags, flags);
 
@@ -129,7 +132,7 @@ trace_boot_init(void)
 	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_BUFFER);
 	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_TRACE_BUFFER);
 
-	trace_init_common(&trace_boot_buffer,
+	trace_init_common(partition_get_private(), &trace_boot_buffer,
 			  TRACE_BOOT_ENTRIES * TRACE_BUFFER_ENTRY_SIZE, 1U,
 			  &trace_buffer_global);
 }
@@ -146,7 +149,7 @@ trace_init(partition_t *partition, size_t size)
 	}
 
 	trace_buffer_header_t *tbs[TRACE_BUFFER_NUM];
-	trace_init_common(alloc_ret.r, size, TRACE_BUFFER_NUM, tbs);
+	trace_init_common(partition, alloc_ret.r, size, TRACE_BUFFER_NUM, tbs);
 	// The global buffer will be the first, followed by the local buffers
 	trace_buffer_global = tbs[0];
 	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
@@ -216,7 +219,7 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 		    ((!log_action ||
 		      ((class_flags & TRACE_CLASS_BITS(TRACE_LOG_BUFFER)) ==
 		       0))))) {
-		return;
+		goto out;
 	}
 
 	cpu_id	  = cpulocal_get_index();
@@ -301,6 +304,9 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 	buffers[head].args[3] = arg3;
 	buffers[head].args[4] = arg4;
 #endif
+
+out:
+	return;
 }
 
 void

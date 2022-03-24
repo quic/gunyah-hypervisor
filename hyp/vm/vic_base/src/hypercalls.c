@@ -70,10 +70,11 @@ out:
 }
 
 error_t
-hypercall_vic_configure(cap_id_t vic_cap, count_t max_vcpus, count_t max_virqs)
+hypercall_vic_configure(cap_id_t vic_cap, count_t max_vcpus, count_t max_virqs,
+			vic_option_flags_t vic_options, count_t max_msis)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -88,9 +89,20 @@ hypercall_vic_configure(cap_id_t vic_cap, count_t max_vcpus, count_t max_virqs)
 	}
 	vic_t *vic = o.r.vic;
 
+	if (vic_option_flags_get_res0_0(&vic_options) != 0U) {
+		err = ERROR_ARGUMENT_INVALID;
+		goto out_unlocked;
+	}
+
+	// For backwards compatibility, treat the max_msis argument as 0 if the
+	// caller has not set the flag indicating that it is valid.
+	if (!vic_option_flags_get_max_msis_valid(&vic_options)) {
+		max_msis = 0U;
+	}
+
 	spinlock_acquire(&vic->header.lock);
 	if (atomic_load_relaxed(&vic->header.state) == OBJECT_STATE_INIT) {
-		err = vic_configure(vic, max_vcpus, max_virqs);
+		err = vic_configure(vic, max_vcpus, max_virqs, max_msis);
 	} else {
 		err = ERROR_OBJECT_STATE;
 	}
@@ -140,6 +152,26 @@ hypercall_vic_attach_vcpu(cap_id_t vic_cap, cap_id_t vcpu_cap, index_t index)
 out_release_vcpu:
 	object_put(type, o.r);
 out_release_vic:
+	object_put_vic(vic_r.r);
+out:
+	return err;
+}
+
+error_t
+hypercall_vic_bind_msi_source(cap_id_t vic_cap, cap_id_t msi_source_cap)
+{
+	error_t	  err;
+	cspace_t *cspace = cspace_get_self();
+
+	vic_ptr_result_t vic_r =
+		cspace_lookup_vic(cspace, vic_cap, CAP_RIGHTS_VIC_BIND_SOURCE);
+	if (compiler_unexpected(vic_r.e) != OK) {
+		err = vic_r.e;
+		goto out;
+	}
+
+	err = trigger_vic_bind_msi_source_event(vic_r.r, msi_source_cap);
+
 	object_put_vic(vic_r.r);
 out:
 	return err;

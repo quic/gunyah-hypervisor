@@ -12,7 +12,7 @@
 
 #include "string_util.h"
 
-//  TODO: Add more failure test cases
+// TODO: Add more failure test cases
 
 #define MAX_TERMINATOR 16
 #define MAX_ARG_CNT    5
@@ -114,18 +114,18 @@ typedef enum ret_token {
 
 // Check whether a buffer contains the specified character within the specified
 // distance (size).
-static inline bool
-contains(const char *buf, size_t size, char c)
+static inline index_t
+strnidx(const char *buf, size_t size, char c)
 {
 	index_t i;
 
 	for (i = 0U; i < size; i++) {
 		if (buf[i] == c) {
-			return true;
+			break;
 		}
 	}
 
-	return false;
+	return i;
 }
 
 // Return true if c is in [min, max]
@@ -151,8 +151,8 @@ atodec(const char *c, size_t len)
 	return v;
 }
 
-static inline size_t
-padding(char *buf, size_t size, char fill_char, size_t len)
+static size_t
+insert_padding(char *buf, size_t size, char fill_char, size_t len)
 {
 	size_t padding = 0U;
 
@@ -173,7 +173,7 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 {
 	const char digit[] = { '0', '1', '2', '3', '4', '5', '6', '7',
 			       '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-	char *	   pos = buf, padding_char = ' ', *tail = NULL;
+	char	     *pos = buf, padding_char = ' ', *tail = NULL;
 	size_t	   padding_cnt = 0U, content_cnt = 0U, padding_ret = 0U;
 	size_t	   padding_left_cnt = 0U, padding_right_cnt = 0U;
 	size_t	   padding_after_sign = 0U, padding_after_prefix = 0U;
@@ -252,8 +252,8 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 		padding_right_cnt    = padding_cnt - padding_left_cnt;
 	}
 
-	padding_ret =
-		padding(pos, remaining, padding_char, padding_after_prefix);
+	padding_ret = insert_padding(pos, remaining, padding_char,
+				     padding_after_prefix);
 	pos += padding_ret;
 	remaining -= padding_ret;
 	if ((remaining == 0U) || (padding_ret < padding_after_prefix)) {
@@ -305,7 +305,8 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 		}
 	}
 
-	padding_ret = padding(pos, remaining, padding_char, padding_after_sign);
+	padding_ret = insert_padding(pos, remaining, padding_char,
+				     padding_after_sign);
 	pos += padding_ret;
 	remaining -= padding_ret;
 	if ((remaining == 0U) || (padding_ret < padding_after_sign)) {
@@ -356,7 +357,8 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 		break;
 	}
 
-	padding_ret = padding(pos, remaining, padding_char, padding_left_cnt);
+	padding_ret =
+		insert_padding(pos, remaining, padding_char, padding_left_cnt);
 	pos += padding_ret;
 	remaining -= padding_ret;
 	// last padding action, no explicit truncation check
@@ -373,7 +375,8 @@ reverse_out:
 		buf++;
 	}
 
-	padding_ret = padding(tail, remaining, padding_char, padding_right_cnt);
+	padding_ret = insert_padding(tail, remaining, padding_char,
+				     padding_right_cnt);
 	remaining -= padding_ret;
 
 	*size = remaining;
@@ -408,7 +411,7 @@ stringtoa(char *buf, size_t *size, char *val_str, fmt_info_t *info)
 		goto out;
 	}
 
-	char * pos = buf, padding_char = ' ';
+	char  *pos = buf, padding_char = ' ';
 	size_t slen	   = strlen(val_str);
 	size_t padding_cnt = 0U, p = 0U;
 	size_t padding_left_cnt = 0U, padding_right_cnt = 0U;
@@ -436,33 +439,38 @@ stringtoa(char *buf, size_t *size, char *val_str, fmt_info_t *info)
 	}
 
 	p = util_min(padding_left_cnt, remaining);
-	memset(pos, padding_char, p);
-	remaining -= p;
-	pos += p;
-	if (remaining == 0U) {
+	if (p > 0U) {
+		memset(pos, padding_char, p);
+		remaining -= p;
+		pos += p;
+	}
+	if ((remaining + p) < padding_left_cnt) {
 		ret = ERROR_STRING_TRUNCATED;
 		goto out;
 	}
 
 	p = util_min(slen, remaining);
-	memcpy(pos, val_str, p);
-	remaining -= p;
-	pos += p;
-	if (remaining == 0U) {
+	if (p > 0U) {
+		memcpy(pos, val_str, p);
+		remaining -= p;
+		pos += p;
+	}
+	if ((remaining + p) < slen) {
 		ret = ERROR_STRING_TRUNCATED;
 		goto out;
 	}
 
 	p = util_min(padding_right_cnt, remaining);
-	memset(pos, padding_char, p);
-	remaining -= p;
-	if (remaining == 0U) {
+	if (p > 0U) {
+		memset(pos, padding_char, p);
+		remaining -= p;
+	}
+	if ((remaining + p) < padding_right_cnt) {
 		ret = ERROR_STRING_TRUNCATED;
 		goto out;
-	} else {
-		ret = OK;
-		goto out;
 	}
+
+	ret = OK;
 
 out:
 	*size = remaining;
@@ -476,7 +484,7 @@ check_start(const char *fmt, fmt_info_t *info)
 {
 	(void)info;
 
-	if (contains("{", 1, *fmt)) {
+	if (*fmt == '{') {
 		return RET_TOKEN_FOUND;
 	}
 	return RET_TOKEN_NEXT_CHAR;
@@ -488,11 +496,11 @@ check_specifier_start(const char *fmt, fmt_info_t *info)
 	(void)info;
 
 	// ignore white space
-	if (contains(" ", 1, *fmt)) {
+	if (*fmt == ' ') {
 		return RET_TOKEN_NEXT_CHAR;
 	}
 
-	if (contains(":", 1, *fmt)) {
+	if (*fmt == ':') {
 		return RET_TOKEN_FOUND;
 	}
 
@@ -506,28 +514,34 @@ check_align(const char *fmt, fmt_info_t *info)
 	const char    stopper[] = { '<', '>', '=', '^' };
 	const align_t output[]	= { ALIGN_LEFT, ALIGN_RIGHT, ALIGN_AFTER_SIGN,
 				    ALIGN_CENTER };
-	const size_t  len	= sizeof(stopper) / sizeof(stopper[0]);
-	index_t	      i;
+	const size_t  len	= util_array_size(stopper);
+	// Default to skip alignment stage if not found
+	ret_token_t ret = RET_TOKEN_NEXT_STAGE;
 
-	if (contains(stopper, len, fmt[1])) {
-		return RET_TOKEN_NEXT_CHAR;
+	const char *next = NULL;
+	if (*(fmt + 1) != '\0') {
+		next = fmt + 1;
 	}
 
-	for (i = 0U; i < len; i++) {
-		if (stopper[i] == *fmt) {
+	// Check for a padding character using look-ahead
+	if (next && (strnidx(stopper, len, *next) < len)) {
+		if (info->fill_char == '\0') {
+			info->fill_char = *fmt;
+			ret		= RET_TOKEN_NEXT_CHAR;
+		} else {
+			// e.g. '{: >>5d}' is an error
+			ret = RET_TOKEN_ERROR;
+		}
+	} else {
+		index_t i = strnidx(stopper, len, *fmt);
+		if (i < len) {
 			info->alignment = output[i];
 
-			// FIXME: refer token of previous rule, bad style
-			const char *prev = fmt - 1;
-			if (*prev != ':') {
-				info->fill_char = *prev;
-			}
-
-			return RET_TOKEN_FOUND;
+			ret = RET_TOKEN_FOUND;
 		}
 	}
 
-	return RET_TOKEN_NEXT_STAGE;
+	return ret;
 }
 
 static inline ret_token_t
@@ -535,14 +549,12 @@ check_sign(const char *fmt, fmt_info_t *info)
 {
 	const char   stopper[] = { '+', '-', ' ' };
 	const sign_t output[]  = { SIGN_BOTH, SIGN_NEG, SIGN_POS_LEADING };
-	const size_t sz	       = sizeof(stopper) / sizeof(stopper[0]);
-	index_t	     i;
+	const size_t len       = util_array_size(stopper);
 
-	for (i = 0U; i < sz; i++) {
-		if (stopper[i] == *fmt) {
-			info->sign = output[i];
-			return RET_TOKEN_FOUND;
-		}
+	index_t i = strnidx(stopper, len, *fmt);
+	if (i < len) {
+		info->sign = output[i];
+		return RET_TOKEN_FOUND;
 	}
 
 	return RET_TOKEN_NEXT_STAGE;
@@ -638,14 +650,12 @@ check_type(const char *fmt, fmt_info_t *info)
 		 VAR_TYPE_BIN,	   VAR_TYPE_DEC,    VAR_TYPE_OCTAL,
 		 VAR_TYPE_LOW_HEX, VAR_TYPE_STRING,
 	};
-	const size_t sz = util_array_size(stopper);
-	index_t	     i;
+	const size_t len = util_array_size(stopper);
+	index_t	     i	 = strnidx(stopper, len, *fmt);
 
-	for (i = 0U; i < sz; i++) {
-		if (*fmt == stopper[i]) {
-			info->type = output[i];
-			return RET_TOKEN_FOUND;
-		}
+	if (i < len) {
+		info->type = output[i];
+		return RET_TOKEN_FOUND;
 	}
 
 	return RET_TOKEN_ERROR;
@@ -657,11 +667,11 @@ check_end(const char *fmt, fmt_info_t *info)
 	(void)info;
 
 	// Ignore white space
-	if (contains(" ", 1, *fmt)) {
+	if (*fmt == ' ') {
 		return RET_TOKEN_NEXT_CHAR;
 	}
 
-	if (contains("}", 1, *fmt)) {
+	if (*fmt == '}') {
 		return RET_TOKEN_STOP;
 	}
 
@@ -809,7 +819,7 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 {
 	const char *fmt = format;
 	// Current buffer pointer, increasing while filling strings into
-	char *	   buf		     = str;
+	char	     *buf		     = str;
 	error_t	   ret		     = OK;
 	size_t	   remaining	     = size - 1; // space for terminating null
 	register_t args[MAX_ARG_CNT] = { arg0, arg1, arg2, arg3, arg4 };
@@ -818,7 +828,7 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 
 	while (remaining != 0U) {
 		fmt_info_t info = { 0 };
-		size_t	   s;
+		size_t	   p;
 		size_t	   consumed_len = 0U;
 		size_t	   literal_len	= 0U;
 
@@ -831,18 +841,20 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 		}
 
 		// Copy literal characters to output buffer
-		s = util_min(literal_len, remaining);
-		memcpy(buf, fmt, s);
-
-		// Not enough for the output
-		if (literal_len > remaining) {
-			ret = ERROR_STRING_TRUNCATED;
-			break;
+		p = util_min(literal_len, remaining);
+		if (p > 0U) {
+			memcpy(buf, fmt, p);
 		}
 
 		fmt += consumed_len;
-		buf += literal_len;
-		remaining -= literal_len;
+		buf += p;
+		remaining -= p;
+
+		// Not enough space for the fmt chars
+		if ((remaining + p) < literal_len) {
+			ret = ERROR_STRING_TRUNCATED;
+			break;
+		}
 
 		if (info.type != VAR_TYPE_NONE) {
 			if (arg_idx == MAX_ARG_CNT) {

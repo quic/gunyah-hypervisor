@@ -9,6 +9,7 @@
 
 #include <platform_cpu.h>
 
+#include "event_handlers.h"
 #include "psci_arch.h"
 
 // The CPU ID values have the same format as MPIDR, but with all other fields
@@ -40,4 +41,21 @@ psci_thread_set_mpidr_by_index(thread_t *thread, cpu_index_t index)
 			   psci_mpidr_get_Aff3(&ret));
 	MPIDR_EL1_set_MT(&thread->vcpu_regs_mpidr_el1, MPIDR_EL1_get_MT(&real));
 	return ret;
+}
+
+void
+psci_pc_handle_scheduler_selected_thread(thread_t *thread, bool *can_idle)
+{
+	if (thread->psci_mode == VPM_MODE_IDLE) {
+		// This thread can't be allowed to disable the WFI trap,
+		// because WFI votes to suspend the physical CPU.
+		*can_idle = false;
+	}
+}
+
+vcpu_trap_result_t
+psci_pc_handle_vcpu_trap_wfi(void)
+{
+	return psci_pc_handle_trapped_idle() ? VCPU_TRAP_RESULT_EMULATED
+					     : VCPU_TRAP_RESULT_UNHANDLED;
 }

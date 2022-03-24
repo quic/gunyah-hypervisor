@@ -11,12 +11,18 @@
 #include "event_handlers.h"
 
 static bool
-smccc_handle_call(bool is_hvc)
+smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 {
 	bool		    handled;
-	thread_t *	    current = thread_get_self();
+	thread_t		 *current = thread_get_self();
 	smccc_function_id_t function_id =
 		smccc_function_id_cast((uint32_t)current->vcpu_regs_gpr.x[0]);
+
+	uint32_t res0 = smccc_function_id_get_res0(&function_id);
+	if (res0 != 0U) {
+		handled = false;
+		goto out;
+	}
 
 	if (smccc_function_id_get_is_smc64(&function_id)) {
 		uint64_t ret0 = (uint64_t)current->vcpu_regs_gpr.x[0];
@@ -25,7 +31,7 @@ smccc_handle_call(bool is_hvc)
 		uint64_t ret3 = (uint64_t)current->vcpu_regs_gpr.x[3];
 
 		if (smccc_function_id_get_is_fast(&function_id)) {
-			handled = trigger_smccc_call_fast_64_event(
+			handled = trigger_smccc_dispatch_fast_64_event(
 				smccc_function_id_get_interface_id(
 					&function_id),
 				smccc_function_id_get_function(&function_id),
@@ -39,7 +45,7 @@ smccc_handle_call(bool is_hvc)
 					(uint32_t)current->vcpu_regs_gpr.x[7]),
 				&ret0, &ret1, &ret2, &ret3);
 		} else {
-			handled = trigger_smccc_call_yielding_64_event(
+			handled = trigger_smccc_dispatch_yielding_64_event(
 				smccc_function_id_get_interface_id(
 					&function_id),
 				smccc_function_id_get_function(&function_id),
@@ -54,10 +60,12 @@ smccc_handle_call(bool is_hvc)
 				&ret0, &ret1, &ret2, &ret3);
 		}
 
-		current->vcpu_regs_gpr.x[0] = (register_t)ret0;
-		current->vcpu_regs_gpr.x[1] = (register_t)ret1;
-		current->vcpu_regs_gpr.x[2] = (register_t)ret2;
-		current->vcpu_regs_gpr.x[3] = (register_t)ret3;
+		if (handled) {
+			current->vcpu_regs_gpr.x[0] = (register_t)ret0;
+			current->vcpu_regs_gpr.x[1] = (register_t)ret1;
+			current->vcpu_regs_gpr.x[2] = (register_t)ret2;
+			current->vcpu_regs_gpr.x[3] = (register_t)ret3;
+		}
 	} else {
 		uint32_t ret0 = (uint32_t)current->vcpu_regs_gpr.x[0];
 		uint32_t ret1 = (uint32_t)current->vcpu_regs_gpr.x[1];
@@ -65,7 +73,7 @@ smccc_handle_call(bool is_hvc)
 		uint32_t ret3 = (uint32_t)current->vcpu_regs_gpr.x[3];
 
 		if (smccc_function_id_get_is_fast(&function_id)) {
-			handled = trigger_smccc_call_fast_32_event(
+			handled = trigger_smccc_dispatch_fast_32_event(
 				smccc_function_id_get_interface_id(
 					&function_id),
 				smccc_function_id_get_function(&function_id),
@@ -79,7 +87,7 @@ smccc_handle_call(bool is_hvc)
 					(uint32_t)current->vcpu_regs_gpr.x[7]),
 				&ret0, &ret1, &ret2, &ret3);
 		} else {
-			handled = trigger_smccc_call_yielding_32_event(
+			handled = trigger_smccc_dispatch_yielding_32_event(
 				smccc_function_id_get_interface_id(
 					&function_id),
 				smccc_function_id_get_function(&function_id),
@@ -94,12 +102,15 @@ smccc_handle_call(bool is_hvc)
 				&ret0, &ret1, &ret2, &ret3);
 		}
 
-		current->vcpu_regs_gpr.x[0] = (register_t)ret0;
-		current->vcpu_regs_gpr.x[1] = (register_t)ret1;
-		current->vcpu_regs_gpr.x[2] = (register_t)ret2;
-		current->vcpu_regs_gpr.x[3] = (register_t)ret3;
+		if (handled) {
+			current->vcpu_regs_gpr.x[0] = (register_t)ret0;
+			current->vcpu_regs_gpr.x[1] = (register_t)ret1;
+			current->vcpu_regs_gpr.x[2] = (register_t)ret2;
+			current->vcpu_regs_gpr.x[3] = (register_t)ret3;
+		}
 	}
 
+out:
 	return handled;
 }
 
@@ -125,4 +136,15 @@ smccc_handle_vcpu_trap_hvc64(ESR_EL2_ISS_HVC_t iss)
 	}
 
 	return handled;
+}
+
+bool
+smccc_handle_vcpu_trap_default(void)
+{
+	// We always fallback to returning -1, otherwise we'll deliver an
+	// exception to the VCPU.
+	thread_t *current	    = thread_get_self();
+	current->vcpu_regs_gpr.x[0] = (register_t)SMCCC_UNKNOWN_FUNCTION64;
+
+	return true;
 }

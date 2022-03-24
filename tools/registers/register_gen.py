@@ -39,14 +39,21 @@ class register:
     @property
     def variants(self):
         ret = []
+        type_name = self.type_name[:-1] if self.type_name.endswith(
+            '!') else self.type_name
+
         for v in self._variants:
             if v.endswith('!'):
-                ret.append((v[:-1], v[:-1]))
+                ret.append((v[:-1],
+                            type_name if self.type_name.endswith(
+                                '!') else v[:-1]))
             else:
                 ret.append(('_'.join((self.name, v)),
-                            '_'.join((self.type_name, v))))
+                            type_name if self.type_name.endswith(
+                                '!') else '_'.join((type_name, v))))
+
         if not ret:
-            ret = [(self.name, self.type_name)]
+            ret = [(self.name, type_name)]
         return sorted(ret)
 
     @property

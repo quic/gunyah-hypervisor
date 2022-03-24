@@ -9,7 +9,7 @@ from ir import (
     Include, Symbol, Type, ConstExpr, Priority, Result, ExpectedArgs, Param,
     Selectors, SelectorParam, CountParam, Module, Event, HandledEvent,
     MultiEvent, SetupEvent, SelectorEvent, Subscription, Optional, Public,
-    Handler, Constant, Unwinder, Success)
+    Handler, Constant, Unwinder, Success, LockAnnotation, LockName)
 
 import collections
 import logging
@@ -206,5 +206,18 @@ class TransformToIR(Transformer):
     @v_args(meta=True)
     def success(self, children, meta):
         c = Success(' '.join(children))
+        c.meta = meta
+        return c
+
+    @v_args(meta=True)
+    def lock_name(self, children, meta):
+        c = LockName(''.join(children))
+        c.meta = meta
+        return c
+
+    @v_args(meta=True)
+    def lock_opt(self, children, meta):
+        action, kind = children[0].rsplit()[-1].split('_')
+        c = LockAnnotation(action, kind, children[1])
         c.meta = meta
         return c

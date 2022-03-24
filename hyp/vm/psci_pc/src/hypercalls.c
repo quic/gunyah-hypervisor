@@ -116,7 +116,7 @@ hypercall_vpm_group_get_state_result_t
 hypercall_vpm_group_get_state(cap_id_t vpm_group_cap)
 {
 	hypercall_vpm_group_get_state_result_t ret    = { 0 };
-	cspace_t *			       cspace = cspace_get_self();
+	cspace_t				 *cspace = cspace_get_self();
 
 	vpm_group_ptr_result_t p = cspace_lookup_vpm_group(
 		cspace, vpm_group_cap, CAP_RIGHTS_VPM_GROUP_QUERY);

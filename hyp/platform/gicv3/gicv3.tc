@@ -3,8 +3,37 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include <util.h>
+#include <types/bitmap.h>
+
+#include "gicv3_config.h"
 
 define irq_t newtype uint32;
+
+#if GICV3_HAS_ITS
+// We always allocate one fixed collection per physical CPU. They're
+// apparently intended for group rerouting of IRQs but that is not terribly
+// useful in practice.
+//define gic_its_ic_id_t newtype type cpu_index_t;
+define gic_its_ic_id_t newtype uint16;
+
+// Redistributor ID, in the form used by the ITS's commands. Depending on the
+// ITS implementation this could be either the physical base address of the
+// redistributor, or its processor number as used in legacy mode (which is
+// typically but not necessarily the same as cpu_index_t).
+define gic_its_rdbase_pta0_t newtype uint16;
+define gic_its_rdbase_pta1 bitfield<64> {
+	35:0	paddr	type paddr_t lsl(16);
+};
+define gic_its_rdbase union {
+	// Used in command bitfields, as unions are not directly allowed
+	raw	uregister;
+	// Used if the GITS_TYPER.PTA bit is 1
+	pta1	bitfield gic_its_rdbase_pta1;
+	// Used if the GITS_TYPER.PTA bit is 0
+	pta0	type gic_its_rdbase_pta0_t;
+};
+
+#endif // GICV3_HAS_ITS
 
 define GIC_SGI_BASE constant type irq_t = 0;
 define GIC_SGI_NUM constant type count_t = 16;
@@ -51,6 +80,8 @@ define GIC_PRIORITY_NORMAL constant uint8 = 0x80;
 // this value from IPRIORITYR; do not compare equality to this.
 define GIC_PRIORITY_LOWEST constant uint8 = 0xff;
 
+// GICv3 memory-mapped register interface layouts
+
 #define GICD_ARRAY_SIZE(n) \
 	(util_balign_up((GIC_SPI_BASE + GIC_SPI_NUM), n) / n)
 #define GICD_ARRAY_SIZE_EXT(n) \
@@ -60,6 +91,7 @@ define gicd structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	ctlr @ 0x0000		union GICD_CTLR(atomic);
 	typer @ 0x0004		bitfield GICD_TYPER(atomic);
 	iidr @ 0x0008		bitfield GICD_IIDR(atomic);
+	typer2 @ 0x000c		bitfield GICD_TYPER2(atomic);
 	statusr @ 0x0010	bitfield GICD_STATUSR(atomic);
 	setspi_nsr @ 0x0040	bitfield GICD_CLRSPI_SETSPI_NSR_SR(atomic);
 	clrspi_nsr @ 0x0048	bitfield GICD_CLRSPI_SETSPI_NSR_SR(atomic);
@@ -93,6 +125,11 @@ define gicd structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	nsacr_e @ 0x3600	array(GICD_ARRAY_SIZE_EXT(32)) uint32(atomic);
 	irouter @ 0x6100	array(GIC_SPI_NUM) bitfield GICD_IROUTER(atomic);
 	irouter_e @ 0x8000	array(GIC_SPI_EXT_NUM) bitfield GICD_IROUTER(atomic);
+#if GICV3_HAS_GICD_ICLAR
+	// GIC-600 / GIC-700 IRQ class registers to control 1-of-N routing
+	iclar @ 0xe000		array(GICD_ARRAY_SIZE(16)) uint32(atomic);
+	iclar_e @ 0xec00	array(GICD_ARRAY_SIZE_EXT(16)) uint32(atomic);
+#endif
 };
 
 // Instead of adding PIDR2 to the gicd structure above, define a separate
@@ -106,21 +143,14 @@ define gicr_rd_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	typer @ 0x0008		bitfield GICR_TYPER(atomic);
 	statusr @ 0x0010	bitfield GICR_STATUSR(atomic);
 	waker @ 0x0014		bitfield GICR_WAKER(atomic);
-	setlpir @ 0x0040	bitfield GICR_CLRLPIR_INVLPIR_SETLPIR(atomic);
-	clrlpir @ 0x0048	bitfield GICR_CLRLPIR_INVLPIR_SETLPIR(atomic);
+	setlpir @ 0x0040	bitfield GICR_CLRLPIR_SETLPIR(atomic);
+	clrlpir @ 0x0048	bitfield GICR_CLRLPIR_SETLPIR(atomic);
 	propbaser @ 0x0070	bitfield GICR_PROPBASER(atomic);
 	pendbaser @ 0x0078	bitfield GICR_PENDBASER(atomic);
-	invlpir @ 0x00A0	bitfield GICR_CLRLPIR_INVLPIR_SETLPIR(atomic);
-	invallr @ 0x00B0	uint64(atomic);
+	invlpir @ 0x00A0	bitfield GICR_INVLPIR(atomic);
+	invallr @ 0x00B0	bitfield GICR_INVALLR(atomic);
 	syncr @ 0x00C0		bitfield GICR_SYNCR(atomic);
 };
-
-#if GICV3_HAS_VLPI
-define gicr_vlpi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
-	vpropbaser @ 0x0070	bitfield GICR_VPROPBASER(atomic);
-	vpendbaser @ 0x0078	bitfield GICR_VPENDBASER(atomic);
-};
-#endif
 
 define gicr_sgi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	reserved @ 0x0000	uint32(atomic);
@@ -140,8 +170,7 @@ define gicr_sgi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	icactiver_e @ 0x0384	uint32(atomic);
 	ipriorityr @ 0x0400	array(GIC_PPI_BASE + GIC_PPI_NUM) uint8(atomic);
 	ipriorityr_e @ 0x0420	array(GIC_PPI_EXT_NUM) uint8(atomic);
-	icfgr0 @ 0x0C00		uint32(atomic);
-	icfgr1 @ 0x0C04		uint32(atomic);
+	icfgr @ 0x0C00		array(2) uint32(atomic);
 	icfgr_e @ 0x0C08	uint32(atomic);
 	igrpmodr0 @ 0x0D00	uint32(atomic);
 	igrpmodr_e @ 0x0D04	uint32(atomic);
@@ -152,34 +181,695 @@ define gicr structure(aligned(65536)) {
 	rd @ 0	structure gicr_rd_base;
 	PIDR2 @ 0xFFE8		uint32(atomic);
 	sgi @ 0x10000	structure gicr_sgi_base;
-#if GICV3_HAS_VLPI
-	vlpi @ 0x20000	structure gicr_vlpi_base;
-#endif
 };
 
 define GICR_PAGE_MASK	constant = ((1 << 16) - 1);
 
-#if GICV3_HAS_VLPI
-// GIC Redistributer stride (four 64k pages per core)
-define GICR_STRIDE_SHIFT	constant = 16 + 2;
-#else
-// GIC Redistributer stride (two 64k pages per core)
+// GIC Redistributor stride (two 64k pages per core)
 define GICR_STRIDE_SHIFT	constant = 16 + 1;
-#endif
-
-define GICR_STRIDE_MASK	constant = ((1 << GICR_STRIDE_SHIFT) - 1);
 
 define gicv3_irq_type enumeration {
 	sgi;
 	ppi;
 	spi;
 	special;
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	ppi_ext;
 	spi_ext;
 #endif
-#if GICv3_HAS_LPI
-	lpi;
-#endif
 	reserved;
 };
+
+// Memory-mapped registers (common to AArch32 & AArch64)
+
+define GICD_CLRSPI_SETSPI_NSR_SR bitfield<32> {
+	12:0		INTID		type irq_t;
+	31:13		unknown=0;
+};
+
+define GICD_CTLR_S bitfield<32> {
+	0		EnableGrp0	bool;
+	1		EnableGrp1NS	bool;
+	2		EnableGrp1S	bool;
+	3		unknown=0;
+	4		ARE_S		bool;
+	5		ARE_NS		bool;
+	6		DS		bool(const) = 0;
+	7		E1NWF		bool;
+	30:8		unknown=0;
+	31		RWP		bool;
+};
+
+define GICD_CTLR_NS bitfield<32> {
+	0		EnableGrp1	bool;
+	1		EnableGrp1A	bool;
+	3:2		unknown=0;
+	4		ARE_NS		bool;
+	30:5		unknown=0;
+	31		RWP		bool;
+};
+
+define GICD_CTLR_DS bitfield<32> {
+	0		EnableGrp0	bool;
+	1		EnableGrp1	bool;
+	3:2		unknown=0;
+	4		ARE		bool;
+	5		unknown=0;
+	6		DS		bool(const) = 1;
+	7		E1NWF		bool;
+	8		nASSGIreq	bool;
+	30:9		unknown=0;
+	31		RWP		bool;
+};
+
+define GICD_CTLR union {
+	s		bitfield GICD_CTLR_S;
+	ns		bitfield GICD_CTLR_NS;
+	ds		bitfield GICD_CTLR_DS;
+};
+
+define GICD_IIDR bitfield<32> {
+	11:0		Implementer	uint16;
+	15:12		Revision	uint8;
+	19:16		Variant		uint8;
+	23:20		unknown=0;
+	31:24		ProductID	uint8;
+};
+
+define GICD_IROUTER bitfield<64> {
+	7:0		Aff0		uint8;
+	15:8		Aff1		uint8;
+	23:16		Aff2		uint8;
+	30:24		unknown=0;
+	31		IRM		bool;
+	39:32		Aff3		uint8;
+	63:40		unknown=0;
+};
+
+define GICD_SGIR bitfield<32> {
+	3:0		INTID			type irq_t;
+	14:4		unknown=0;
+	15		NSATT			bool;
+	23:16		CPUTargetList		uint8;
+	25:24		TargetListFilter	uint8;
+	31:26		unknown=0;
+};
+
+define GICD_STATUSR bitfield<32> {
+	0		RRD		bool;
+	1		WRD		bool;
+	2		RWOD		bool;
+	3		WROD		bool;
+	31:4		unknown=0;
+};
+
+define GICD_TYPER bitfield<32> {
+	4:0		ITLinesNumber	type count_t;
+	7:5		CPUNumber	type count_t;
+	8		ESPI		bool;
+	9		unknown=0;
+	10		SecurityExtn	bool;
+	15:11		num_LPIs	type count_t;
+	16		MBIS		bool;
+	17		LPIS		bool;
+	18		DVIS		bool;
+	23:19		IDbits		type count_t;
+	24		A3V		bool;
+	25		No1N		bool;
+	26		RSS		bool;
+	31:27		ESPI_range	type count_t;
+};
+
+define GICD_TYPER2 bitfield<32> {
+	4:0		VID		type count_t;
+	6:5		unknown=0;
+	7		VIL		bool;
+	8		nASSGIcap	bool;
+	31:9		unknown=0;
+};
+
+define GICR_CLRLPIR_SETLPIR bitfield<64> {
+	31:0		pINTID		type irq_t;
+	63:32		unknown=0;
+};
+
+define GICR_CTLR bitfield<32> {
+	0		Enable_LPIs	bool;
+	1		CES		bool;
+	2		IR		bool;
+	3		RWP		bool;
+	23:4		unknown=0;
+	24		DPG0		bool;
+	25		DPG1NS		bool;
+	26		DPG1S		bool;
+	30:27		unknown=0;
+	31		UWP		bool;
+};
+
+define GICR_IIDR bitfield<32> {
+	11:0		Implementer	uint16;
+	15:12		Revision	uint8;
+	19:16		Variant		uint8;
+	23:20		unknown=0;
+	31:24		ProductID	uint8;
+};
+
+define GICR_INVALLR bitfield<64> {
+	31:0		unknown=0;
+	63:32		unknown=0;
+};
+
+define GICR_INVLPIR bitfield<64> {
+	31:0		pINTID		type irq_t;
+	63:32		unknown=0;
+};
+
+define GICR_PENDBASER bitfield<64> {
+	6:0		unknown=0;
+	9:7		InnerCache	uint8;
+	11:10		Shareability	uint8;
+	15:12		unknown=0;
+	51:16		PA		uint64 lsl(16);
+	55:52		unknown=0;
+	58:56		OuterCache	uint8;
+	61:59		unknown=0;
+	62		PTZ		bool;
+	63		unknown=0;
+};
+
+define GICR_PROPBASER bitfield<64> {
+	4:0		IDbits		type count_t;
+	6:5		unknown=0;
+	9:7		InnerCache	uint8;
+	11:10		Shareability	uint8;
+	51:12		PA		uint64 lsl(12);
+	55:52		unknown=0;
+	58:56		OuterCache	uint8;
+	63:59		unknown=0;
+};
+
+define GICR_STATUSR bitfield<32> {
+	0		RRD		bool;
+	1		WRD		bool;
+	2		RWOD		bool;
+	3		WROD		bool;
+	31:4		unknown=0;
+};
+
+define GICR_SYNCR bitfield<32> {
+	0		Busy		bool;
+	31:1		unknown=0;
+};
+
+define GICR_TYPER_PPInum enumeration(explicit) {
+	MAX_31 = 0;
+	MAX_1087 = 1;
+	MAX_1119 = 2;
+};
+
+define GICR_TYPER bitfield<64> {
+	0		PLPIS		bool;
+	1		VLPIS		bool;
+	2		Dirty		bool;
+	3		DirectLPI	bool;
+	4		Last		bool;
+	5		DPGS		bool;
+	6		MPAM		bool;
+	7		RVPEID		bool;
+	23:8		Processor_Num	type index_t;
+	25:24		CommonLPIAff	uint8;
+	26		VSGI		bool;
+	31:27		PPInum		enumeration GICR_TYPER_PPInum;
+	39:32		Aff0		uint8;
+	47:40		Aff1		uint8;
+	55:48		Aff2		uint8;
+	63:56		Aff3		uint8;
+};
+
+define GICR_VPENDBASER bitfield<64> {
+	6:0		unknown=0;
+	9:7		InnerCache	uint8;
+	11:10		Shareability	uint8;
+	15:12		unknown=0;
+	51:16		PA		type paddr_t lsl(16);
+	55:52		unknown=0;
+	58:56		OuterCache	uint8;
+	59		unknown=0;
+	60		Dirty		bool;
+	61		PendingLast	bool;
+	62		IDAI		bool;
+	63		Valid		bool;
+};
+
+define GICR_VPROPBASER bitfield<64> {
+	4:0		IDbits		uint8;
+	6:5		unknown=0;
+	9:7		InnerCache	uint8;
+	11:10		Shareability	uint8;
+	51:12		PA		type paddr_t lsl(12);
+	55:52		unknown=0;
+	58:56		OuterCache	uint8;
+	63:59		unknown=0;
+};
+
+define GICR_WAKER bitfield<32> {
+	0		IMPDEF		bool;
+	1		ProcessorSleep	bool;
+	2		ChildrenAsleep	bool;
+	30:3		unknown=0;
+	31		IMPDEF2		bool;
+};
+
+define GICC_BPR_ABPR bitfield<64> {
+	2:0		BinaryPoint	uint8;
+	63:3		unknown=0;
+};
+
+define GICC_EOIR_HPPIR_IAR_DIR bitfield<64> {
+	23:0		INTID		type irq_t;
+	63:24		unknown=0;
+};
+
+define GICC_CTLR_DS0 bitfield<64> {
+	0		EnableGrp1	bool;
+	4:1		unknown=0;
+	5		FIQBypDisGrp1	bool;
+	6		IRQBypDisGrp1	bool;
+	8:7		unknown=0;
+	9		EOImodeNS	bool;
+	63:10		unknown=0;
+};
+
+define GICC_CTLR_DS1 bitfield<64> {
+	0		EnableGrp0	bool;
+	1		EnableGrp1	bool;
+	2		unknown=0;
+	3		FIQEn		bool;
+	4		CBPR		bool;
+	5		FIQBypDisGrp0	bool;
+	6		IRQBypDisGrp0	bool;
+	7		FIQBypDisGrp1	bool;
+	8		IRQBypDisGrp1	bool;
+	9		EOImode		bool;
+	63:10		unknown=0;
+};
+
+define GICC_IIDR bitfield<64> {
+	11:0		Implementer	uint16;
+	15:12		Revision	uint8;
+	19:16		ArchVer		uint8;
+	31:20		ProductID	uint16;
+	63:32		unknown=0;
+};
+
+define GICC_PMR_RPR bitfield<64> {
+	7:0		Priority	uint8;
+	63:8		unknown=0;
+};
+
+define GICC_STATUSR bitfield<64> {
+	0		RRD		bool;
+	1		WRD		bool;
+	2		RWOD		bool;
+	3		WROD		bool;
+	4		ASV		bool;
+	63:5		unknown=0;
+};
+
+define GICV_CTLR bitfield<64> {
+	0		EnableGrp0	bool;
+	1		EnableGrp1	bool;
+	2		AckCtl		bool;
+	3		FIQEn		bool;
+	4		CBPR		bool;
+	8:5		unknown=0;
+	9		EOImode		bool;
+	63:10		unknown=0;
+};
+
+define GICV_IIDR bitfield<64> {
+	11:0		Implementer	uint16;
+	15:12		Revision	uint8;
+	19:16		ArchVer		uint8;
+	31:20		ProductID	uint16;
+	63:32		unknown=0;
+};
+
+#if GICV3_HAS_ITS
+
+// ITS register maps
+
+define gits_ctl_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	ctlr @ 0x0		bitfield GITS_CTLR(atomic);
+	iidr @ 0x4		bitfield GITS_IIDR(atomic);
+	typer @ 0x8		bitfield GITS_TYPER(atomic);
+	mpamidr @ 0x10		bitfield GITS_MPAMIDR(atomic);
+	partidr @ 0x14		bitfield GITS_PARTIDR(atomic);
+	cbaser @ 0x80		bitfield GITS_CBASER(atomic);
+	cwriter @ 0x88		bitfield GITS_CWRITER(atomic);
+	creadr @ 0x90		bitfield GITS_CREADR(atomic);
+	baser @ 0x100		array(8) bitfield GITS_BASER(atomic);
+};
+
+define gits_xlate_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	translater @ 0x40	bitfield GITS_TRANSLATER(atomic);
+};
+
+define gits structure(aligned(65536)) {
+	ctl @ 0			structure gits_ctl_base;
+	PIDR2 @ 0xFFE8		uint32(atomic);
+	xlate @ 0x10000		structure gits_xlate_base;
+};
+
+// GIC ITS stride (two 64k pages per ITS)
+define GITS_STRIDE_SHIFT	constant = 16 + 1;
+
+// ITS memory-mapped registers
+
+define GITS_BASER_Page_Size enumeration(explicit) {
+	SIZE_4KB = 0b00;
+	SIZE_16KB = 0b01;
+	SIZE_64KB = 0b10;
+};
+
+define GITS_BASER_Type enumeration(explicit) {
+	Unimplemented = 0b000;
+	Devices = 0b001;
+	Collections = 0b100;
+};
+
+define GITS_BASER bitfield<64> {
+	7:0	Size			type count_t;
+	9:8	Page_Size		enumeration GITS_BASER_Page_Size;
+	11:10	Shareability		uint8;
+	47:12	Physical_Address	type paddr_t lsl(12);
+	52:48	Entry_Size		size;
+	55:53	OuterCache		uint8;
+	58:56	Type			enumeration GITS_BASER_Type;
+	61:59	InnerCache		uint8;
+	62	Indirect		bool;
+	63	Valid			bool;
+};
+
+define GITS_BASER_Indirect_entry bitfield<64> {
+	11:0	unknown=0;
+	51:12	Physical_Address	type paddr_t lsl(12);
+	62:52	unknown=0;
+	63	Valid			bool;
+};
+
+define GITS_CBASER bitfield<64> {
+	7:0	Size			type count_t;
+	9:8	unknown=0;
+	11:10	Shareability		uint8;
+	// The manual includes bits 15:12 in the physical address, but also
+	// says that the queue must be 64k-aligned.
+	15:12	unknown=0;
+	51:16	Physical_Address	type paddr_t lsl(16);
+	52	unknown=0;
+	55:53	OuterCache		uint8;
+	58:56	unknown=0;
+	61:59	InnerCache		uint8;
+	62	unknown=0;
+	63	Valid			bool;
+};
+
+define GITS_CREADR bitfield<64> {
+	0	Stalled			bool;
+	4:1	unknown=0;
+	// This is defined as "Offset" in the spec, but if we don't shift it
+	// left then it becomes an index into the array of command structures,
+	// which is more convenient to work with.
+	19:5	Index			type index_t;
+	63:20	unknown=0;
+};
+
+define GITS_CTLR bitfield<32> {
+	0	Enabled			bool;
+	1	ImDe			bool;
+	3:2	unknown=0;
+	7:4	ITS_Number		type index_t;
+	30:8	unknown=0;
+	31	Quiescent		bool;
+};
+
+define GITS_CWRITER bitfield<64> {
+	0	Retry			bool;
+	4:1	unknown=0;
+	// See comment in GITS_CREADR
+	19:5	Index			type index_t;
+	63:20	unknown=0;
+};
+
+define GITS_IIDR bitfield<32> {
+	11:0		Implementer	uint16;
+	15:12		Revision	uint8;
+	19:16		Variant		uint8;
+	23:20		unknown=0;
+	31:24		ProductID	uint8;
+};
+
+define GITS_MPAMIDR bitfield<32> {
+	15:0		PARTIDmax	uint16;
+	23:16		PMGmax		uint8;
+	31:24		unknown=0;
+};
+
+define GITS_PARTIDR bitfield<32> {
+	15:0		PARTID		uint16;
+	23:16		PMG		uint8;
+	31:24		unknown=0;
+};
+
+define GITS_TRANSLATER bitfield<32> {
+	31:0		event_id	type platform_msi_event_id_t;
+};
+
+define GITS_TYPER_SVPET enumeration(explicit) {
+	NOT_SHARED = 0b00;
+	SHARED_AFF3 = 0b01;
+	SHARED_AFF2 = 0b10;
+	SHARED_AFF1 = 0b11;
+};
+
+define GITS_TYPER bitfield<64> {
+	0		Physical	bool;
+	1		Virtual		bool;
+	2		CCT		bool;
+	3		unknown;	// IMP DEF
+	7:4		ITT_entry_size	size;
+	12:8		ID_bits		type count_t;
+	17:13		Devbits		type count_t;
+	18		SEIs		bool;
+	19		PTA		bool;
+	23:20		unknown=0;
+	31:24		HCC		type count_t;
+	35:32		CIDbits		type count_t;
+	36		CIL		bool;
+	37		VMOVP		bool;
+	38		MPAM		bool;
+	39		VSGI		bool;
+	40		VMAPP		bool;
+	42:41		SVPET		enumeration GITS_TYPER_SVPET;
+	43		nID		bool;
+	63:44		unknown=0;
+};
+
+// ITS commands
+
+// Note: these are duplicated in the type definitions below.
+define gic_its_cmd_id enumeration {
+	clear = 0x4;
+	discard = 0xf;
+	int = 0x3;
+	inv = 0xc;
+	invall = 0xd;
+	mapc = 0x9;
+	mapd = 0x8;
+	mapi = 0xb;
+	mapti = 0xa;
+	movall = 0xe;
+	movi = 0x1;
+	sync = 0x5;
+};
+
+define gic_its_cmd_base bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id;
+	255:8	unknown=0;
+};
+
+define gic_its_cmd_clear bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x4;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	255:96	unknown=0;
+};
+
+define gic_its_cmd_discard bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xf;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	255:96	unknown=0;
+};
+
+define gic_its_cmd_int bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x3;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	255:96	unknown=0;
+};
+
+define gic_its_cmd_inv bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xc;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	255:96	unknown=0;
+};
+
+define gic_its_cmd_invall bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xd;
+	127:8	unknown=0;
+	143:128	icid		type gic_its_ic_id_t;
+	255:144	unknown=0;
+};
+
+define gic_its_cmd_mapc bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x9;
+	127:8	unknown=0;
+	143:128	icid		type gic_its_ic_id_t;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	190:180 unknown=0;
+	191	valid		bool;
+	255:192	unknown=0;
+};
+
+define gic_its_cmd_mapd bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x8;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	68:64	size		type count_t;
+	135:69	unknown=0;
+	179:136	itt_addr	type paddr_t lsl(8);
+	190:180 unknown=0;
+	191	valid		bool;
+	255:192 unknown=0;
+};
+
+define gic_its_cmd_mapi bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xb;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	127:96	unknown=0;
+	143:128	icid		type gic_its_ic_id_t;
+	255:144	unknown=0;
+};
+
+define gic_its_cmd_mapti bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xa;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	127:96	lpi		type irq_t;
+	143:128	icid		type gic_its_ic_id_t;
+	255:144	unknown=0;
+};
+
+define gic_its_cmd_movall bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0xe;
+	143:8	unknown=0;
+	179:144	rdbase1		uregister; // union gic_its_rdbase;
+	207:180	unknown=0;
+	243:208	rdbase2		uregister; // union gic_its_rdbase;
+	255:244 unknown=0;
+};
+
+define gic_its_cmd_movi bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x1;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	127:96	unknown=0;
+	143:128	icid		type gic_its_ic_id_t;
+	255:144	unknown=0;
+};
+
+define gic_its_cmd_sync bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x5;
+	143:8	unknown=0;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	255:180 unknown=0;
+};
+
+define gic_its_cmd union(aligned(32)) {
+	clear		bitfield gic_its_cmd_clear;
+	discard		bitfield gic_its_cmd_discard;
+	// Extra underscore to avoid keyword conflict with C's int type
+	int_		bitfield gic_its_cmd_int;
+	inv		bitfield gic_its_cmd_inv;
+	invall		bitfield gic_its_cmd_invall;
+	mapc		bitfield gic_its_cmd_mapc;
+	mapd		bitfield gic_its_cmd_mapd;
+	mapi		bitfield gic_its_cmd_mapi;
+	mapti		bitfield gic_its_cmd_mapti;
+	movall		bitfield gic_its_cmd_movall;
+	movi		bitfield gic_its_cmd_movi;
+	sync		bitfield gic_its_cmd_sync;
+
+	// Used to read the command ID when parsing commands
+	base		bitfield gic_its_cmd_base;
+};
+
+// Per-ITS driver state structure
+define gicv3_its_driver_state structure {
+	// Virtual address of the memory-mapped registers
+	regs		pointer structure gits;
+
+	// RDbase values used for ITS commands. Depending on the ITS these
+	// might either be physical pointers to the redistributors, or the GIC's
+	// CPU indices.
+	rdbases		array(PLATFORM_MAX_CORES) union gic_its_rdbase;
+
+	// GITS_BASER values used to rewrite the bases on resume.
+	saved_basers	array(8) bitfield GITS_BASER;
+
+	// Level 1 tables for indirect bases. NULL if indirection is not used.
+	indirect_device_table	structure gicv3_its_indirect_table;
+
+	// Lock protecting the command queue
+	cmd_queue_lock	structure spinlock;
+	// Virtual and physical pointers to this ITS's command queue
+	cmd_queue	pointer array(GICV3_ITS_QUEUE_LEN) union gic_its_cmd;
+	cmd_queue_phys	type paddr_t;
+	// Next sequence number to be allocated in the command queue
+	cmd_queue_head	type count_t;
+	// Next sequence number to be processed by the ITS
+	cmd_queue_cached_tail	type count_t;
+	// True if commands need to be cache-flushed before submission
+	cmd_queue_flush	bool;
+
+	// First unused device ID
+	first_unused	type platform_msi_device_id_t;
+	// True if the first unused device ID has already been reserved
+	first_unused_reserved	bool;
+};
+
+// Driver state for an indirect ITS table; used to ensure that second level
+// tables have been allocated before submitting ITS commands that use them.
+define gicv3_its_indirect_table structure {
+	// Hypervisor virtual address of the first-level table.
+	first_level	pointer bitfield GITS_BASER_Indirect_entry(atomic);
+
+	// Page / L2 table size (which the hardware might fix to >4K)
+	page_size	size;
+
+	// Number of entries in the first and second level tables.
+	entries_l1	type count_t;
+	entries_l2	type count_t;
+};
+
+#endif // GICV3_HAS_ITS

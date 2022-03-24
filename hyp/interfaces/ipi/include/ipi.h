@@ -114,4 +114,4 @@ ipi_clear_relaxed(ipi_reason_t ipi);
 //
 // Returns true if a reschedule is needed.
 bool
-ipi_handle_relaxed(void);
+ipi_handle_relaxed(void) REQUIRE_PREEMPT_DISABLED;

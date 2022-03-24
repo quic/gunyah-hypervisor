@@ -43,7 +43,7 @@ define pgtable_access public enumeration(explicit) {
 	RWX = 7;
 };
 
-define pgtable_vm structure {
+define pgtable_vm structure(lockable) {
 };
 
 extend error enumeration {

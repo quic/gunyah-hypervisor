@@ -29,18 +29,52 @@
 #include "exception_dispatch.h"
 #include "exception_inject.h"
 
+#if ARCH_AARCH64_32BIT_EL1 && !ARCH_AARCH64_32BIT_EL0
+#error invalid CPU config
+#endif
+
 static inline void
 exception_skip_inst(bool is_il32)
 {
-	thread_t * thread = thread_get_self();
+	thread_t	 *thread = thread_get_self();
 	register_t pc = ELR_EL2_get_ReturnAddress(&thread->vcpu_regs_gpr.pc);
 
+#if ARCH_AARCH64_32BIT_EL0
 	pc += is_il32 ? 4U : 2U;
-	ELR_EL2_set_ReturnAddress(&thread->vcpu_regs_gpr.pc, pc);
 
-#if defined(CONFIG_AARCH64_32BIT_EL1)
-#error Adjust ITSTATE if necessary
+	SPSR_EL2_A64_t	  spsr_el2 = thread->vcpu_regs_gpr.spsr_el2;
+	spsr_64bit_mode_t spsr_m   = SPSR_EL2_A64_get_M(&spsr_el2);
+
+	if ((spsr_m & 0x10) != 0U) {
+		// Exception was in AArch32 execution. Update PSTATE.IT
+		SPSR_EL2_A32_t spsr32 =
+			SPSR_EL2_A32_cast(SPSR_EL2_A64_raw(spsr_el2));
+		if (SPSR_EL2_A32_get_T(&spsr32)) {
+			uint8_t IT = SPSR_EL2_A32_get_IT(&spsr32);
+			if ((IT & 0xf) == 0x8) {
+				// Was the last instruction in IT block
+				IT = 0;
+			} else {
+				// Otherwise shift bits. This is safe even if
+				// not in an IT block.
+				IT = (uint8_t)((IT & 0xe0) | ((IT & 0xf) << 1));
+			}
+			SPSR_EL2_A32_set_IT(&spsr32, IT);
+
+			spsr_el2 = SPSR_EL2_A64_cast(SPSR_EL2_A32_raw(spsr32));
+
+			thread->vcpu_regs_gpr.spsr_el2 = spsr_el2;
+		} else {
+			assert(is_il32);
+		}
+	} else {
+		assert(is_il32);
+	}
+#else
+	assert(is_il32);
+	pc += 4U;
 #endif
+	ELR_EL2_set_ReturnAddress(&thread->vcpu_regs_gpr.pc, pc);
 }
 
 static bool
@@ -149,10 +183,13 @@ vcpu_interrupt_dispatch(void)
 {
 	trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_INTERRUPT);
 
+	preempt_disable_in_irq();
+
 	if (irq_interrupt_dispatch()) {
-		assert_preempt_enabled();
 		scheduler_schedule();
 	}
+
+	preempt_enable_in_irq();
 
 	trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_INTERRUPT);
 }
@@ -171,30 +208,20 @@ vcpu_exception_dispatch(bool is_aarch64)
 
 	esr_ec_t ec	 = ESR_EL2_get_EC(&esr);
 	bool	 is_il32 = true;
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+	// For exceptions AArch32 execution, we need to determine whether the
+	// trapped instruction passed its condition code. If it did not pass,
+	// then skip the instruction. Remember special cases, such as BKPT in
+	// IT blocks!
+	// The decoding to do this is specific to each ESR_EL2.EC value, and
+	// should probably be done within the switch cases below.
+#if ARCH_AARCH64_32BIT_EL0
 	is_il32 = ESR_EL2_get_IL(&esr);
-
-	// Make sure we didn't get here as AARCH64 with a 16-bit instruction
-	assert(!(is_aarch64 && !is_il32));
-#else
+#endif
+#if !ARCH_AARCH64_32BIT_EL1
 	assert(is_aarch64);
 #endif
 
 	switch (ec) {
-	case ESR_EC_MCRMRC15:
-	case ESR_EC_MCRRMRRC15:
-	case ESR_EC_MCRMRC14:
-	case ESR_EC_LDCSTC:
-	case ESR_EC_VMRS_EL2:
-	case ESR_EC_MRRC14:
-	case ESR_EC_SVC32:
-	case ESR_EC_HVC32_EL2:
-	case ESR_EC_SMC32_EL2:
-	case ESR_EC_FP32:
-	case ESR_EC_BKPT:
-	case ESR_EC_VECTOR32_EL2:
-		// FIXME: Handle the traps coming from AArch32
-		break;
 	case ESR_EC_UNKNOWN:
 		result = trigger_vcpu_trap_unknown_event(esr);
 		break;
@@ -202,7 +229,7 @@ vcpu_exception_dispatch(bool is_aarch64)
 	case ESR_EC_WFIWFE: {
 		ESR_EL2_ISS_WFI_WFE_t iss =
 			ESR_EL2_ISS_WFI_WFE_cast(ESR_EL2_get_ISS(&esr));
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 #error Check the condition code
 #endif
 		if (ESR_EL2_ISS_WFI_WFE_get_TI(&iss)) {
@@ -213,21 +240,28 @@ vcpu_exception_dispatch(bool is_aarch64)
 		break;
 	}
 	case ESR_EC_FPEN:
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 #error Check the condition code
 #endif
 		result = trigger_vcpu_trap_fp_enabled_event(esr);
 		break;
 
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_8_3_PAUTH)
 	case ESR_EC_PAUTH:
-#error Call the event handlers for this EC
+		if (trigger_vcpu_trap_pauth_event()) {
+			result = VCPU_TRAP_RESULT_RETRY;
+		}
 		break;
 
+#if defined(ARCH_ARM_8_3_NV)
 	case ESR_EC_ERET:
-#error Call the event handlers for this EC
+		if (trigger_vcpu_trap_eret_event(esr)) {
+			result = VCPU_TRAP_RESULT_RETRY;
+		}
 		break;
 #endif
+#endif // defined(ARCH_ARM_8_3_FPAC)
+
 	case ESR_EC_ILLEGAL:
 		if (trigger_vcpu_trap_illegal_state_event()) {
 			result = VCPU_TRAP_RESULT_RETRY;
@@ -274,6 +308,7 @@ vcpu_exception_dispatch(bool is_aarch64)
 
 			SMC_TRACE_CURRENT(SMC_TRACE_ID_EL1_64RET, 7);
 		}
+
 		break;
 	}
 
@@ -289,7 +324,7 @@ vcpu_exception_dispatch(bool is_aarch64)
 	}
 #if defined(ARCH_ARM_8_2_SVE)
 	case ESR_EC_SVE:
-#error Call the event handlers for this EC
+		result = trigger_vcpu_trap_sve_access_event();
 		break;
 #endif
 	case ESR_EC_INST_ABT_LO: {
@@ -325,10 +360,12 @@ vcpu_exception_dispatch(bool is_aarch64)
 		result = trigger_vcpu_trap_fp64_event(esr);
 		break;
 
-	case ESR_EC_SERROR:
-		result = trigger_vcpu_trap_serror_event(esr);
+	case ESR_EC_SERROR: {
+		ESR_EL2_ISS_SERROR_t iss =
+			ESR_EL2_ISS_SERROR_cast(ESR_EL2_get_ISS(&esr));
+		result = trigger_vcpu_trap_serror_event(iss);
 		break;
-
+	}
 	case ESR_EC_BREAK_LO:
 		result = trigger_vcpu_trap_breakpoint_guest_event(esr);
 		break;
@@ -341,16 +378,78 @@ vcpu_exception_dispatch(bool is_aarch64)
 		result = trigger_vcpu_trap_watchpoint_guest_event(esr);
 		break;
 
+	case ESR_EC_BRK:
+		result = trigger_vcpu_trap_brk_instruction_guest_event(esr);
+		break;
+
+		/* AArch32 traps which may come from EL0/1 */
+#if ARCH_AARCH64_32BIT_EL0
+	case ESR_EC_LDCSTC: {
+		ESR_EL2_ISS_LDC_STC_t iss =
+			ESR_EL2_ISS_LDC_STC_cast(ESR_EL2_get_ISS(&esr));
+		result = trigger_vcpu_trap_ldcstc_guest_event(iss);
+		break;
+	}
+	case ESR_EC_MCRMRC14: {
+		ESR_EL2_ISS_MCR_MRC_t iss =
+			ESR_EL2_ISS_MCR_MRC_cast(ESR_EL2_get_ISS(&esr));
+		result = trigger_vcpu_trap_mcrmrc14_guest_event(iss);
+		break;
+	}
+	case ESR_EC_MCRMRC15:
+		result = trigger_vcpu_trap_mcrmrc15_guest_event(esr);
+		break;
+	case ESR_EC_MCRRMRRC15:
+		result = trigger_vcpu_trap_mcrrmrrc15_guest_event(esr);
+		break;
+	case ESR_EC_MRRC14:
+		result = trigger_vcpu_trap_mrrc14_guest_event(esr);
+		break;
+	case ESR_EC_BKPT:
+		result = trigger_vcpu_trap_bkpt_guest_event(esr);
+		break;
+#else
+	case ESR_EC_LDCSTC:
+	case ESR_EC_MCRMRC14:
+	case ESR_EC_MCRMRC15:
+	case ESR_EC_MCRRMRRC15:
+	case ESR_EC_MRRC14:
+	case ESR_EC_BKPT:
+		break;
+#endif
+	/* AArch32 traps which may come when TGE=1 */
+	case ESR_EC_FP32:
+	/* AArch32 traps which may come only from EL1 */
+	case ESR_EC_VMRS_EL2:
+	case ESR_EC_SVC32:
+	case ESR_EC_HVC32_EL2:
+	case ESR_EC_SMC32_EL2:
+	case ESR_EC_VECTOR32_EL2:
+		// FIXME: Handle the traps coming from AArch32 EL1
+		break;
+
 	// EL2 traps, we should never get these here
 	case ESR_EC_INST_ABT:
 	case ESR_EC_DATA_ABT:
 	case ESR_EC_BREAK:
 	case ESR_EC_STEP:
 	case ESR_EC_WATCH:
-	case ESR_EC_BRK:
-		panic("EL2 trap from the guest vector");
-	default:
-		panic("Unknown trap EC from the guest vector");
+#if defined(ARCH_ARM_8_5_BTI)
+	case ESR_EC_BTI:
+#endif
+#if defined(ARCH_ARM_8_3_PAUTH) && defined(ARCH_ARM_8_3_FPAC)
+	case ESR_EC_FPAC:
+#endif
+	default: {
+		thread_t *thread = thread_get_self();
+		TRACE_AND_LOG(ERROR, WARN,
+			      "Unexpected trap from VM {:d}, ESR_EL2 = {:#x}, "
+			      "ELR_EL2 = {:#x}",
+			      thread->addrspace->vmid, ESR_EL2_raw(esr),
+			      ELR_EL2_raw(thread->vcpu_regs_gpr.pc));
+		abort("Unexpected guest trap",
+		      ABORT_REASON_UNHANDLED_EXCEPTION);
+	}
 	}
 
 	switch (result) {

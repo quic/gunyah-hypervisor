@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+// TODO: Add functions that work on other CPUs' queues. Important for migrating
+// schedulers.
+
 // Initialise a timer object
 void
 timer_init_object(timer_t *timer, timer_action_t action);

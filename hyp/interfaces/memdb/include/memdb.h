@@ -24,6 +24,10 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 
 // Find the entry corresponding to the input address and return the object and
 // type the entry is pointing to
+//
+// This function returns an RCU-protected reference and therefore, it needs to
+// be called in a RCU critical section and maintain it until we finish using the
+// returned object.
 memdb_obj_type_result_t
 memdb_lookup(paddr_t addr);
 

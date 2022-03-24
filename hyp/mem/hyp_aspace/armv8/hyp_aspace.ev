@@ -12,4 +12,6 @@ subscribe partition_remove_ram_range(phys_base, size)
 	unwinder hyp_aspace_handle_partition_add_ram_range(phys_base, size) public
 #endif
 
+#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
 subscribe vectors_trap_data_abort_el2
+#endif

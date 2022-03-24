@@ -4,9 +4,12 @@
 
 extend thread object module vdebug {
 	state		structure debug_common_registers;
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 #error Context switch DBGVCR32_EL2 for 32-bit guests
 #endif
-	allowed		bool;
 	enabled		bool;
+};
+
+extend vcpu_option_flags bitfield {
+	4		debug_allowed		bool = 0;
 };

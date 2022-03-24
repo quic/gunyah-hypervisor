@@ -17,19 +17,11 @@ event spinlock_init
 event spinlock_acquire
 	param lock: spinlock_t *
 
-subscribe spinlock_acquire
-	handler preempt_disable() public
-	priority first
-
 event spinlock_acquired
 	param lock: spinlock_t *
 
 event spinlock_failed
 	param lock: spinlock_t *
-
-subscribe spinlock_failed
-	handler preempt_enable() public
-	priority first
 
 event spinlock_release
 	param lock: spinlock_t *
@@ -37,6 +29,5 @@ event spinlock_release
 event spinlock_released
 	param lock: spinlock_t *
 
-subscribe spinlock_released
-	handler preempt_enable() public
-	priority first
+event spinlock_assert_held
+	param lock: spinlock_t *

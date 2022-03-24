@@ -18,4 +18,4 @@ bool
 idle_is_current(void);
 
 bool
-idle_yield(void);
+idle_yield(void) REQUIRE_PREEMPT_DISABLED;

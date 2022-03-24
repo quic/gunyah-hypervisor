@@ -4,6 +4,8 @@
 
 extend vcpu_el1_registers structure {
 	cntkctl_el1	bitfield CNTKCTL_EL1;
-	cntv_ctl_el0	bitfield CNTV_CTL_EL0;
-	cntv_cval_el0	bitfield CNTV_CVAL_EL0;
+	cntv_ctl_el0	bitfield CNT_CTL;
+	cntp_ctl_el0	bitfield CNT_CTL;
+	cntv_cval_el0	bitfield CNT_CVAL;
+	cntp_cval_el0	bitfield CNT_CVAL;
 };

@@ -30,6 +30,7 @@ define memdb_entry structure {
 	next	uintptr;
 };
 
+// FIXME: remove aligned() when Issue #27 is fixed.
 define memdb_level structure {
 	level		array(MEMDB_NUM_ENTRIES) structure memdb_entry(atomic,
 			aligned(sizeof(structure memdb_entry)));
@@ -38,6 +39,7 @@ define memdb_level structure {
 	allocator	pointer structure allocator;
 };
 
+// FIXME: remove aligned() when Issue #27 is fixed.
 define memdb structure {
 	root	structure memdb_entry(atomic,
 		aligned(sizeof(structure memdb_entry)));

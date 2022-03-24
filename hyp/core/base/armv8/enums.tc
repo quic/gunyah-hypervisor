@@ -49,12 +49,6 @@ define iss_da_ia_fsc enumeration {
 	TLB_CONFLICT		= 0x30;
 };
 
-#if defined(ARCH_ARM_8_1_TTHM)
-extend iss_da_ia_fsc enumeration {
-	ATOMIC_HW_UPDATE	= 0x31;
-};
-#endif
-
 define iss_da_sas enumeration {
 	Byte		= 0b00;
 	Halfword;

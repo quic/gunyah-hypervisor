@@ -13,8 +13,17 @@
 // are switched by other modules' handlers for the context switch events.
 
 // The default size and minimum alignment for a thread's kernel stack.
-extern const size_t thread_stack_align;
+extern const size_t thread_stack_min_align;
+extern const size_t thread_stack_alloc_align;
 extern const size_t thread_stack_size_default;
+
+// Map the kernel stack of a new thread.
+error_t
+thread_arch_map_stack(thread_t *thread);
+
+// Unmap the kernel stack of a thread.
+void
+thread_arch_unmap_stack(thread_t *thread);
 
 // Set up the execution context for a new thread.
 void

@@ -5,6 +5,17 @@
 module vic_base
 
 #if VIC_BASE_FORWARD_PRIVATE
+subscribe vcpu_activate_thread
+	handler vic_handle_vcpu_activate_thread_forward_private(thread)
+	// Run after pinned flag is set by scheduler.
+	priority -20
+
+subscribe object_create_vic
+	handler vic_handle_object_create_vic_forward_private
+
+subscribe object_deactivate_hwirq
+	handler vic_handle_object_deactivate_hwirq_forward_private
+
 subscribe vic_bind_hwirq[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
 	handler vic_bind_hwirq_forward_private(vic, hwirq, virq)
 
@@ -13,13 +24,19 @@ subscribe vic_unbind_hwirq[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
 
 subscribe irq_received[HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE]
 	handler vic_handle_irq_received_forward_private(hwirq)
+	require_preempt_disabled
 
 subscribe virq_check_pending[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
 	handler vic_handle_virq_check_pending_forward_private(source, reasserted)
+	require_preempt_disabled
 
 subscribe virq_set_enabled[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
 	handler vic_handle_virq_set_enabled_forward_private(source, enabled)
+	require_preempt_disabled
 
 subscribe virq_set_mode[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
 	handler vic_handle_virq_set_mode_forward_private(source, mode)
+
+subscribe rcu_update[RCU_UPDATE_CLASS_VIC_BASE_FREE_FORWARD_PRIVATE]
+	handler vic_handle_free_forward_private(entry)
 #endif

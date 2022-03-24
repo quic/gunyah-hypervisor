@@ -2,11 +2,17 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+// Add the events for the traps coming from AArch32
+
 module vcpu
 
 // core initialization
 
-subscribe boot_cpu_warm_init ()
+subscribe boot_runtime_first_init
+	handler vcpu_handle_boot_runtime_init()
+subscribe boot_runtime_warm_init
+	handler vcpu_handle_boot_runtime_init()
+subscribe boot_cpu_warm_init()
 
 // new vcpu handlers
 
@@ -38,7 +44,6 @@ subscribe thread_load_state
 
 subscribe vcpu_trap_sysreg_read
 	handler sysreg_read
-	priority first
 
 subscribe vcpu_trap_sysreg_read
 	handler sysreg_read_cpu
@@ -58,11 +63,26 @@ subscribe vcpu_trap_sysreg_write
 	handler sysreg_write_fallback
 	priority last
 
-// VCPU wait for interrupt
-subscribe vcpu_trap_wfi()
+subscribe vcpu_trap_brk_instruction_guest
 	priority last
 
+// VCPU idle traps and wakeups
+
+subscribe scheduler_selected_thread(thread, can_idle)
+
+subscribe vcpu_trap_wfi()
+	priority last
+	exclude_preempt_disabled
+
 subscribe thread_exit_to_user()
+
+#if defined(VCPU_IDLE_IN_EL1) && VCPU_IDLE_IN_EL1
+subscribe scheduler_quiescent()
+
+subscribe thread_context_switch_post()
+#endif
+
+// VCPU lifecycle and power management
 
 subscribe rootvm_init(root_thread)
 

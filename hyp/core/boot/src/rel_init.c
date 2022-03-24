@@ -6,17 +6,18 @@
 #include <stdint.h>
 #define USE_ELF64
 #include <elf.h>
+#include <reloc.h>
 
 #include "arch/reloc.h"
 
-void
-boot_rel_fixup(Elf_Dyn *dyni, Elf_Addr addr_offset, Elf_Addr rel_offset);
-
-void
+// We must disable stack protection for this function, because the compiler
+// might use a relocated absolute pointer to load the stack cookie in the
+// function prologue, which will crash because this function hasn't run yet.
+__attribute__((no_stack_protector)) void
 boot_rel_fixup(Elf_Dyn *dyni, Elf_Addr addr_offset, Elf_Addr rel_offset)
 {
 	Elf_Xword dyn[DT_CNT];
-	Elf_Rel * rel  = NULL;
+	Elf_Rel	*rel  = NULL;
 	Elf_Rela *rela = NULL;
 	Elf_Xword sz   = 0;
 

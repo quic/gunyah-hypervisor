@@ -6,6 +6,10 @@
 
 #include <hypconstants.h>
 
+#if ((PLATFORM_LMA_BASE & ((1 << 21) - 1)) != 0)
+#error PLATFORM_LMA_BASE is not aligned to 2MB
+#endif
+
 EXTERN(__entry_el2)
 ENTRY(__entry_el2_phys)
 
@@ -55,6 +59,10 @@ SECTIONS
 	. = ALIGN(4096);
 	.dynamic : { *(.dynamic) } : dynamic : dynreloc
 
+	/* Package data for RootVM */
+	. = ALIGN(4096);
+	image_pkg_start = . - image_virt_start + image_phys_start;
+
 	/* align RW sections to the next 2MB page */
 	. = ALIGN(0x200000);
 	data_base = .;
@@ -80,14 +88,12 @@ SECTIONS
 	. = ALIGN(64);
 	.heap.root (NOLOAD) : {
 		heap_private_start = .;
-		. = ALIGN(0x200000);
+		. = ALIGN(PLATFORM_HEAP_PRIVATE_SIZE);
 		heap_private_end = .;
 	} : NONE
 	image_virt_last = . - 1;
 	image_phys_last = . - 1 - image_virt_start + image_phys_start;
-
-	/* Package data for RootVM */
-	image_pkg_start = ALIGN(0x200000) - image_virt_start + image_phys_start;
+	image_virt_end = .;
 
 	/* Thread local storage - note, we do not support tdata! */
 	. = 0;

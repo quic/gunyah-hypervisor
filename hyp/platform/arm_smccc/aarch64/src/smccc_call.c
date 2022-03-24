@@ -5,22 +5,27 @@
 #include <assert.h>
 #include <hyptypes.h>
 
+#include <preempt.h>
 #include <smccc.h>
 
-#if defined(SMC_TRACE_ID__MIN)
+#if defined(INTERFACE_VCPU)
+#include <cpulocal.h>
+#include <platform_ipi.h>
+#include <thread.h>
+#include <vcpu.h>
+#endif
+
+#if defined(INTERFACE_SMC_TRACE)
 #include <string.h>
 
 #include <smc_trace.h>
 #endif
 
-void
-smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
-	       uint64_t (*ret)[4], uint64_t *session_ret, uint32_t client_id)
+static void
+smccc_1_1_do_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
+		  uint64_t (*ret)[4], uint64_t *session_ret, uint32_t client_id)
 {
-	assert(args != NULL);
-	assert(ret != NULL);
-
-#if defined(SMC_TRACE_ID__MIN)
+#if defined(INTERFACE_SMC_TRACE)
 	register_t trace_regs[SMC_TRACE_REG_MAX];
 
 	trace_regs[0] = smccc_function_id_raw(fn_id);
@@ -48,7 +53,7 @@ smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 	// or which version changed to SMC register return semantics. We
 	// therefore treat X4-X17 return state as unpredictable here.
 	//
-	// Note too, the hypervior EL1-EL2 SMCCC interface implemented does
+	// Note too, the hypervisor EL1-EL2 SMCCC interface implemented does
 	// preserve unused result registers and temporary registers X4-X17 for
 	// future 1.2+ compatibility.
 	__asm__ volatile("smc    #0\n"
@@ -66,7 +71,8 @@ smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 	if (session_ret != NULL) {
 		*session_ret = x6;
 	}
-#if defined(SMC_TRACE_ID__MIN)
+
+#if defined(INTERFACE_SMC_TRACE)
 	memscpy(&trace_regs[0], sizeof(trace_regs), ret, sizeof(*ret));
 	trace_regs[4] = 0U;
 	trace_regs[5] = 0U;
@@ -74,4 +80,41 @@ smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 
 	smc_trace_log(SMC_TRACE_ID_EL2_64RET, &trace_regs, 7U);
 #endif
+}
+
+void
+smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
+	       uint64_t (*ret)[4], uint64_t *session_ret, uint32_t client_id)
+{
+	assert(args != NULL);
+	assert(ret != NULL);
+
+#if defined(INTERFACE_VCPU)
+	bool is_vcpu = thread_get_self()->kind == THREAD_KIND_VCPU;
+	bool is_fast = smccc_function_id_get_is_fast(&fn_id);
+
+	if (is_vcpu && !is_fast) {
+		preempt_disable();
+		bool pending_wakeup = vcpu_block_start();
+		if (pending_wakeup) {
+			// Assert a local IPI. This notifies secure world of the
+			// wakeup, while still allowing for the SMC to make some
+			// progress.
+			platform_ipi_one(cpulocal_get_index());
+		}
+
+		smccc_1_1_do_call(fn_id, args, ret, session_ret, client_id);
+
+		if (!pending_wakeup) {
+			vcpu_block_finish();
+		}
+		preempt_enable();
+	} else
+#endif
+	{
+		// Note: it is important that preemption is not disabled across
+		// the SMC instruction in the fast call path, because it is used
+		// via thread_freeze() to make PSCI calls that do not return.
+		smccc_1_1_do_call(fn_id, args, ret, session_ret, client_id);
+	}
 }

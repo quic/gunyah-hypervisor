@@ -5,6 +5,8 @@
 #include <assert.h>
 #include <hyptypes.h>
 
+#include <hypcontainers.h>
+
 #include <bitmap.h>
 #include <compiler.h>
 #include <list.h>
@@ -252,7 +254,8 @@ memextent_handle_object_activate_memextent(memextent_t *me)
 
 		// memextent should have been zero initialized
 		for (index_t i = 0; i < util_array_size(me->mappings); i++) {
-			assert(me->mappings[i].addrspace == NULL);
+			assert(atomic_load_relaxed(
+				       &me->mappings[i].addrspace) == NULL);
 		}
 
 		partition_t *partition = me->header.partition;
@@ -406,6 +409,26 @@ memextent_handle_object_deactivate_memextent(memextent_t *memextent)
 }
 
 void
+memextent_handle_object_deactivate_addrspace(addrspace_t *addrspace)
+{
+	assert(addrspace != NULL);
+
+	spinlock_acquire(&addrspace->mapping_list_lock);
+
+	list_t	       *list = &addrspace->mapping_list;
+	memextent_mapping_t *map  = NULL;
+
+	// Remove all mappings from addrspace
+	list_foreach_container_maydelete (map, list, memextent_mapping,
+					  mapping_list_node) {
+		atomic_store_relaxed(&map->addrspace, NULL);
+		list_delete_node(list, &map->mapping_list_node);
+	}
+
+	spinlock_release(&addrspace->mapping_list_lock);
+}
+
+void
 memextent_handle_object_cleanup_memextent(memextent_t *memextent)
 {
 	trigger_memextent_cleanup_event(memextent->type, memextent);
@@ -489,7 +512,7 @@ memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
 		goto out;
 	}
 
-	memextent_t *	  me	= me_ret.r;
+	memextent_t	    *me	= me_ret.r;
 	memextent_attrs_t attrs = memextent_attrs_default();
 	memextent_attrs_set_access(&attrs, access);
 	memextent_attrs_set_memtype(&attrs, memtype);

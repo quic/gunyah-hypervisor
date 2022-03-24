@@ -53,6 +53,9 @@ We have developed an initial port of Gunyah to the QEMU ARMv8 simulator. *Note Q
 - [Testing Instructions](docs/test.md)
 - [Changelog](CHANGELOG.md)
 
+## Resources
+- [Gunyah Hypercall API](docs/api/gunyah_api.md)
+
 ## Contributions
 Thank you for your interest in contributing to Gunyah!
 

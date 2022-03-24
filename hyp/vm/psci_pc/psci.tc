@@ -4,6 +4,11 @@
 
 #include <types/bitmap.h>
 
+// PSCI 1.1 implemented
+#define PSCI_VER 0x10001
+
+define PSCI_VERSION constant uint32 = PSCI_VER;
+
 // We need only 3 bits to encode the cpu level state of a vcpu
 define PSCI_VCPUS_STATE_PER_VCPU_BITS constant type count_t = 3;
 define PSCI_VCPUS_STATE_PER_VCPU_MASK constant uint8 = 0x7;
@@ -22,10 +27,13 @@ extend vpm_group object module psci {
 	mode			enumeration psci_mode;
 	vm_suspend_state	bitfield vpm_group_suspend_state(atomic);
 	system_suspend_virq	structure virq_source(contained);
+	virq_task		structure task_queue_entry(contained);
 	lock			structure spinlock;
 	system_suspend_count	sint8;
-	system_suspend_signal	bool;
-	system_resume_signal	bool;
+};
+
+extend task_queue_class enumeration {
+	vpm_group_virq;
 };
 
 extend thread object module psci {
@@ -55,7 +63,7 @@ extend thread object module psci {
 	inactive_count type count_t;
 };
 
-#if ROOTVM_IS_HLOS
+#if defined(ROOTVM_IS_HLOS) && ROOTVM_IS_HLOS
 extend boot_env_data structure module psci {
 	group type cap_id_t;
 	secondary_vcpus array(PLATFORM_MAX_CORES) type cap_id_t;

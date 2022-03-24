@@ -1,0 +1,90 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if $public_only
+\#include <guest_types.h>
+#else
+\#include <hyptypes.h>
+#end if
+
+// Result Accessors
+
+#def declare_result(name, type_name=None)
+#if $type_name is None
+#set type_name = name
+#end if
+#if name.endswith('_t')
+#set name = type_name[:-2]
+#end if
+${name}_result_t
+${name}_result_error(error_t err)
+{
+	return (${name}_result_t){ .e = err };
+}
+
+${name}_result_t
+${name}_result_ok(${type_name} ret)
+{
+	return (${name}_result_t){ .r = ret, .e = OK };
+}
+
+#end def
+#def declare_result_ptr(name, type_name=None)
+#if $type_name is None
+#set type_name = name
+#end if
+#if name.endswith('_t')
+#set name = type_name[:-2]
+#end if
+${name}_ptr_result_t
+${name}_ptr_result_error(error_t err)
+{
+	return (${name}_ptr_result_t){ .e = err };
+}
+
+${name}_ptr_result_t
+${name}_ptr_result_ok(${type_name} * ret)
+{
+	return (${name}_ptr_result_t){ .r = ret, .e = OK };
+}
+
+#end def
+
+#for $d in $definitions
+#set type_name = d.gen_type_name()
+#if type_name is None
+#continue
+#end if
+#set category = $d.category
+#if $category == 'union'
+#if $d.size <= 8
+#set category = 'primitive'
+#end if
+#end if
+#if $category == 'alternative'
+#set basic_type = $d.compound_type.basic_type
+#if not $basic_type.is_array and not $basic_type.is_pointer
+#set category = $basic_type.category
+#end if
+#if $d.compound_type.is_atomic
+## Skip types with _Atomic qualifiers, to avoid LLVM 12.0.2 bug
+#continue
+#end if
+#end if
+#if $category in ['enumeration', 'primitive', 'bitfield', 'structure']
+$declare_result(d.indicator, type_name)
+$declare_result_ptr(d.indicator, type_name)
+#else if $category in ['union', 'object']
+$declare_result_ptr(d.indicator, type_name)
+#end if
+
+#end for
+
+#for $d in $primitives
+$declare_result(d.type_name, d.c_type_name)
+#end for
+
+$declare_result_ptr('void', 'void')

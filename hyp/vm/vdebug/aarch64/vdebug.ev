@@ -8,7 +8,9 @@ subscribe boot_cpu_cold_init()
 
 subscribe object_create_thread
 
-subscribe object_activate_thread
+#if defined(INTERFACE_VCPU)
+subscribe vcpu_activate_thread
+#endif
 
 subscribe thread_save_state
 
@@ -21,3 +23,9 @@ subscribe vcpu_trap_sysreg_read
 
 subscribe vcpu_trap_sysreg_write
 	handler vdebug_handle_vcpu_trap_sysreg
+
+#if ARCH_AARCH64_32BIT_EL0
+subscribe vcpu_trap_ldcstc_guest
+
+subscribe vcpu_trap_mcrmrc14_guest
+#endif

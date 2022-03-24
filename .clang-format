@@ -1,3 +1,7 @@
+# © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
 # Gunyah Coding Style - requires Clang Format >= 9
 #
 # For more information, see:
@@ -8,15 +12,17 @@
 Language:        Cpp
 AccessModifierOffset: -8
 AlignAfterOpenBracket: Align
-AlignConsecutiveMacros: true
-AlignConsecutiveAssignments: true
-AlignConsecutiveDeclarations: true
+AlignArrayOfStructures: None
+AlignConsecutiveMacros: Consecutive
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: Consecutive
 AlignEscapedNewlines: Right
-AlignOperands:   true
+AlignOperands:   Align
 AlignTrailingComments: true
 AllowAllArgumentsOnNextLine: true
-AllowAllConstructorInitializersOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortEnumsOnASingleLine: true
 AllowShortBlocksOnASingleLine: Never
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
@@ -27,12 +33,41 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: All
 AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: MultiLine
+AttributeMacros:
+  - _Atomic
+  - alignas
+  - LOCKABLE
+  - PROTECTED_BY
+  - PTR_PROTECTED_BY
+  - ACQUIRE_LOCK
+  - TRY_ACQUIRE_LOCK
+  - RELEASE_LOCK
+  - REQUIRE_LOCK
+  - EXCLUDE_LOCK
+  - ACQUIRE_READ
+  - TRY_ACQUIRE_READ
+  - RELEASE_READ
+  - REQUIRE_READ
+  - EXCLUDE_READ
+  - LOCK_IMPL
+  - ACQUIRE_SPINLOCK
+  - ACQUIRE_SPINLOCK_NP
+  - TRY_ACQUIRE_SPINLOCK
+  - TRY_ACQUIRE_SPINLOCK_NP
+  - RELEASE_SPINLOCK
+  - RELEASE_SPINLOCK_NP
+  - REQUIRE_SPINLOCK
+  - ACQUIRE_PREEMPT_DISABLED
+  - TRY_ACQUIRE_PREEMPT_DISABLED
+  - RELEASE_PREEMPT_DISABLED
+  - REQUIRE_PREEMPT_DISABLED
+  - EXCLUDE_PREEMPT_DISABLED
 BinPackArguments: true
 BinPackParameters: true
 BraceWrapping:
   AfterCaseLabel:  false
   AfterClass:      true
-  AfterControlStatement: false
+  AfterControlStatement: Never
   AfterEnum:       false
   AfterFunction:   true
   AfterNamespace:  true
@@ -42,11 +77,14 @@ BraceWrapping:
   AfterExternBlock: false
   BeforeCatch:     false
   BeforeElse:      false
+  BeforeLambdaBody: false
+  BeforeWhile:     false
   IndentBraces:    false
   SplitEmptyFunction: true
   SplitEmptyRecord: true
   SplitEmptyNamespace: true
 BreakBeforeBinaryOperators: None
+BreakBeforeConceptDeclarations: true
 BreakBeforeBraces: Custom
 BreakBeforeInheritanceComma: false
 BreakInheritanceList: BeforeComma
@@ -58,50 +96,80 @@ BreakStringLiterals: false
 ColumnLimit:     80
 CommentPragmas:  '^ FIXME:'
 CompactNamespaces: false
-ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth: 8
 ContinuationIndentWidth: 8
 Cpp11BracedListStyle: false
+DeriveLineEnding: false
 DerivePointerAlignment: false
 DisableFormat:   false
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: LogicalBlock
 ExperimentalAutoDetectBinPacking: false
 FixNamespaceComments: true
-ForEachMacros: ['list_foreach', 'list_foreach_container',
-    'list_foreach_container_maydelete', 'list_foreach_container_consume',
-    'vpm_vcpus_state_foreach']
+ForEachMacros:
+  - list_foreach
+  - list_foreach_container
+  - list_foreach_container_maydelete
+  - list_foreach_container_consume
+  - vpm_vcpus_state_foreach
+IfMacros: []
 IncludeBlocks:   Regroup
 IncludeCategories:
   - Regex:           '^<(hyptypes|assert|limits|string|std.*)\.h>$'
     Priority:        -100
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^<(hyp[a-z].*|result)\.h>$'
     Priority:        -90
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^<asm/'
     Priority:        -50
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^<asm-generic/'
     Priority:        -25
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^<events/'
     Priority:        -60
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^<'
     Priority:        -75
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^"common\.h"$'
     Priority:        -10
+    SortPriority:    0
+    CaseSensitive:   true
   - Regex:           '^"'
     Priority:        -1
+    SortPriority:    0
+    CaseSensitive:   true
 IncludeIsMainRegex: '(Test)?$'
+IncludeIsMainSourceRegex: ''
+IndentAccessModifiers: false
 IndentCaseLabels: false
+IndentCaseBlocks: false
 IndentGotoLabels: true
 IndentPPDirectives: None
+IndentExternBlock: AfterExternBlock
+IndentRequires:  false
 IndentWidth:     8
 IndentWrappedFunctionNames: false
+InsertTrailingCommas: None
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
 KeepEmptyLinesAtTheStartOfBlocks: false
+LambdaBodyIndentation: Signature
 MacroBlockBegin: '^BITMAP_(ATOMIC_)?FOREACH_(SET|CLEAR)_BEGIN$'
 MacroBlockEnd:   '^BITMAP_(ATOMIC_)?FOREACH_(SET|CLEAR)_END$'
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCBinPackProtocolList: Auto
 ObjCBlockIndentWidth: 2
+ObjCBreakBeforeNestedBlockParam: true
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
 PenaltyBreakAssignment: 10
@@ -112,29 +180,45 @@ PenaltyBreakString: 10
 PenaltyBreakTemplateDeclaration: 10
 PenaltyExcessCharacter: 100
 PenaltyReturnTypeOnItsOwnLine: 0
+PenaltyIndentedWhitespace: 0
 PointerAlignment: Right
+PPIndentWidth:   -1
+ReferenceAlignment: Pointer
 ReflowComments:  true
-SortIncludes:    true
+ShortNamespaceLines: 1
+SortIncludes:    CaseSensitive
+SortJavaStaticImport: Before
 SortUsingDeclarations: false
 SpaceAfterCStyleCast: false
 SpaceAfterLogicalNot: false
 SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
 SpaceBeforeCpp11BracedList: false
 SpaceBeforeCtorInitializerColon: true
 SpaceBeforeInheritanceColon: true
 SpaceBeforeParens: ControlStatements
+SpaceAroundPointerQualifiers: Default
 SpaceBeforeRangeBasedForLoopColon: false
 SpaceInEmptyBlock: true
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1
-SpacesInAngles:  false
+SpacesInAngles:  Never
+SpacesInConditionalStatement: false
 SpacesInContainerLiterals: false
 SpacesInCStyleCastParentheses: false
+SpacesInLineCommentPrefix:
+  Minimum:         1
+  Maximum:         1
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard:        Cpp03
+SpaceBeforeSquareBrackets: false
+BitFieldColonSpacing: Both
+Standard:        Latest
+StatementAttributeLikeMacros: []
 StatementMacros: []
 TabWidth:        8
+UseCRLF:         false
 UseTab:          Always
+WhitespaceSensitiveMacros: []
 ...

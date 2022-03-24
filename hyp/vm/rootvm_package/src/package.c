@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include <compiler.h>
+#include <cpulocal.h>
 #include <cspace.h>
 #include <elf.h>
 #include <elf_loader.h>
@@ -86,9 +87,12 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 {
 	error_t err;
 	count_t i;
-	paddr_t limit  = 0;
-	size_t	offset = phys_offset - PLATFORM_ROOTVM_LMA_BASE;
+	paddr_t limit = 0;
 
+	assert(phys_offset >= PLATFORM_ROOTVM_LMA_BASE);
+	size_t offset = phys_offset - PLATFORM_ROOTVM_LMA_BASE;
+
+	paddr_t range_start = PLATFORM_ROOTVM_LMA_BASE;
 	paddr_t range_end =
 		(paddr_t)PLATFORM_ROOTVM_LMA_BASE + PLATFORM_ROOTVM_LMA_SIZE;
 
@@ -99,10 +103,20 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 		if (phdr->p_type != PT_LOAD) {
 			continue;
 		}
+		uintptr_t seg_file_base = (uintptr_t)elf + phdr->p_offset;
+		uintptr_t seg_file_end	= seg_file_base + phdr->p_filesz;
+
 		// check all segments will fit within rootvm_mem area
+		if (util_add_overflows(phdr->p_paddr, phdr->p_memsz)) {
+			panic("ELF program header address + size overflow");
+		}
 		paddr_t seg_end = phdr->p_paddr + phdr->p_memsz;
-		if (seg_end > limit) {
-			limit = seg_end;
+		limit		= util_max(limit, seg_end);
+
+		// sanity check input elf file does not overlap
+		if (((uintptr_t)elf < range_end) &&
+		    (seg_file_end > range_start)) {
+			panic("ELF overlaps rootvm_mem area");
 		}
 
 		// Map segment in root VM address space using p_flags
@@ -156,6 +170,21 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 	return util_balign_up(limit, (paddr_t)PGTABLE_HYP_PAGE_SIZE);
 }
 
+static void
+update_cores_info(boot_env_data_t *env_data)
+{
+	env_data->boot_core = cpulocal_get_index();
+	assert(PLATFORM_MAX_CORES > env_data->boot_core);
+
+	env_data->usable_cores = PLATFORM_USABLE_CORES;
+	assert((env_data->usable_cores & (1UL << env_data->boot_core)) != 0);
+
+	index_t max_idx = ((sizeof(env_data->usable_cores) * 8U) - 1U) -
+			  compiler_clz(env_data->usable_cores);
+	// can be a static assertion
+	assert(max_idx < PLATFORM_MAX_CORES);
+}
+
 void
 rootvm_package_handle_rootvm_init(partition_t *root_partition,
 				  thread_t *root_thread, cspace_t *root_cspace,
@@ -202,7 +231,7 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 #endif
 
 #if 0
-	// FIXME: Root VM address space could be smaller
+	// Root VM address space could be smaller
 	// Currently limit usable address space to 1GiB
 	vmaddr_t addr_limit = (vmaddr_t)1 << 30;
 
@@ -219,9 +248,9 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 	// remapped with the required rights.
 	cap_id_t     me_cap;
 	memextent_t *me		 = create_memextent(root_partition, root_cspace,
-					    PLATFORM_ROOTVM_LMA_BASE,
-					    PLATFORM_ROOTVM_LMA_SIZE, &me_cap,
-					    PGTABLE_ACCESS_RWX);
+						    PLATFORM_ROOTVM_LMA_BASE,
+						    PLATFORM_ROOTVM_LMA_SIZE, &me_cap,
+						    PGTABLE_ACCESS_RWX);
 	vmaddr_t     runtime_ipa = 0U;
 	vmaddr_t     app_ipa	 = 0U;
 	size_t	     offset	 = 0U;
@@ -247,7 +276,7 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 			size_t elf_max_size =
 				map_size - pkg_hdr->list[i].offset;
 
-			if (!elf_valid(elf)) {
+			if (!elf_valid(elf, elf_max_size)) {
 				panic("Invalid package ELF");
 			}
 
@@ -306,11 +335,10 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 	env_data->runtime_ipa = runtime_ipa;
 	env_data->ipa_offset  = ipa - PLATFORM_ROOTVM_LMA_BASE;
 
-	// Set arguments for runtime.
-	vcpu_gpr_write(root_thread, 1, app_ipa);
-	vcpu_gpr_write(root_thread, 2, runtime_ipa);
-	vcpu_gpr_write(root_thread, 3, app_heap_ipa);
-	vcpu_gpr_write(root_thread, 4, app_heap_size);
+	env_data->app_heap_ipa	= app_heap_ipa;
+	env_data->app_heap_size = app_heap_size;
+
+	update_cores_info(env_data);
 
 	LOG(DEBUG, INFO, "runtime_ipa: {:#x}", runtime_ipa);
 	LOG(DEBUG, INFO, "app_ipa: {:#x}", app_ipa);

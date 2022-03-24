@@ -73,7 +73,7 @@ hypercall_doorbell_send_result_t
 hypercall_doorbell_send(cap_id_t doorbell_cap, uint64_t new_flags)
 {
 	hypercall_doorbell_send_result_t ret	= { 0 };
-	cspace_t *			 cspace = cspace_get_self();
+	cspace_t			 *cspace = cspace_get_self();
 
 	doorbell_ptr_result_t p = cspace_lookup_doorbell(
 		cspace, doorbell_cap, CAP_RIGHTS_DOORBELL_SEND);
@@ -101,7 +101,7 @@ hypercall_doorbell_receive_result_t
 hypercall_doorbell_receive(cap_id_t doorbell_cap, uint64_t clear_flags)
 {
 	hypercall_doorbell_receive_result_t ret	   = { 0 };
-	cspace_t *			    cspace = cspace_get_self();
+	cspace_t				 *cspace = cspace_get_self();
 
 	doorbell_ptr_result_t p = cspace_lookup_doorbell(
 		cspace, doorbell_cap, CAP_RIGHTS_DOORBELL_RECEIVE);

@@ -18,14 +18,14 @@
 \#include <events/thread.h>
 
 #def trace_in(hypcall_num, hypcall)
-    #set trace_fmt = "hypcall {:#x}:"
-    #for i, input in $hypcall.inputs[:4]
+    #set trace_fmt = $hypcall.name + ":"
+    #for i, input in $hypcall.inputs[:5]
         #if not $input.ignore
             #set trace_fmt = trace_fmt + " {:#x}"
         #end if
     #end for
-    TRACE(USER, HYPERCALL, "${trace_fmt}", $hypcall_num
-    #for i, input in $hypcall.inputs[:4]
+    TRACE(USER, HYPERCALL, "${trace_fmt}"
+    #for i, input in $hypcall.inputs[:5]
         #if not $input.ignore
         , (register_t)($register_expr($input))
         #end if
@@ -34,13 +34,13 @@
 #end def
 
 #def trace_out(hypcall_num, hypcall)
-    #set trace_fmt = "hypcall ret {:#x}:"
+    #set trace_fmt = $hypcall.name + " ret:"
     #for i, input in $hypcall.outputs[:4]
         #if not $input.ignore
             #set trace_fmt = trace_fmt + " {:#x}"
         #end if
     #end for
-    TRACE(USER, HYPERCALL, "${trace_fmt}", $hypcall_num
+    TRACE(USER, HYPERCALL, "${trace_fmt}"
     #if len($hypcall.outputs) == 1
         , (register_t)_ret
     #else
@@ -61,11 +61,13 @@
     #end if
     #set $num_in = len($hypcall.inputs)
     #set $num_out = len($hypcall.outputs)
+    #set $sensitive = $hypcall.properties.get('sensitive', False)
 
     #assert $num_in <= 8
     #assert $num_out <= 8
 
-${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)};
+${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)}
+	REQUIRE_PREEMPT_DISABLED;
 
 ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
     #if $hypcall.outputs
@@ -74,7 +76,11 @@ ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
 
     trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_HYPERCALL);
 
+#if $sensitive
+    TRACE(USER, HYPERCALL, "$hypcall.name");
+#else
     $trace_in($hypcall_num, $hypcall)
+#end if
 
     ## generate reserved input checks
     #set has_ignores = False
@@ -126,7 +132,9 @@ ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
 out:
     #end if
 
+#if not $sensitive
     $trace_out($hypcall_num, $hypcall)
+#end if
 
     trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_HYPERCALL);
 

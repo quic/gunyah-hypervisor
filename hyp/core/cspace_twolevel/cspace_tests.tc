@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(UNIT_TESTS)
+
+extend cap_rights_cspace bitfield {
+	auto	test bool;
+};
+
+#endif

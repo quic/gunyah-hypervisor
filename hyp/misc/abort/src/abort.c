@@ -12,40 +12,23 @@
 #include <idle.h>
 #include <ipi.h>
 #include <log.h>
-#include <platform_timer.h>
 #include <preempt.h>
 #include <thread.h>
 #include <trace.h>
 
 #include <events/abort.h>
+#include <events/scheduler.h>
 #include <events/thread.h>
 
-#include <asm/barrier.h>
 #include <asm/event.h>
 
 #include "event_handlers.h"
 
 void NOINLINE
-abort_handle_abort_kernel(void)
+abort_handle_scheduler_stop(void)
 {
-	assert_preempt_disabled();
-
-	ipi_others(IPI_REASON_ABORT_STOP);
-
 	if (!idle_is_current()) {
 		trigger_thread_save_state_event();
-	}
-
-	// Delay approx 1ms to allow other cores to complete saving state.
-	// We don't wait for acknowledgement since they may be unresponsive.
-	uint32_t freq = platform_timer_get_frequency();
-
-	uint64_t now = platform_timer_get_current_ticks();
-	uint64_t end = now + (freq / 1024);
-
-	while (now < end) {
-		asm_yield();
-		now = platform_timer_get_current_ticks();
 	}
 }
 
@@ -70,8 +53,12 @@ abort(const char *str, abort_reason_t reason)
 	void *from  = __builtin_return_address(0);
 	void *frame = __builtin_frame_address(0);
 
-	preempt_disable();
+	// Stop all cores and disable preemption
+	trigger_scheduler_stop_event();
 
+#if defined(ARCH_ARM_8_3_PAUTH)
+	__asm__("xpaci %0;" : "+r"(from));
+#endif
 	TRACE_AND_LOG(ERROR, PANIC, "Abort: {:s} from PC {:#x}, FP {:#x}",
 		      (register_t)(uintptr_t)str, (register_t)(uintptr_t)from,
 		      (register_t)(uintptr_t)frame);

@@ -15,3 +15,8 @@ selector_event vic_unbind_hwirq
 	selector action: hwirq_action_t
 	param hwirq: hwirq_t *
 	return: error_t = ERROR_ARGUMENT_INVALID
+
+handled_event vic_bind_msi_source
+	param vic: vic_t *
+	param msi_source_cap: cap_id_t
+	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE

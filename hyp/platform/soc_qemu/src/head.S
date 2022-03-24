@@ -16,11 +16,19 @@ function __entry_el2, section=nosection
 	adrl	x1, soc_qemu_hyp_arg0
 	str	x0, [x1]
 
-	// Get a 256-bit random seed and store them in x0..x3
-	mrs	x0, RNDR
+	// Get a 256-bit random seed into x0..x3
+local get_x0:
+	mrs	x0, RNDRRS
+	b.eq	LOCAL(get_x0)
+local get_x1:
 	mrs	x1, RNDR
+	b.eq	LOCAL(get_x1)
+local get_x2:
 	mrs	x2, RNDR
+	b.eq	LOCAL(get_x2)
+local get_x3:
 	mrs	x3, RNDR
+	b.eq	LOCAL(get_x3)
 
 	mrs	x4, MPIDR_EL1
 	ubfx	x4, x4, MPIDR_EL1_AFF0_SHIFT, MPIDR_EL1_AFF0_BITS

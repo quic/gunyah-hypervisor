@@ -11,15 +11,24 @@ handled_event preempt_abort
 module preempt
 
 subscribe boot_cpu_early_init
+	acquire_preempt_disabled
 
 subscribe boot_cpu_start
 	priority last
+	release_preempt_disabled
 
 subscribe thread_start
 	priority first
+	acquire_preempt_disabled
 
 subscribe thread_entry_from_user
 	priority last
+	release_preempt_disabled
 
 subscribe thread_exit_to_user
+	priority first
+	exclude_preempt_disabled
+	acquire_preempt_disabled
+
+subscribe scheduler_stop()
 	priority first

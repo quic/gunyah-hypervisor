@@ -12,7 +12,7 @@ virt_range_result_t
 hyp_aspace_allocate(size_t min_size);
 
 // Free a block of virtual memory previously returned by hyp_aspace_allocate().
-error_t
+void
 hyp_aspace_deallocate(partition_t *partition, virt_range_t virt_range);
 
 // Create a 1:1 mapping of the given physical address range, accessible by the

@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier; BSD-3-Clause
 
-#if !defined(UNIT_TESTS)
 #include <assert.h>
 #include <hyptypes.h>
 
@@ -22,26 +21,25 @@ addrspace_va_to_pa_read(gvaddr_t addr)
 	thread_t *thread = thread_get_self();
 	assert(thread->kind == THREAD_KIND_VCPU);
 
-	PAR_EL1_RAW_t saved_par =
-		register_PAR_EL1_RAW_read_ordered(&asm_ordering);
+	PAR_EL1_base_t saved_par =
+		register_PAR_EL1_base_read_ordered(&asm_ordering);
 
 	__asm__ volatile("at	S12E1R, %[addr]		;"
 			 "isb				;"
 			 : "+m"(asm_ordering)
 			 : [addr] "r"(addr));
 
-	PAR_EL1_RAW_t par_raw =
-		register_PAR_EL1_RAW_read_ordered(&asm_ordering);
-
-	PAR_EL1_F0_t par = PAR_EL1_F0_cast(PAR_EL1_RAW_raw(par_raw));
-	success		 = !PAR_EL1_F0_get_F(&par);
+	PAR_EL1_t par = {
+		.base = register_PAR_EL1_base_read_ordered(&asm_ordering),
+	};
+	success = !PAR_EL1_base_get_F(&par.base);
 
 	if (success) {
-		pa = PAR_EL1_F0_get_PA(&par);
+		pa = PAR_EL1_F0_get_PA(&par.f0);
 		pa |= (gvaddr_t)addr & 0xfffU;
 	}
 
-	register_PAR_EL1_RAW_write_ordered(saved_par, &asm_ordering);
+	register_PAR_EL1_base_write_ordered(saved_par, &asm_ordering);
 
 	return success ? paddr_result_ok(pa)
 		       : paddr_result_error(ERROR_ADDR_INVALID);
@@ -56,28 +54,26 @@ addrspace_va_to_ipa_read(gvaddr_t addr)
 	thread_t *thread = thread_get_self();
 	assert(thread->kind == THREAD_KIND_VCPU);
 
-	PAR_EL1_RAW_t saved_par =
-		register_PAR_EL1_RAW_read_ordered(&asm_ordering);
+	PAR_EL1_base_t saved_par =
+		register_PAR_EL1_base_read_ordered(&asm_ordering);
 
 	__asm__ volatile("at	S1E1R, %[addr]		;"
 			 "isb				;"
 			 : "+m"(asm_ordering)
 			 : [addr] "r"(addr));
 
-	PAR_EL1_RAW_t par_raw =
-		register_PAR_EL1_RAW_read_ordered(&asm_ordering);
-
-	PAR_EL1_F0_t par = PAR_EL1_F0_cast(PAR_EL1_RAW_raw(par_raw));
-	success		 = !PAR_EL1_F0_get_F(&par);
+	PAR_EL1_t par = {
+		.base = register_PAR_EL1_base_read_ordered(&asm_ordering),
+	};
+	success = !PAR_EL1_base_get_F(&par.base);
 
 	if (success) {
-		ipa = PAR_EL1_F0_get_PA(&par);
+		ipa = PAR_EL1_F0_get_PA(&par.f0);
 		ipa |= (vmaddr_t)addr & 0xfffU;
 	}
 
-	register_PAR_EL1_RAW_write_ordered(saved_par, &asm_ordering);
+	register_PAR_EL1_base_write_ordered(saved_par, &asm_ordering);
 
 	return success ? vmaddr_result_ok(ipa)
 		       : vmaddr_result_error(ERROR_ADDR_INVALID);
 }
-#endif

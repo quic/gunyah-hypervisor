@@ -1,0 +1,19 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Get random numbers from a DRBG that is seeded by a TRNG.
+// Typically this API will source randomness from a NIST/FIPS compliant
+// hardware device.
+// Note, data returned may remain on the hypervisor stack.
+define prng_get_entropy hypercall {
+	sensitve_return;
+	call_num	0x57;
+	num_bytes	input type count_t;
+	_res0		input uregister;
+	error		output enumeration error;
+	data0		output uint32;
+	data1		output uint32;
+	data2		output uint32;
+	data3		output uint32;
+};

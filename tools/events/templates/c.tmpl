@@ -35,7 +35,11 @@ ${sep}${p.type}${space}${p.name}#slurp
 #else
 void#slurp
 #end if
-);
+)
+#for l in $h.lock_opts
+ ${l.action.upper()}_${l.kind.upper()}(${l.lock})#slurp
+#end for
+;
 #end for
 #def prototype(e)
 $e.return_type
@@ -179,5 +183,6 @@ $prototype(e)
 \#pragma clang diagnostic pop
 #end for
 #if empty
-extern char __empty_events_template;
+inline void
+events_dummy_function(void);
 #end if

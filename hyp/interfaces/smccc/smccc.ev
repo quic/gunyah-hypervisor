@@ -1,0 +1,71 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface smccc
+
+#define SMCCC_DISPATCH(type, size)				\
+selector_event smccc_dispatch_ ## type ## _ ## size;		\
+	selector interface_id: smccc_interface_id_t;		\
+	param function: smccc_function_t;			\
+	param is_hvc: bool;					\
+	param arg1: uint ## size ## _t;				\
+	param arg2: uint ## size ## _t;				\
+	param arg3: uint ## size ## _t;				\
+	param arg4: uint ## size ## _t;				\
+	param arg5: uint ## size ## _t;				\
+	param arg6: uint ## size ## _t;				\
+	param client_id: smccc_client_id_t;			\
+	param ret0: uint ## size ## _t *;			\
+	param ret1: uint ## size ## _t *;			\
+	param ret2: uint ## size ## _t *;			\
+	param ret3: uint ## size ## _t *.
+
+SMCCC_DISPATCH(fast, 32)
+SMCCC_DISPATCH(fast, 64)
+SMCCC_DISPATCH(yielding, 32)
+SMCCC_DISPATCH(yielding, 64)
+
+#define _SMCCC_CALL_INTERFACE(type, size, iface)	\
+selector_event smccc_call_ ## type ## _ ## size ## _ ## iface;	\
+	selector function: smccc_function_t;			\
+	param is_hvc: bool;					\
+	param arg1: uint ## size ## _t;				\
+	param arg2: uint ## size ## _t;				\
+	param arg3: uint ## size ## _t;				\
+	param arg4: uint ## size ## _t;				\
+	param arg5: uint ## size ## _t;				\
+	param arg6: uint ## size ## _t;				\
+	param client_id: smccc_client_id_t;			\
+	param ret0: uint ## size ## _t *;			\
+	param ret1: uint ## size ## _t *;			\
+	param ret2: uint ## size ## _t *;			\
+	param ret3: uint ## size ## _t *.
+
+#define SMCCC_CALL_INTERFACE(iface) \
+	_SMCCC_CALL_INTERFACE(fast, 32, iface) \
+	_SMCCC_CALL_INTERFACE(fast, 64, iface) \
+	_SMCCC_CALL_INTERFACE(yielding, 32, iface) \
+	_SMCCC_CALL_INTERFACE(yielding, 64, iface)
+
+SMCCC_CALL_INTERFACE(arch)
+SMCCC_CALL_INTERFACE(cpu)
+SMCCC_CALL_INTERFACE(sip)
+SMCCC_CALL_INTERFACE(oem)
+SMCCC_CALL_INTERFACE(standard)
+SMCCC_CALL_INTERFACE(standard_hyp)
+SMCCC_CALL_INTERFACE(vendor_hyp)
+
+selector_event smccc_arch_features_fast32
+	selector function: smccc_arch_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32
+selector_event smccc_arch_features_fast64
+	selector function: smccc_arch_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32
+
+selector_event smccc_standard_hyp_features_fast32
+	selector function: smccc_standard_hyp_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32
+selector_event smccc_standard_hyp_features_fast64
+	selector function: smccc_standard_hyp_function_t
+	return: uint32_t = SMCCC_UNKNOWN_FUNCTION32

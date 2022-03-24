@@ -14,6 +14,7 @@
 #include <bitmap.h>
 #include <cpulocal.h>
 #include <cspace.h>
+#include <hyp_aspace.h>
 #include <list.h>
 #include <object.h>
 #include <panic.h>
@@ -56,6 +57,21 @@ addrspace_context_switch_load(void)
 	}
 }
 
+static void
+addrspace_detach_thread(thread_t *thread)
+{
+	assert(thread != NULL);
+	assert(thread->kind == THREAD_KIND_VCPU);
+	assert(thread->addrspace != NULL);
+
+	addrspace_t *addrspace = thread->addrspace;
+
+	bitmap_atomic_clear(addrspace->stack_bitmap, thread->stack_map_index,
+			    memory_order_relaxed);
+	thread->addrspace = NULL;
+	object_put_addrspace(addrspace);
+}
+
 error_t
 addrspace_attach_thread(addrspace_t *addrspace, thread_t *thread)
 {
@@ -72,28 +88,27 @@ addrspace_attach_thread(addrspace_t *addrspace, thread_t *thread)
 		goto out;
 	}
 
+	index_t stack_index;
+	do {
+		if (!bitmap_atomic_ffc(addrspace->stack_bitmap,
+				       ADDRSPACE_MAX_THREADS, &stack_index)) {
+			ret = ERROR_NOMEM;
+			goto out;
+		}
+	} while (bitmap_atomic_test_and_set(addrspace->stack_bitmap,
+					    stack_index, memory_order_relaxed));
+
 	if (thread->addrspace != NULL) {
-		object_put_addrspace(thread->addrspace);
+		addrspace_detach_thread(thread);
 	}
 
-	thread->addrspace = object_get_addrspace_additional(addrspace);
+	thread->addrspace	= object_get_addrspace_additional(addrspace);
+	thread->stack_map_index = stack_index;
 
 	trace_ids_set_vmid(&thread->trace_ids, addrspace->vmid);
 
 out:
 	return ret;
-}
-
-static void
-addrspace_detach_thread(thread_t *thread)
-{
-	assert(thread != NULL);
-
-	if ((thread->kind == THREAD_KIND_VCPU) && (thread->addrspace != NULL)) {
-		addrspace_t *addrspace = thread->addrspace;
-		thread->addrspace      = NULL;
-		object_put_addrspace(addrspace);
-	}
 }
 
 error_t
@@ -113,7 +128,9 @@ addrspace_handle_object_activate_thread(thread_t *thread)
 void
 addrspace_handle_object_deactivate_thread(thread_t *thread)
 {
-	addrspace_detach_thread(thread);
+	if ((thread->kind == THREAD_KIND_VCPU) && (thread->addrspace != NULL)) {
+		addrspace_detach_thread(thread);
+	}
 }
 
 void
@@ -207,7 +224,31 @@ addrspace_handle_object_create_addrspace(addrspace_create_t params)
 	spinlock_init(&addrspace->pgtable_lock);
 	list_init(&addrspace->mapping_list);
 
-	return OK;
+	// Allocate some hypervisor address space for the kernel stacks of
+	// attached threads.
+	size_t aspace_size =
+		THREAD_STACK_MAP_ALIGN * (ADDRSPACE_MAX_THREADS + 1U);
+	virt_range_result_t stack_range = hyp_aspace_allocate(aspace_size);
+	if (stack_range.e == OK) {
+		addrspace->stack_range = stack_range.r;
+	}
+
+	return stack_range.e;
+}
+
+void
+addrspace_handle_object_cleanup_addrspace(addrspace_t *addrspace)
+{
+	assert(addrspace != NULL);
+
+	hyp_aspace_deallocate(addrspace->header.partition,
+			      addrspace->stack_range);
+}
+
+void
+addrspace_unwind_object_create_addrspace(addrspace_create_t params)
+{
+	addrspace_handle_object_cleanup_addrspace(params.addrspace);
 }
 
 error_t
@@ -243,7 +284,6 @@ addrspace_handle_object_activate_addrspace(addrspace_t *addrspace)
 	partition_t *partition = addrspace->header.partition;
 	ret = pgtable_vm_init(partition, &addrspace->vm_pgtable,
 			      addrspace->vmid);
-
 	if (ret != OK) {
 		// Undo the vmid allocation
 		(void)bitmap_atomic_test_and_clear(
@@ -272,4 +312,26 @@ addrspace_handle_object_deactivate_addrspace(addrspace_t *addrspace)
 		panic("VMID bitmap never set or already cleared.");
 	}
 	addrspace->vmid = 0U;
+}
+
+uintptr_t
+addrspace_handle_thread_get_stack_base(thread_t *thread)
+{
+	assert(thread != NULL);
+	assert(thread->kind == THREAD_KIND_VCPU);
+	assert(thread->addrspace != NULL);
+
+	virt_range_t *range = &thread->addrspace->stack_range;
+
+	// Align the starting base to the next boundary to ensure we have guard
+	// pages before the first stack mapping.
+	uintptr_t base =
+		util_balign_up(range->base + 1U, THREAD_STACK_MAP_ALIGN);
+
+	base += thread->stack_map_index * THREAD_STACK_MAP_ALIGN;
+
+	assert((base + THREAD_STACK_MAX_SIZE) <
+	       (range->base + (range->size - 1U)));
+
+	return base;
 }

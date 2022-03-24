@@ -6,31 +6,43 @@ module rcu_bitmap
 
 // Events that activate a CPU
 subscribe preempt_interrupt()
+	require_preempt_disabled
 subscribe thread_entry_from_user()
+	require_preempt_disabled
 subscribe thread_context_switch_pre()
+	require_preempt_disabled
 subscribe power_cpu_online
+	require_preempt_disabled
 
 // Events that deactivate a CPU
 subscribe idle_yield()
-#if !defined(UNIT_TESTS)
-subscribe vcpu_idle_fastpath
-	unwinder()
+	require_preempt_disabled
+#if defined(INTERFACE_VCPU)
+subscribe vcpu_block_finish()
+	require_preempt_disabled
 #endif
 subscribe thread_exit_to_user()
+	require_preempt_disabled
 subscribe power_cpu_suspend()
+	require_preempt_disabled
 
 // Events that quiesce a CPU but don't activate or deactivate it
 subscribe scheduler_quiescent
+	require_preempt_disabled
 
 // Support for CPU hotplug is currently unimplemented. However, it is not used
 // in the hypervisor at present, so that should not be a problem. We register
 // this handler to ensure a link error if hotplug is ever enabled.
 subscribe power_cpu_offline
+	require_preempt_disabled
 
 // Handlers for internal IPIs
 subscribe ipi_received[IPI_REASON_RCU_QUIESCE]
 	handler rcu_bitmap_quiesce()
+	require_preempt_disabled
 subscribe ipi_received[IPI_REASON_RCU_NOTIFY]
 	handler rcu_bitmap_notify()
+	require_preempt_disabled
 subscribe ipi_received[IPI_REASON_RCU_UPDATE]
 	handler rcu_bitmap_update()
+	require_preempt_disabled

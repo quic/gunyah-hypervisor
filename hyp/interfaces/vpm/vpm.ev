@@ -10,16 +10,7 @@ interface vpm
 event vpm_system_suspend
 	param vcpu: thread_t *
 
-// Triggered when the last VCPU of a VPM group is entering a suspend state.
-// This event is called without locks held.
-event vpm_system_suspended
-
 // Triggered when the first VCPU of a VPM group wakes up from a suspend state.
 // This event is called with the scheduler lock held.
 event vpm_system_resume
 	param vcpu: thread_t *
-
-// Triggered when the first VCPU of a VPM group has completed resume from a
-// suspend state.
-// This event is called without locks held.
-event vpm_system_resumed

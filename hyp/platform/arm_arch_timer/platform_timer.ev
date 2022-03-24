@@ -6,11 +6,14 @@ module arm_arch_timer
 
 subscribe boot_cpu_cold_init
 	handler platform_timer_handle_boot_cpu_cold_init()
+	require_preempt_disabled
 
 #if !defined(IRQ_NULL)
 subscribe boot_hypervisor_start
 	handler platform_timer_handle_boot_hypervisor_start
+	require_preempt_disabled
 
 subscribe irq_received[HWIRQ_ACTION_HYP_TIMER]
 	handler platform_timer_handle_irq_received()
+	require_preempt_disabled
 #endif

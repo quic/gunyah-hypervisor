@@ -10,14 +10,14 @@
 // Calls to this function may be nested. Each call must be matched by a
 // call to preempt_enable().
 void
-preempt_disable(void);
+preempt_disable(void) ACQUIRE_PREEMPT_DISABLED;
 
 // Undo the effect of an earlier preempt_disable() call.
 //
 // If the matching preempt_disable() call disabled interrupts, then this call
 // will re-enable them.
 void
-preempt_enable(void);
+preempt_enable(void) RELEASE_PREEMPT_DISABLED;
 
 // Handle an interrupt in hypervisor mode.
 //
@@ -34,6 +34,16 @@ preempt_enable(void);
 bool
 preempt_interrupt_dispatch(void);
 
+// Assert that the caller is executing in an interrupt handler, and mark
+// preemption as disabled for the purpose of static analysis.
+void
+preempt_disable_in_irq(void) ACQUIRE_PREEMPT_DISABLED;
+
+// Assert that the caller is executing in an interrupt handler, and mark
+// preemption as enabled for the purpose of static analysis.
+void
+preempt_enable_in_irq(void) RELEASE_PREEMPT_DISABLED;
+
 // Handle an asynchronous abort in hypervisor mode.
 //
 // This function must be called by the architecture's exception or interrupt
@@ -49,10 +59,10 @@ preempt_abort_dispatch(void);
 //
 // This calls assert(), so it is effective only if !defined(NDEBUG).
 void
-assert_preempt_disabled(void);
+assert_preempt_disabled(void) REQUIRE_PREEMPT_DISABLED;
 
 // Assert that preemption is currently enabled.
 //
 // This calls assert(), so it is effective only if !defined(NDEBUG).
 void
-assert_preempt_enabled(void);
+assert_preempt_enabled(void) EXCLUDE_PREEMPT_DISABLED;

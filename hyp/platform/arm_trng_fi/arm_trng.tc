@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Common type definitions used for
+// ARM True Random Number Generator Firmware Interface.
+
+define arm_trng_function enumeration(explicit) {
+	TRNG_VERSION = 0x50;
+	TRNG_FEATURES = 0x51;
+	TRNG_GET_UUID = 0x52;
+	TRNG_RNG = 0x53;
+	// The last ID in the TRNG function ID range (0x50..0x5f).
+	LAST_ID = 0x5F;
+};
+
+define arm_trng_ret enumeration(explicit) {
+	SUCCESS = 0;
+	NOT_SUPPORTED = -1;
+	INVALID_PARAMETERS = -2;
+	NO_ENTROPY = -3;
+};

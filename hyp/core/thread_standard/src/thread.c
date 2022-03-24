@@ -16,6 +16,8 @@
 #include <preempt.h>
 #include <scheduler.h>
 #include <thread.h>
+#include <trace.h>
+#include <util.h>
 
 #include <events/thread.h>
 
@@ -34,7 +36,9 @@ thread_t _Thread_local current_thread
 error_t
 thread_standard_handle_object_create_thread(thread_create_t thread_create)
 {
+	error_t	  err	 = OK;
 	thread_t *thread = thread_create.thread;
+
 	assert(thread != NULL);
 
 	thread->kind   = thread_create.kind;
@@ -43,27 +47,36 @@ thread_standard_handle_object_create_thread(thread_create_t thread_create)
 	size_t stack_size = (thread_create.stack_size != 0U)
 				    ? thread_create.stack_size
 				    : thread_stack_size_default;
+	if (stack_size > THREAD_STACK_MAX_SIZE) {
+		err = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (!util_is_baligned(stack_size, thread_stack_alloc_align)) {
+		err = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
 
 	void_ptr_result_t stack = partition_alloc(
-		thread->header.partition, stack_size, thread_stack_align);
-	if (stack.e == OK) {
+		thread->header.partition, stack_size, thread_stack_alloc_align);
+	if (stack.e != OK) {
+		err = stack.e;
+		goto out;
+	}
+
 #if !defined(NDEBUG)
-		// Fill the stack with a pattern so we can detect maximum stack
-		// depth
-		memset(stack.r, 0x57, stack_size);
+	// Fill the stack with a pattern so we can detect maximum stack
+	// depth
+	memset(stack.r, 0x57, stack_size);
 #endif
 
-		thread->stack_base = (uintptr_t)stack.r;
-		thread->stack_size = stack_size;
-		thread_arch_init_context(thread);
-	} else {
-		thread->stack_base = (uintptr_t)0U;
-		thread->stack_size = (size_t)0U;
-	}
+	thread->stack_mem  = (uintptr_t)stack.r;
+	thread->stack_size = stack_size;
 
 	scheduler_block_init(thread, SCHEDULER_BLOCK_THREAD_LIFECYCLE);
 
-	return stack.e;
+out:
+	return err;
 }
 
 void
@@ -73,25 +86,45 @@ thread_standard_unwind_object_create_thread(error_t	    result,
 	thread_t *thread = create.thread;
 	assert(thread != NULL);
 	assert(result != OK);
-	assert(thread->state == THREAD_STATE_INIT);
+	assert(atomic_load_relaxed(&thread->state) == THREAD_STATE_INIT);
 
-	if (thread->stack_base != (uintptr_t)0U) {
+	if (thread->stack_mem != 0U) {
 		partition_free(thread->header.partition,
-			       (void *)thread->stack_base, thread->stack_size);
-		thread->stack_base = (uintptr_t)0U;
+			       (void *)thread->stack_mem, thread->stack_size);
+		thread->stack_mem = 0U;
 	}
 }
 
 error_t
 thread_standard_handle_object_activate_thread(thread_t *thread)
 {
+	error_t err = OK;
+
 	assert(thread != NULL);
+
+	// Get an appropriate address for the stack and map it there.
+	thread->stack_base =
+		trigger_thread_get_stack_base_event(thread->kind, thread);
+	if (thread->stack_base == 0U) {
+		err = ERROR_NOMEM;
+		goto out;
+	}
+
+	assert(util_is_baligned(thread->stack_base, THREAD_STACK_MAP_ALIGN));
+
+	err = thread_arch_map_stack(thread);
+	if (err != OK) {
+		thread->stack_base = 0U;
+		goto out;
+	}
+
+	thread_arch_init_context(thread);
 
 	// Put the thread into ready state and give it a reference to itself.
 	// This reference is released in thread_exit(). At this point the thread
 	// can only be deleted by another thread by calling thread_kill().
 	(void)object_get_thread_additional(thread);
-	thread->state = THREAD_STATE_READY;
+	atomic_store_relaxed(&thread->state, THREAD_STATE_READY);
 
 	// Remove the lifecycle block, which allows the thread to be scheduled
 	// (assuming nothing else blocked it).
@@ -100,21 +133,27 @@ thread_standard_handle_object_activate_thread(thread_t *thread)
 		scheduler_trigger();
 	}
 	scheduler_unlock(thread);
-
-	return OK;
+out:
+	return err;
 }
 
 void
 thread_standard_handle_object_deactivate_thread(thread_t *thread)
 {
 	assert(thread != NULL);
-	assert((thread->state == THREAD_STATE_INIT) ||
-	       (thread->state == THREAD_STATE_EXITED));
 
-	if (thread->stack_base != (uintptr_t)0U) {
+	thread_state_t state = atomic_load_relaxed(&thread->state);
+	assert((state == THREAD_STATE_INIT) || (state == THREAD_STATE_EXITED));
+
+	if (thread->stack_base != 0U) {
+		thread_arch_unmap_stack(thread);
+		thread->stack_base = 0U;
+	}
+
+	if (thread->stack_mem != 0U) {
 		partition_free(thread->header.partition,
-			       (void *)thread->stack_base, thread->stack_size);
-		thread->stack_base = (uintptr_t)0U;
+			       (void *)thread->stack_mem, thread->stack_size);
+		thread->stack_mem = 0U;
 	}
 }
 
@@ -134,7 +173,12 @@ error_t
 thread_switch_to(thread_t *thread)
 {
 	assert_preempt_disabled();
-	assert(thread != thread_get_self());
+
+	thread_t *current = thread_get_self();
+	assert(thread != current);
+
+	TRACE_LOCAL(DEBUG, INFO, "thread: ctx switch from: {:#x} to: {:#x}",
+		    (uintptr_t)current, (uintptr_t)thread);
 
 	trigger_thread_save_state_event();
 	error_t err = trigger_thread_context_switch_pre_event(thread);
@@ -156,11 +200,29 @@ out:
 	return err;
 }
 
+error_t
+thread_kill(thread_t *thread)
+{
+	assert(thread != NULL);
+
+	error_t	       err	      = OK;
+	thread_state_t expected_state = THREAD_STATE_READY;
+	if (atomic_compare_exchange_strong_explicit(
+		    &thread->state, &expected_state, THREAD_STATE_KILLED,
+		    memory_order_relaxed, memory_order_relaxed)) {
+		trigger_thread_killed_event(thread);
+	} else {
+		err = ERROR_OBJECT_STATE;
+	}
+
+	return err;
+}
+
 bool
 thread_is_dying(const thread_t *thread)
 {
 	assert(thread != NULL);
-	return thread->state == THREAD_STATE_KILLED;
+	return atomic_load_relaxed(&thread->state) == THREAD_STATE_KILLED;
 }
 
 noreturn void
@@ -170,13 +232,15 @@ thread_exit(void)
 	assert(thread != NULL);
 	preempt_disable();
 
-	thread->state = THREAD_STATE_EXITED;
+	atomic_store_relaxed(&thread->state, THREAD_STATE_EXITED);
 
-	scheduler_lock(thread);
+	scheduler_lock_nopreempt(thread);
 	scheduler_block(thread, SCHEDULER_BLOCK_THREAD_LIFECYCLE);
-	scheduler_unlock(thread);
+	scheduler_unlock_nopreempt(thread);
 
 	// TODO: wake up anyone waiting in thread_join()
+
+	trigger_thread_exited_event();
 
 	// Release the thread's reference to itself (note that the CPU still
 	// holds a reference, so this won't delete it immediately). This matches
@@ -188,4 +252,18 @@ thread_exit(void)
 	// This thread should never run again, unless it is explicitly reset
 	// (which will prevent a switch returning here).
 	panic("Switched to an exited thread!");
+}
+
+void
+thread_standard_handle_thread_exit_to_user(void)
+{
+	thread_t *thread = thread_get_self();
+	assert(thread != NULL);
+
+	thread_state_t state = atomic_load_relaxed(&thread->state);
+	if (compiler_unexpected(state == THREAD_STATE_KILLED)) {
+		thread_exit();
+	} else {
+		assert(state == THREAD_STATE_READY);
+	}
 }

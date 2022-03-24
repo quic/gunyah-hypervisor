@@ -18,12 +18,13 @@
 #include <spinlock.h>
 
 #include "addrspace.h"
+#include "events/addrspace.h"
 
 error_t
 hypercall_addrspace_attach_thread(cap_id_t addrspace_cap, cap_id_t thread_cap)
 {
 	error_t	      ret;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -65,6 +66,28 @@ out_thread_release:
 	object_put(type, o.r);
 out:
 	return ret;
+}
+
+error_t
+hypercall_addrspace_attach_vdma(cap_id_t addrspace_cap, cap_id_t dma_device_cap,
+				index_t index)
+{
+	error_t	  err;
+	cspace_t *cspace = cspace_get_self();
+
+	addrspace_ptr_result_t addrspace_r = cspace_lookup_addrspace(
+		cspace, addrspace_cap, CAP_RIGHTS_ADDRSPACE_ATTACH);
+	if (compiler_unexpected(addrspace_r.e != OK)) {
+		err = addrspace_r.e;
+		goto out;
+	}
+
+	err = trigger_addrspace_attach_vdma_event(addrspace_r.r, dma_device_cap,
+						  index);
+
+	object_put_addrspace(addrspace_r.r);
+out:
+	return err;
 }
 
 error_t
@@ -197,7 +220,7 @@ error_t
 hypercall_addrspace_configure(cap_id_t addrspace_cap, vmid_t vmid)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(

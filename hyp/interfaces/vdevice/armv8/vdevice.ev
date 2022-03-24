@@ -4,7 +4,16 @@
 
 interface vdevice
 
-handled_event vdevice_access
+handled_event vdevice_access_fixed_addr
+	param ipa:		vmaddr_t
+	param access_size:	size_t
+	param value:		register_t *
+	param is_write:		bool
+
+selector_event vdevice_access
+	selector_type:		vdevice_type_t
+	param vdevice:		vdevice_ptr_t
+	param pa:		paddr_t
 	param ipa:		vmaddr_t
 	param access_size:	size_t
 	param value:		register_t *

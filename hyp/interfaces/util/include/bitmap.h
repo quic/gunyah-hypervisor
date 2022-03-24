@@ -6,7 +6,8 @@
 
 #include <types/bitmap.h>
 
-#define BITMAP_DECLARE(bits, name) register_t name[BITMAP_NUM_WORDS(bits)]
+#define BITMAP_DECLARE(bits, name)     register_t name[BITMAP_NUM_WORDS(bits)]
+#define BITMAP_DECLARE_PTR(bits, name) register_t(*name)[BITMAP_NUM_WORDS(bits)]
 
 bool
 bitmap_isset(const register_t *bitmap, index_t bit);

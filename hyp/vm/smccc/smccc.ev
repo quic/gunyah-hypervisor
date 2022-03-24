@@ -2,68 +2,32 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-interface smccc
+module smccc
 
-selector_event smccc_call_fast_32
-	selector interface_id: smccc_interface_id_t
-	param function: smccc_function_t
-	param is_hvc: bool
-	param arg1: uint32_t
-	param arg2: uint32_t
-	param arg3: uint32_t
-	param arg4: uint32_t
-	param arg5: uint32_t
-	param arg6: uint32_t
-	param client_id: smccc_client_id_t
-	param ret0: uint32_t *
-	param ret1: uint32_t *
-	param ret2: uint32_t *
-	param ret3: uint32_t *
+#define _SMCCC_DISPATCH_INTERFACE(type_size, iface, iface_id)			\
+subscribe smccc_dispatch_ ## type_size[SMCCC_INTERFACE_ID_ ## iface_id];	\
+	handler trigger_smccc_call_ ## type_size ## _ ## iface ## _event(	\
+		function, is_hvc, arg1, arg2, arg3, arg4, arg5, arg6,		\
+		client_id, ret0, ret1, ret2, ret3);				\
+	exclude_preempt_disabled.
 
-selector_event smccc_call_fast_64
-	selector interface_id: smccc_interface_id_t
-	param function: smccc_function_t
-	param is_hvc: bool
-	param arg1: uint64_t
-	param arg2: uint64_t
-	param arg3: uint64_t
-	param arg4: uint64_t
-	param arg5: uint64_t
-	param arg6: uint64_t
-	param client_id: smccc_client_id_t
-	param ret0: uint64_t *
-	param ret1: uint64_t *
-	param ret2: uint64_t *
-	param ret3: uint64_t *
+#define SMCCC_DISPATCH_INTERFACE(iface, iface_id) \
+	_SMCCC_DISPATCH_INTERFACE(fast_32, iface, iface_id) \
+	_SMCCC_DISPATCH_INTERFACE(fast_64, iface, iface_id) \
+	_SMCCC_DISPATCH_INTERFACE(yielding_32, iface, iface_id) \
+	_SMCCC_DISPATCH_INTERFACE(yielding_64, iface, iface_id)
 
-selector_event smccc_call_yielding_32
-	selector interface_id: smccc_interface_id_t
-	param function: smccc_function_t
-	param is_hvc: bool
-	param arg1: uint32_t
-	param arg2: uint32_t
-	param arg3: uint32_t
-	param arg4: uint32_t
-	param arg5: uint32_t
-	param arg6: uint32_t
-	param client_id: smccc_client_id_t
-	param ret0: uint32_t *
-	param ret1: uint32_t *
-	param ret2: uint32_t *
-	param ret3: uint32_t *
+SMCCC_DISPATCH_INTERFACE(arch, ARCH)
+SMCCC_DISPATCH_INTERFACE(cpu, CPU)
+SMCCC_DISPATCH_INTERFACE(sip, SIP)
+SMCCC_DISPATCH_INTERFACE(oem, OEM)
+SMCCC_DISPATCH_INTERFACE(standard, STANDARD)
+SMCCC_DISPATCH_INTERFACE(standard_hyp, STANDARD_HYP)
+SMCCC_DISPATCH_INTERFACE(vendor_hyp, VENDOR_HYP)
 
-selector_event smccc_call_yielding_64
-	selector interface_id: smccc_interface_id_t
-	param function: smccc_function_t
-	param is_hvc: bool
-	param arg1: uint64_t
-	param arg2: uint64_t
-	param arg3: uint64_t
-	param arg4: uint64_t
-	param arg5: uint64_t
-	param arg6: uint64_t
-	param client_id: smccc_client_id_t
-	param ret0: uint64_t *
-	param ret1: uint64_t *
-	param ret2: uint64_t *
-	param ret3: uint64_t *
+#include <smccc.ev.h>
+
+SMCCC_ARCH_FUNCTION_32(VERSION, 0, version, ret0)
+SMCCC_ARCH_FUNCTION_32(ARCH_FEATURES, 0, arch_features, arg1, ret0)
+SMCCC_STANDARD_HYP_FUNCTION_32(CALL_UID, 0, std_hyp_call_uid, ret0, ret1, ret2, ret3)
+SMCCC_STANDARD_HYP_FUNCTION_32(REVISION, 0, std_hyp_revision, ret0, ret1)

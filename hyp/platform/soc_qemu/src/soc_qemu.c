@@ -7,6 +7,7 @@
 
 #include <bitmap.h>
 #include <panic.h>
+#include <platform_cpu.h>
 #include <platform_security.h>
 
 #include "event_handlers.h"
@@ -17,11 +18,17 @@ platform_security_state_debug_disabled(void)
 	return false;
 }
 
+uint32_t
+platform_cpu_stack_size(void)
+{
+	return 0;
+}
+
 #if !defined(UNIT_TESTS)
 static _Atomic BITMAP_DECLARE(PLATFORM_MAX_CORES, hlos_vm_cpus);
 
 bool
-soc_qemu_handle_vcpu_activate_thread(thread_t *		 thread,
+soc_qemu_handle_vcpu_activate_thread(thread_t	      *thread,
 				     vcpu_option_flags_t options)
 {
 	bool ret = true;

@@ -12,7 +12,7 @@ define SCHEDULER_MAX_PRIORITY public constant type priority_t = SCHEDULER_NUM_PR
 define SCHEDULER_DEFAULT_PRIORITY public constant type priority_t = SCHEDULER_NUM_PRIORITIES / 2;
 
 define SCHEDULER_MAX_TIMESLICE public constant type nanoseconds_t = 100000000;	// 100ms
-define SCHEDULER_MIN_TIMESLICE public constant type nanoseconds_t = 1000000; // 1ms
+define SCHEDULER_MIN_TIMESLICE public constant type nanoseconds_t = 100000; // 100us
 define SCHEDULER_DEFAULT_TIMESLICE public constant type nanoseconds_t = 5000000; // 5ms
 
 define SCHEDULER_NUM_BLOCK_BITS constant type index_t = maxof(enumeration scheduler_block) + 1;
@@ -27,6 +27,10 @@ define sched_state bitfield<16> {
 	// True if the thread is running on a cpu and needs
 	// to be requeued after context switching away.
 	auto need_requeue bool;
+	// True if the thread has been killed.
+	auto killed bool;
+	// True if the thread has exited.
+	auto exited bool;
 };
 
 define scheduler structure {
@@ -50,7 +54,7 @@ extend thread object module scheduler {
 	lock structure spinlock;
 	pin_count type count_t;
 	yield_to pointer object thread;
-	yielded_from pointer object thread;
+	yielding bool(atomic);
 	active_affinity type cpu_index_t(atomic);
 	prev_affinity type cpu_index_t;
 	state bitfield sched_state;
@@ -78,3 +82,21 @@ extend scheduler_block enumeration {
 extend rcu_update_class enumeration {
 	affinity_changed;
 };
+
+#if defined(UNIT_TESTS)
+extend thread_kind enumeration {
+	sched_test;
+};
+
+define sched_test_op enumeration {
+	increment;
+	wake;
+	yieldto;
+	affinity;
+};
+
+define sched_test_param bitfield<32> {
+	31:16	parent type cpu_index_t;
+	15:0	op enumeration sched_test_op;
+};
+#endif

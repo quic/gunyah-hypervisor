@@ -98,7 +98,7 @@ memcpy(void *restrict s1, const void *restrict s2, size_t n)
 	return s1;
 }
 
-extern size_t
+size_t
 memscpy(void *restrict s1, size_t s1_size, const void *restrict s2,
 	size_t s2_size)
 {

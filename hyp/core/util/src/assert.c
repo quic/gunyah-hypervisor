@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#if !defined(NDEBUG) && !defined(__KLOCWORK__)
 #include <assert.h>
 #include <hyptypes.h>
+#if !defined(NDEBUG) && !defined(__KLOCWORK__)
 #include <string.h>
 
 #include <attributes.h>
@@ -14,15 +14,18 @@
 #include <trace.h>
 
 #include <events/abort.h>
+#include <events/scheduler.h>
 
 #include <asm/event.h>
+#include <asm/interrupt.h>
 
 noreturn void NOINLINE
 assert_failed(const char *file, int line, const char *func, const char *err)
 {
 	const char *file_short;
 
-	preempt_disable();
+	// Stop all cores and disable preemption
+	trigger_scheduler_stop_event();
 
 	size_t len = strlen(file);
 	if (len < 64) {
@@ -48,5 +51,6 @@ assert_failed(const char *file, int line, const char *func, const char *err)
 	}
 }
 #else
-extern char __empty_assert_c;
+noreturn void NOINLINE
+assert_failed(const char *file, int line, const char *func, const char *err);
 #endif

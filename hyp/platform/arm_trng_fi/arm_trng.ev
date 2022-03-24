@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_trng_fi
+
+// Subscribe to the vcpu_trap_smc64 event directly instead of
+// smccc_call_fast_*_event so that return values don't need to be passed on the
+// stack.
+subscribe vcpu_trap_smc64
+	priority -10
+subscribe vcpu_trap_hvc64
+	priority -10

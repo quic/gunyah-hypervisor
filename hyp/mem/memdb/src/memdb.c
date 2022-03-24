@@ -85,6 +85,10 @@
 // levels + 1 for root
 #define MAX_LEVELS (ADDR_SIZE / MEMDB_BITS_PER_ENTRY) + 1
 
+#if (defined(VERBOSE) && VERBOSE) || defined(UNIT_TESTS)
+#define MEMDB_DEBUG 1
+#endif
+
 static memdb_t memdb;
 
 extern const char image_phys_start;
@@ -100,7 +104,7 @@ typedef struct start_path {
 } start_path_t;
 
 typedef struct locked_levels {
-	spinlock_t *	       locks[MAX_LEVELS];
+	spinlock_t		   *locks[MAX_LEVELS];
 	_Atomic memdb_entry_t *entries[MAX_LEVELS];
 	count_t		       count;
 	uint8_t		       pad_end_[4];
@@ -182,21 +186,28 @@ init_level(memdb_level_t *level, allocator_t *allocator, memdb_type_t type,
 	}
 }
 
-static memdb_level_t *
+static memdb_level_ptr_result_t
 create_level(allocator_t *allocator, memdb_type_t type, uintptr_t obj)
 {
-	void_ptr_result_t ret = allocator_allocate_object(
+	memdb_level_ptr_result_t ret;
+
+	void_ptr_result_t res = allocator_allocate_object(
 		allocator, sizeof(memdb_level_t), alignof(memdb_level_t));
 
-	if (ret.e != OK) {
-		LOG(ERROR, WARN, "memdb allocate err: {:d}", (register_t)ret.e);
-		panic("memdb allocation failure");
+	if (res.e != OK) {
+		LOG(ERROR, WARN, "memdb allocate err: {:d}", (register_t)res.e);
+		ret = memdb_level_ptr_result_error(res.e);
+		goto out;
 	}
 
-	memdb_level_t *level = ret.r;
+	memdb_level_t *level = res.r;
 	init_level(level, allocator, type, obj);
 
-	return level;
+	ret.e = OK;
+	ret.r = level;
+
+out:
+	return ret;
 }
 
 // Check if the level entries point to the same object. If we pass an index
@@ -247,7 +258,7 @@ memdb_deallocate_level(rcu_entry_t *entry)
 // The entry parent of the level will always be in the previous index.
 // Lock level[x], parent entry[x -1]
 static void
-unlock_levels(locked_levels_t *locked_levels)
+unlock_levels(locked_levels_t *locked_levels) LOCK_IMPL
 {
 	bool	     optimize = true;
 	bool	     res      = false;
@@ -263,6 +274,26 @@ unlock_levels(locked_levels_t *locked_levels)
 			locked_levels->entries[i - 1], memory_order_relaxed);
 		memdb_level_t *level = (memdb_level_t *)entry.next;
 
+#if defined(MEMDB_DEBUG)
+		// Check that levels are not added twice
+		memdb_entry_t curr_entry = atomic_load_explicit(
+			locked_levels->entries[i], memory_order_relaxed);
+		assert(curr_entry.next != entry.next);
+
+		// Check that all consecutive levels after the first one in the
+		// array have been added
+		bool cont_level = false;
+
+		for (count_t k = 0; k < MEMDB_NUM_ENTRIES; k++) {
+			memdb_entry_t cmp_entry = atomic_load_explicit(
+				&level->level[k], memory_order_relaxed);
+			if (cmp_entry.next == curr_entry.next) {
+				cont_level = true;
+				break;
+			}
+		}
+		assert(cont_level);
+#endif
 		if (optimize) {
 			atomic_entry_read(&level->level[0], &guard,
 					  &guard_shifts, &type, &next);
@@ -356,6 +387,7 @@ out:
 
 static void
 lock_level(memdb_level_t *level, index_t index, locked_levels_t *locked_levels)
+	LOCK_IMPL
 {
 	assert(locked_levels->count < MAX_LEVELS);
 
@@ -410,12 +442,18 @@ create_n_levels(allocator_t *allocator, memdb_level_t **level, bool start,
 	// Create levels and update parent entry to point to new level.
 	while ((*shifts != limit) &&
 	       ((util_mask(*shifts) & addr) != comparison)) {
-		memdb_level_t *next_level =
-			create_level(allocator, prev_type, prev_object);
-
 		if ((op != MEMDB_OP_ROLLBACK) && (*level != first_level)) {
 			lock_level(*level, *index, locked_levels);
 		}
+
+		memdb_level_ptr_result_t res =
+			create_level(allocator, prev_type, prev_object);
+		if (res.e != OK) {
+			ret = res.e;
+			goto error;
+		}
+
+		memdb_level_t *next_level = res.r;
 
 		level_guard	   = 0;
 		level_guard_shifts = ADDR_SIZE;
@@ -991,7 +1029,7 @@ add_extra_shifts_update(allocator_t *allocator, count_t *shifts,
 			memdb_type_t obj_type, uintptr_t prev_object,
 			memdb_type_t prev_type, memdb_level_t **common_level,
 			bool locking, bool lock_taken,
-			locked_levels_t *locked_levels)
+			locked_levels_t *locked_levels) LOCK_IMPL
 {
 	count_t	       rem_cmn_shifts = *shifts + extra_shifts;
 	memdb_level_t *level	      = (memdb_level_t *)next;
@@ -1021,7 +1059,7 @@ add_extra_shifts_update(allocator_t *allocator, count_t *shifts,
 				  &level_next);
 
 		// If entry has guard, it must match with common bits.
-		ret = check_guard(level_guard_shifts, level_guard, start_addr,
+		ret = check_guard(level_guard_shifts, level_guard, end_addr,
 				  &rem_cmn_shifts);
 		if (ret != OK) {
 			goto end_function;
@@ -1076,8 +1114,14 @@ add_extra_shifts_update(allocator_t *allocator, count_t *shifts,
 					    (level_next == prev_object)))) {
 			// Create new level with all entries
 			// pointing to prev owner
-			memdb_level_t *next_level =
+			memdb_level_ptr_result_t res =
 				create_level(allocator, prev_type, prev_object);
+			if (res.e != OK) {
+				ret = res.e;
+				goto end_function;
+			}
+
+			memdb_level_t *next_level = res.r;
 
 			// Keep current and next levels lock since
 			// current level will be modified.
@@ -1120,16 +1164,25 @@ end_function:
 	return ret;
 }
 
-static void
+static error_t
 add_extra_guard_shifts(allocator_t *allocator, count_t guard_shifts,
 		       paddr_t guard, uintptr_t *next, memdb_type_t root_type,
 		       count_t		extra_guard_shifts,
 		       locked_levels_t *locked_levels, paddr_t end_addr)
 {
-	paddr_t	       new_guard;
-	count_t	       level_guard_shifts;
-	paddr_t	       level_guard;
-	memdb_level_t *level = create_level(allocator, MEMDB_TYPE_NOTYPE, 0);
+	error_t ret;
+	paddr_t new_guard;
+	count_t level_guard_shifts;
+	paddr_t level_guard;
+
+	memdb_level_ptr_result_t res =
+		create_level(allocator, MEMDB_TYPE_NOTYPE, 0);
+	if (res.e != OK) {
+		ret = res.e;
+		goto error;
+	}
+
+	memdb_level_t *level = res.r;
 
 	assert(extra_guard_shifts != 0U);
 
@@ -1159,66 +1212,82 @@ add_extra_guard_shifts(allocator_t *allocator, count_t guard_shifts,
 
 	atomic_entry_write(&memdb.root, memory_order_release, new_guard,
 			   new_guard_shifts, root_type, *next);
+
+	ret = OK;
+
+error:
+	return ret;
 }
 
-static void
+static error_t
 create_intermediate_level(allocator_t *allocator, paddr_t start_addr,
-			  memdb_level_t *level, index_t index)
+			  memdb_level_t *level, count_t level_shifts,
+			  count_t shifts, index_t index)
 {
-	paddr_t	     level_guard;
-	count_t	     level_guard_shifts;
-	memdb_type_t level_type;
-	uintptr_t    level_next;
-	paddr_t	     tmp_cmn;
+	error_t	     ret;
+	paddr_t	     lower_guard;
+	count_t	     lower_guard_shifts;
+	memdb_type_t lower_type;
+	uintptr_t    lower_next;
 
 	// Set guard equal to common bits and create level.
 
-	atomic_entry_read(&level->level[index], &level_guard,
-			  &level_guard_shifts, &level_type, &level_next);
+	atomic_entry_read(&level->level[index], &lower_guard,
+			  &lower_guard_shifts, &lower_type, &lower_next);
 
-	paddr_t	     new_guard	= level_guard;
-	count_t	     new_shifts = level_guard_shifts;
-	memdb_type_t new_type	= level_type;
-	uintptr_t    new_next	= level_next;
-	paddr_t	     tmp_guard	= level_guard;
+	paddr_t lower_addr = lower_guard << lower_guard_shifts;
 
-	paddr_t level_addr = level_guard << level_guard_shifts;
+	assert(lower_guard_shifts != (count_t)ADDR_SIZE);
 
-	if (level_guard_shifts != (count_t)ADDR_SIZE) {
-		tmp_cmn = start_addr >> level_guard_shifts;
-	} else {
-		tmp_cmn = 0;
-	}
+	count_t tmp_shifts = calculate_common_bits(lower_addr, start_addr);
 
-	memdb_level_t *next_level =
+	memdb_level_ptr_result_t res =
 		create_level(allocator, MEMDB_TYPE_NOTYPE, 0);
-
-	// We update guard to common bits between them.
-	count_t aux_shifts = calculate_common_bits(tmp_guard, tmp_cmn);
-
-	count_t tmp_shifts = level_guard_shifts + aux_shifts;
-
-	// If there are no common bits, there is no guard
-	if ((level_guard_shifts + aux_shifts) == ADDR_SIZE) {
-		tmp_guard = 0;
-	} else {
-		tmp_guard = tmp_guard >> aux_shifts;
+	if (res.e != OK) {
+		ret = res.e;
+		goto error;
 	}
 
-	level_guard	   = tmp_guard;
-	level_guard_shifts = tmp_shifts;
-	level_type	   = MEMDB_TYPE_LEVEL;
-	level_next	   = (uintptr_t)next_level;
+	memdb_level_t *next_level = res.r;
+
+	shifts			   = shifts > tmp_shifts ? shifts : tmp_shifts;
+	count_t level_guard_shifts = shifts;
+	paddr_t level_guard	   = (lower_guard << lower_guard_shifts) >>
+			      level_guard_shifts;
+
+	assert(level_guard_shifts < level_shifts);
+
+	if (level_guard_shifts == (level_shifts - MEMDB_BITS_PER_ENTRY)) {
+		// No guard if no levels are skipped.
+		level_guard_shifts = ADDR_SIZE;
+		level_guard	   = 0U;
+	}
+
+	uintptr_t level_next = (uintptr_t)next_level;
 
 	atomic_entry_write(&level->level[index], memory_order_release,
-			   level_guard, level_guard_shifts, level_type,
+			   level_guard, level_guard_shifts, MEMDB_TYPE_LEVEL,
 			   level_next);
 
-	// Add old entry to new level
-	index = get_next_index(level_addr, &tmp_shifts);
+	assert(lower_guard_shifts < shifts);
+	tmp_shifts = shifts;
 
-	atomic_entry_write(&next_level->level[index], memory_order_relaxed,
-			   new_guard, new_shifts, new_type, new_next);
+	// Chain lower_level from next_level
+	count_t new_index = get_next_index(lower_addr, &tmp_shifts);
+
+	if (lower_guard_shifts == (shifts - MEMDB_BITS_PER_ENTRY)) {
+		// No guard if no levels are skipped.
+		lower_guard_shifts = ADDR_SIZE;
+		lower_guard	   = 0U;
+	}
+
+	atomic_entry_write(&next_level->level[new_index], memory_order_relaxed,
+			   lower_guard, lower_guard_shifts, lower_type,
+			   lower_next);
+
+	ret = OK;
+error:
+	return ret;
 }
 
 static error_t
@@ -1226,7 +1295,7 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 		 uintptr_t next, paddr_t start_addr, paddr_t end_addr,
 		 uintptr_t object, memdb_type_t obj_type,
 		 memdb_level_t **common_level, bool lock_taken,
-		 locked_levels_t *locked_levels)
+		 locked_levels_t *locked_levels) LOCK_IMPL
 {
 	count_t	       level_guard_shifts;
 	paddr_t	       level_guard;
@@ -1279,17 +1348,33 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 				lock_taken = true;
 			}
 
+			if (rem_cmn_shifts == shifts) {
+				ret = OK;
+				if ((level_guard_shifts != ADDR_SIZE) &&
+				    (level_guard_shifts != shifts)) {
+					assert(level_guard_shifts < shifts);
+					// Next level guard is smaller than
+					// shifts we need to create an
+					// intermediate level.
+					ret = ERROR_ADDR_INVALID;
+				}
+			} else {
+				ret = check_guard(level_guard_shifts,
+						  level_guard, end_addr,
+						  &rem_cmn_shifts);
+			}
 			// If guard, does it match with common bits?
 			// 1. No  -> create an intermediate level.
 			// 2. Yes -> (type == level) ?
 			//	a. Yes -> go down to next level.
 			//	b. No  -> error (already has owner).
-			ret = check_guard(level_guard_shifts, level_guard,
-					  start_addr, &rem_cmn_shifts);
 			if (ret != OK) {
-				ret = OK;
-				create_intermediate_level(allocator, start_addr,
-							  level, index);
+				ret = create_intermediate_level(
+					allocator, start_addr, level,
+					level_shifts, shifts, index);
+				if (ret != OK) {
+					goto end_function;
+				}
 				// Retry this level
 				rem_cmn_shifts = level_shifts;
 
@@ -1315,8 +1400,14 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 			// Set guard equal to common bits and create level.
 			count_t tmp_shifts = shifts;
 
-			memdb_level_t *next_level =
+			memdb_level_ptr_result_t res =
 				create_level(allocator, MEMDB_TYPE_NOTYPE, 0);
+			if (res.e != OK) {
+				ret = res.e;
+				goto end_function;
+			}
+
+			memdb_level_t *next_level = res.r;
 
 			// Keep current and next levels lock since current level
 			// values will be modified.
@@ -1354,7 +1445,7 @@ find_common_level(paddr_t start_addr, paddr_t end_addr,
 		  allocator_t *allocator, uintptr_t object,
 		  memdb_type_t obj_type, uintptr_t prev_object,
 		  memdb_type_t prev_type, locked_levels_t *locked_levels,
-		  bool insert, bool first)
+		  bool insert, bool first) LOCK_IMPL
 {
 	error_t	     ret	= OK;
 	bool	     lock_taken = false;
@@ -1430,9 +1521,13 @@ find_common_level(paddr_t start_addr, paddr_t end_addr,
 		// Therefore, all consecutive levels should hold locks.
 		lock_taken = true;
 
-		add_extra_guard_shifts(allocator, guard_shifts, guard, &next,
-				       root_type, extra_guard_shifts,
-				       locked_levels, end_addr);
+		ret = add_extra_guard_shifts(allocator, guard_shifts, guard,
+					     &next, root_type,
+					     extra_guard_shifts, locked_levels,
+					     end_addr);
+		if (ret != OK) {
+			goto end_function;
+		}
 	}
 
 	// If there are extra common shifts, we need to find the common level.
@@ -1482,7 +1577,7 @@ add_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 
 	if (init_error != OK) {
 		ret = init_error;
-		goto end_function;
+		goto unlock_levels;
 	}
 
 	ret = add_address_range(allocator, start_addr, end_addr, common_level,
@@ -1500,7 +1595,7 @@ add_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 				  MEMDB_OP_ROLLBACK);
 	}
 
-end_function:
+unlock_levels:
 	if (start_locked_levels.count != 0U) {
 		unlock_levels(&start_locked_levels);
 	}
@@ -1591,7 +1686,7 @@ memdb_insert(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	count_t		guard_shifts;
 	memdb_type_t	root_type;
 	uintptr_t	next;
-	memdb_level_t * common_level = NULL;
+	memdb_level_t  *common_level = NULL;
 	count_t		shifts;
 	bool		insert	    = true;
 	bool		first_entry = false;
@@ -1632,8 +1727,14 @@ memdb_insert(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 		}
 
 		// Create a new level and add address range entries.
-		memdb_level_t *first_level =
+		memdb_level_ptr_result_t res =
 			create_level(allocator, MEMDB_TYPE_NOTYPE, 0);
+		if (res.e != OK) {
+			ret = res.e;
+			goto end_function;
+		}
+
+		memdb_level_t *first_level = res.r;
 
 		count_t aux_shifts = shifts;
 		index_t index	   = get_next_index(start_addr, &aux_shifts);
@@ -1660,6 +1761,18 @@ end_function:
 		TRACE(MEMDB, INFO,
 		      "memdb_insert: {:#x}..{:#x} - obj({:#x}) - type({:d})",
 		      start_addr, end_addr, object, obj_type);
+
+#if defined(MEMDB_DEBUG)
+		// Check that the range was added correctly
+		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
+							  object, obj_type);
+		if (!cont) {
+			LOG(DEBUG, INFO,
+			    "<<< memdb_insert BUG!! range {:#x}..{:#x} should be contiguous",
+			    start_addr, end_addr);
+			panic("BUG in memdb_insert");
+		}
+#endif
 	} else {
 		TRACE(MEMDB, INFO,
 		      "memdb: Error inserting {:#x}..{:#x} - obj({:#x}) - type({:d}), err = {:d}",
@@ -1680,7 +1793,7 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	error_t		ret = OK;
 	count_t		shifts;
 	locked_levels_t locked_levels = { { NULL }, { NULL }, 0, { 0 } };
-	memdb_level_t * common_level  = NULL;
+	memdb_level_t  *common_level  = NULL;
 
 	// We need to find the common level, the level where all the first
 	// common bits between start and end address are covered. Then, add
@@ -1706,6 +1819,18 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 		TRACE(MEMDB, INFO,
 		      "memdb_update: {:#x}..{:#x} - obj({:#x}) - type({:d})",
 		      start_addr, end_addr, object, obj_type);
+
+#if defined(MEMDB_DEBUG)
+		// Check that the range was added correctly
+		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
+							  object, obj_type);
+		if (!cont) {
+			LOG(DEBUG, INFO,
+			    "<<< memdb_update BUG!! range {:#x}..{:#x} should be contiguous",
+			    start_addr, end_addr);
+			panic("BUG in memdb_update");
+		}
+#endif
 	} else {
 		TRACE(MEMDB, INFO,
 		      "memdb: Error updating {:#x}..{:#x} - obj({:#x}) - type({:d}), err = {:d}",
@@ -1798,11 +1923,9 @@ memdb_lookup(paddr_t addr)
 	count_t			guard_shifts;
 	memdb_type_t		root_type;
 	uintptr_t		next;
-	memdb_level_t *		level;
+	memdb_level_t	      *level;
 	index_t			index;
 	bool			start = true;
-
-	rcu_read_start();
 
 	atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
 			  &next);
@@ -1837,8 +1960,6 @@ memdb_lookup(paddr_t addr)
 	}
 
 end_function:
-	rcu_read_finish();
-
 	return ret;
 }
 
@@ -2108,7 +2229,7 @@ memdb_handle_boot_cold_init(void)
 	// hypervisor's allocator. We assume here that no other memory has been
 	// assigned to any allocators yet.
 	size_t bootmem_size	 = 0U;
-	void * bootmem_virt_base = bootmem_get_region(&bootmem_size);
+	void  *bootmem_virt_base = bootmem_get_region(&bootmem_size);
 	assert((bootmem_size != 0U) && (bootmem_virt_base != NULL));
 	paddr_t bootmem_phys_base = partition_virt_to_phys(
 		hyp_partition, (uintptr_t)bootmem_virt_base);

@@ -5,6 +5,7 @@
 define rcu_sync_state structure {
 	thread pointer(atomic) object thread;
 	rcu_entry structure rcu_entry(contained);
+	killable bool;
 };
 
 extend rcu_update_class enumeration {
@@ -13,4 +14,5 @@ extend rcu_update_class enumeration {
 
 extend scheduler_block enumeration {
 	rcu_sync;
+	rcu_sync_killable;
 };

@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface addrspace
+
+handled_event addrspace_attach_vdma
+	param addrspace: addrspace_t *
+	param vdma_device_cap: cap_id_t
+	param index: index_t
+	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE

@@ -23,7 +23,7 @@ allocator_boot_handle_boot_runtime_first_init(void)
 {
 	assert((uintptr_t)&heap_private_end > (uintptr_t)&heap_private_start);
 
-	void * base = &heap_private_start;
+	void  *base = &heap_private_start;
 	size_t size = (size_t)(&heap_private_end - &heap_private_start);
 
 	assert(base != NULL);

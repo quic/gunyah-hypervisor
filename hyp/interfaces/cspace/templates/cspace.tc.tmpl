@@ -18,7 +18,7 @@ define CSPACE_CAP_INVALID public constant type cap_id_t = -1;
 
 define cap_rights_t public newtype uint32;
 
-define cap_rights_generic bitfield<32> {
+define cap_rights_generic public bitfield<32> {
 	others unknown=0;
 };
 
@@ -28,7 +28,7 @@ extend thread object module cspace {
 
 #for obj in $object_list
 #set o = str(obj)
-define cap_rights_${o} bitfield<32> {
+define cap_rights_${o} public bitfield<32> {
 	others	unknown=0;
 };
 #end for

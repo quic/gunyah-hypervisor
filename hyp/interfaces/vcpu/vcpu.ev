@@ -23,6 +23,7 @@ event vcpu_poweron
 // Additionally, the only valid error returns for vcpu_poweroff handlers are
 // OK or ERROR_DENIED.
 setup_event vcpu_poweroff
+	param current: thread_t *
 	param force: bool
 	return: error_t = OK
 	success: OK
@@ -48,11 +49,6 @@ setup_event vcpu_suspend
 	return: error_t = OK
 	success: OK
 
-// Triggered when the current VCPU is entering to a virtual low-power
-// state. This event follows a successful vcpu_suspend setup_event and is
-// called without locks held.
-event vcpu_suspended
-
 // Triggered when a VCPU has been woken from a virtual low-power state.
 //
 // This event is triggered with the scheduler lock for the current VCPU
@@ -63,13 +59,6 @@ event vcpu_suspended
 // In many cases, handlers for this event will be the same as unwinders for
 // vcpu_suspend.
 event vcpu_resume
-
-// Triggered when a VCPU has completed resume from a virtual low-power state.
-//
-// This event is triggered without the scheduler lock for the current VCPU
-// held by the caller. Note that this is is triggered by the resuming VCPU,
-// not directly by the call to vcpu_resume().
-event vcpu_resumed
 
 // Triggered when a VCPU is simulating a warm reset.
 //
@@ -117,23 +106,27 @@ handled_event vcpu_expects_wakeup
 // ERROR_BUSY).
 //
 // This may be called from any context where the caller is a VCPU. That means
-// that the calling VCPU's scheduler lock may or may not be held; if not,
-// preemption may or may not be enabled. If preemption is disabled, handlers
-// should be free of races.
+// that the calling VCPU's scheduler lock may or may not be held. However,
+// preemption must be disabled.
 handled_event vcpu_pending_wakeup
+
+// Triggered when vcpu_block_start() is called, after vcpu_pending_wakeup has
+// returned false.
+//
+// Handlers may return true if a wakeup event is pending on the current VCPU,
+// in cases where this is only known after reconfiguring the hardware. If the
+// wakeup can be detected without reconfiguring hardware, the handler should
+// be registered for the vcpu_pending_wakeup event instead.
+//
+// This can only be called from a VCPU context with preemption disabled.
+setup_event vcpu_block_start
+	return: bool = false
+	success: false
+
+// Triggered when vcpu_block_finish() is called.
+event vcpu_block_finish
 
 // Triggered when vcpu_thread_start() is called
 //
 // This event is triggered when the VCPU returns from powerdown
 event vcpu_started
-
-// Triggered when handling a WFI trap
-//
-// This event is triggered to follow the idle fastpath, which will cause the
-// thread to call idle_yield(). Modules that subscribe to this event can return
-// an idle_state different from IDLE if they want to abort the idle fastpath and
-// instead continue the normal path that will call scheduler_yield and possibly
-// switch to the idle thread.
-setup_event vcpu_idle_fastpath
-	return: idle_state_t = IDLE_STATE_IDLE
-	success: IDLE_STATE_IDLE

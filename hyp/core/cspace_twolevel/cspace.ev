@@ -10,5 +10,7 @@ subscribe object_activate_cspace
 
 subscribe object_cleanup_cspace(cspace)
 
+subscribe object_deactivate_thread
+
 subscribe rcu_update[RCU_UPDATE_CLASS_CSPACE_RELEASE_LEVEL]
 	handler cspace_destroy_cap_table(entry)

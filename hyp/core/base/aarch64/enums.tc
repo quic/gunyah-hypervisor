@@ -22,10 +22,21 @@ extend esr_ec enumeration {
 	BRK			= 0x3c;
 };
 
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_8_3_PAUTH)
 extend esr_ec enumeration {
-	PAUTH_EL2		= 0x09;
-	ERET_EL2		= 0x1a;
+	PAUTH			= 0x09;
+#if defined(ARCH_ARM_8_3_NV)
+	ERET			= 0x1a;
+#endif
+#if defined(ARCH_ARM_8_3_FPAC)
+	FPAC			= 0x1c;
+#endif
+};
+#endif
+
+#if defined(ARCH_ARM_8_5_BTI)
+extend esr_ec enumeration {
+	BTI			= 0x0d;
 };
 #endif
 
@@ -88,10 +99,29 @@ define currentel_el enumeration {
 	el3;
 };
 
-define tcr_tg enumeration {
+define tcr_tg0 enumeration {
 	GRANULE_SIZE_4KB	= 0b00;
-	GRANULE_SIZE_64KB	= 0b01;
 	GRANULE_SIZE_16KB	= 0b10;
+	GRANULE_SIZE_64KB	= 0b01;
+};
+
+define tcr_tg1 enumeration {
+	GRANULE_SIZE_4KB	= 0b10;
+	GRANULE_SIZE_16KB	= 0b01;
+	GRANULE_SIZE_64KB	= 0b11;
+};
+
+define tcr_rgn enumeration {
+	NORMAL_NONCACHEABLE	= 0b00;
+	NORMAL_WRITEBACK_RA_WA	= 0b01;
+	NORMAL_WRITETHROUGH_RA	= 0b10;
+	NORMAL_WRITEBACK_RA	= 0b11;
+};
+
+define tcr_sh enumeration {
+	NON_SHAREABLE		= 0b00;
+	OUTER_SHAREABLE		= 0b10;
+	INNER_SHAREABLE		= 0b11;
 };
 
 define tcr_ps enumeration {
@@ -102,4 +132,18 @@ define tcr_ps enumeration {
 	SIZE_44BITS = 0b100;
 	SIZE_48BITS = 0b101;
 	SIZE_52BITS = 0b110;
+};
+
+#ifdef ARCH_ARM_8_4_TLBI
+define tlbi_range_tg enumeration {
+	GRANULE_SIZE_4KB	= 0b01;
+	GRANULE_SIZE_16KB	= 0b10;
+	GRANULE_SIZE_64KB	= 0b11;
+};
+#endif
+
+define cptr_zen enumeration {
+	trap_tge		= 0x01;
+	trap_all		= 0x02;
+	trap_none		= 0x03;
 };

@@ -1,0 +1,14 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	prng;
+	10	prng	bool = 1;
+};
+#endif
+
+extend thread object {
+	prng_last_read	type ticks_t;
+};

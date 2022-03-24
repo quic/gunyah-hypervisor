@@ -7,13 +7,14 @@
 // The container_of macros for the tagged types
 
 #for $d in $definitions
-#if hasattr($d, 'layout')
+#if $d.is_container
 #set outer_type = d.type_name + '_t'
 #for $name, $type, $offset in $d.layout
-#set inner_type = ' '.join(type.gen_type()[0])
 #if $type.is_contained
 static inline ${outer_type} *
-${d.type_name}_container_of_${name}(${inner_type} *ptr) {
+${d.type_name}_container_of_${name}(${type.pointer.gen_declaration('ptr')}) {
+	_Static_assert(offsetof(${outer_type}, ${name}) == $offset,
+		"Generated offset for ${name} in ${outer_type} is incorrect");
 	return ((${outer_type} *)((uintptr_t)(ptr) - $offset));
 }
 #end if

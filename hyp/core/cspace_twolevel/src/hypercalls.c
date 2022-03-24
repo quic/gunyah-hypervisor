@@ -84,10 +84,30 @@ hypercall_cspace_revoke_cap_from(cap_id_t src_cspace, cap_id_t src_cap)
 }
 
 error_t
+hypercall_cspace_revoke_caps_from(cap_id_t src_cspace, cap_id_t master_cap)
+{
+	error_t		    ret;
+	cspace_ptr_result_t c;
+	c = cspace_lookup_cspace(cspace_get_self(), src_cspace,
+				 CAP_RIGHTS_CSPACE_CAP_REVOKE);
+	if (compiler_unexpected(c.e != OK)) {
+		ret = c.e;
+		goto out;
+	}
+	cspace_t *cspace = c.r;
+
+	ret = cspace_revoke_caps(cspace, master_cap);
+
+	object_put_cspace(cspace);
+out:
+	return ret;
+}
+
+error_t
 hypercall_cspace_configure(cap_id_t cspace_cap, count_t max_caps)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -123,7 +143,7 @@ error_t
 hypercall_cspace_attach_thread(cap_id_t cspace_cap, cap_id_t thread_cap)
 {
 	error_t	      ret;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(

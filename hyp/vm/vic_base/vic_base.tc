@@ -15,19 +15,41 @@ extend hwirq_action enumeration {
 
 extend hwirq object module vic_base {
 	// Pointer to an array of PPI sources, indexed by physical CPU.
-	forward_private	pointer structure vic_forward_private;
+	forward_private	pointer(atomic) structure vic_forward_private;
 };
 
-define vic_forward_private structure {
+extend vic object {
+	forward_private_lock structure spinlock;
+	forward_private_list structure list;
+};
+
+extend thread object {
+	forward_private_active bool;
+};
+
+extend rcu_update_class enumeration {
+	vic_base_free_forward_private;
+};
+
+define vic_private_irq_info structure {
 	source		structure virq_source(contained);
-	pirq		type irq_t;
+	irq		type irq_t;
 	cpu		type cpu_index_t;
 	hw_active	bool(atomic);
 };
 
+define vic_forward_private structure {
+	vic		pointer object vic;
+	virq		type virq_t;
+	rcu_entry	structure rcu_entry(contained);
+	list_node	structure list_node(contained);
+	irq_info	array(PLATFORM_MAX_CORES)
+				structure vic_private_irq_info;
+};
+
 #endif
 
-#if VIC_BASE_FORWARD_SHARED
+#if defined(VIC_BASE_FORWARD_SHARED) && VIC_BASE_FORWARD_SHARED
 // Forward shared HW interrupts using generic VIRQ APIs.
 
 // Not needed for GICv3, so this is not implemented yet.

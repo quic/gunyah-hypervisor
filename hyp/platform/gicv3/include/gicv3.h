@@ -20,7 +20,7 @@ void
 gicv3_irq_enable(irq_t irq);
 
 void
-gicv3_irq_enable_local(irq_t irq);
+gicv3_irq_enable_local(irq_t irq) REQUIRE_PREEMPT_DISABLED;
 
 void
 gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu);
@@ -29,10 +29,10 @@ void
 gicv3_irq_disable(irq_t irq);
 
 void
-gicv3_irq_disable_local(irq_t irq);
+gicv3_irq_disable_local(irq_t irq) REQUIRE_PREEMPT_DISABLED;
 
 void
-gicv3_irq_disable_local_nowait(irq_t irq);
+gicv3_irq_disable_local_nowait(irq_t irq) REQUIRE_PREEMPT_DISABLED;
 
 void
 gicv3_irq_disable_percpu(irq_t irq, cpu_index_t cpu);
@@ -49,8 +49,13 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu);
 error_t
 gicv3_spi_set_route(irq_t irq, GICD_IROUTER_t route);
 
+#if GICV3_HAS_GICD_ICLAR
+error_t
+gicv3_spi_set_classes(irq_t irq, bool class0, bool class1);
+#endif
+
 irq_result_t
-gicv3_irq_acknowledge(void);
+gicv3_irq_acknowledge(void) REQUIRE_PREEMPT_DISABLED;
 
 void
 gicv3_irq_priority_drop(irq_t irq);

@@ -4,17 +4,29 @@
 
 // Don't change the order of the members below, they are used in assembly.
 
-define kernel_trap_frame structure (aligned(16)){
+// Frame used for IRQs and returned from kernel
+define kernel_trap_frame structure(aligned(16)) {
 	x		array(19) type register_t;
-	x29		type register_t;
-	x30		type register_t;
+	sp_el2		bitfield SP_EL2;
+	x29		type register_t (aligned(16));
 	pc		bitfield ELR_EL2;
+	x30		type register_t;
 	spsr_el2	bitfield SPSR_EL2_A64;
 };
 
+// Full frame used for debugging
 define kernel_trap_frame_full structure (aligned(16)){
-	x		array(31) type register_t;
-	sp_el2		bitfield SP_EL2;
-	pc		bitfield ELR_EL2;
-	spsr_el2	bitfield SPSR_EL2_A64;
+	// Base frame
+	base		structure kernel_trap_frame;
+	// Additional callee saved registers
+	x19		type register_t;
+	x20		type register_t;
+	x21		type register_t;
+	x22		type register_t;
+	x23		type register_t;
+	x24		type register_t;
+	x25		type register_t;
+	x26		type register_t;
+	x27		type register_t;
+	x28		type register_t;
 };

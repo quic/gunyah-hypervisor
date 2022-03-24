@@ -67,7 +67,7 @@ list_delete_node(list_t *list, list_node_t *node);
 #define list__foreach_container(container, list, cname, nname, n)              \
 	list_node_t *n = atomic_load_relaxed(&list->head.next);                \
 	container      = (n != &list->head) ? cname##_container_of_##nname(n)  \
-				       : NULL;                                 \
+					    : NULL;                            \
 	for (; container != NULL;                                              \
 	     n	       = atomic_load_relaxed(&n->next),                        \
 	     container = (n != &list->head) ? cname##_container_of_##nname(n)  \
@@ -82,12 +82,12 @@ list_delete_node(list_t *list, list_node_t *node);
 #define list__foreach_container_safe(container, list, cname, nname, n, load)   \
 	list_node_t *n = load(&list->head.next);                               \
 	container      = (n != &list->head) ? cname##_container_of_##nname(n)  \
-				       : NULL;                                 \
-	n = load(&n->next);                                                    \
+					    : NULL;                            \
+	n	       = load(&n->next);                                       \
 	for (; container != NULL;                                              \
 	     container = (n != &list->head) ? cname##_container_of_##nname(n)  \
 					    : NULL,                            \
-	     n = load(&n->next))
+	     n	       = load(&n->next))
 
 // Deletion-safe container iterator. The list must be locked if other threads
 // might modify it. The iterator may delete the current node.

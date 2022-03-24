@@ -46,3 +46,12 @@ define addrspace_configure hypercall {
 	_res0		input uregister;
 	error		output enumeration error;
 };
+
+define addrspace_attach_vdma hypercall {
+	call_num	0x2F;
+	addrspace	input type cap_id_t;
+	dma_device	input type cap_id_t;
+	index		input type index_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};

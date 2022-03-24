@@ -15,6 +15,8 @@ subscribe object_deactivate_memextent(memextent)
 
 subscribe object_cleanup_memextent(memextent)
 
+subscribe object_deactivate_addrspace(addrspace)
+
 // BASIC memory extent
 
 subscribe memextent_activate_derive[MEMEXTENT_TYPE_BASIC]

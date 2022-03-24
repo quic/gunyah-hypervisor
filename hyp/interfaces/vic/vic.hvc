@@ -23,7 +23,10 @@ define vic_configure hypercall {
 	vic		input type cap_id_t;
 	max_vcpus	input type count_t;
 	max_virqs	input type count_t;
-	_res0		input uregister;
+	vic_options	input bitfield vic_option_flags;
+	// Virtual LPIs for GICv3/v4. Valid only if max_msis_valid is set in
+	// vic_options; otherwise ignored for backwards compatibility.
+	max_msis	input type count_t;
 	error		output enumeration error;
 };
 
@@ -32,6 +35,18 @@ define vic_attach_vcpu hypercall {
 	vic		input type cap_id_t;
 	vcpu		input type cap_id_t;
 	index		input type index_t;
+	_res0		input uregister;
+	error		output enumeration error;
+};
+
+define vic_bind_msi_source hypercall {
+	call_num 0x56;
+	vic		input type cap_id_t;
+	// Platform-specific object type. Must have already been activated.
+	//
+	// Some platforms may not implement any MSI sources, or multiple types
+	// of MSI source. For GICv3/v4, this is typically a virtual ITS.
+	msi_source	input type cap_id_t;
 	_res0		input uregister;
 	error		output enumeration error;
 };

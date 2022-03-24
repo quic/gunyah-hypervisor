@@ -8,8 +8,36 @@ interface scheduler
 // locks held other than the scheduler's internal locks, unless stated
 // otherwise.
 
-// Triggered when the scheduler runs and elects not to switch threads.
+// This event is triggered during scheduler init for each scheduler block
+// type, so that special properties for each block flag can be set.
+selector_event scheduler_get_block_properties
+	selector block: scheduler_block_t
+	return: scheduler_block_properties_t = scheduler_block_properties_default()
+
+// Stop the kernel.
+// Used when triggering a system crash. This should stop user thread execution
+// on all cores and disable preemption.
+event scheduler_stop
+
+// Triggered after the scheduler runs and elects not to switch threads.
 event scheduler_quiescent
+
+// Triggered after the scheduler selects the next thread to run, which may or
+// may not already be the current thread. If the current thread is selected,
+// this event is triggered before scheduler_quiescent.
+//
+// The can_idle flag is initialised to true if the specified thread can
+// safely idle without running the scheduler; i.e. it is either the idle
+// thread, or it is the only runnable non-idle thread on the CPU. If a module
+// needs to prevent a thread idling without scheduling, it should zero the
+// can_idle flag in a priority>0 handler.
+//
+// The scheduler lock must not be held when this event is triggered, but the
+// caller must either hold an explicit reference to the thread or be in an RCU
+// critical section.
+event scheduler_selected_thread
+	param thread: thread_t *
+	param can_idle: bool *
 
 // This event is triggered when the affinity of a thread is explicitly
 // changed. The scheduler lock for the thread is held by the caller.

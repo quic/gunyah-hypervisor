@@ -35,7 +35,7 @@ __asm__(".error");
 
 #include <asm-generic/event.h>
 
-static inline __attribute__((always_inline)) bool
+static inline ALWAYS_INLINE bool
 asm_event_loadbool_before_wait(_Atomic bool *p)
 {
 	uint8_t ret;
@@ -43,7 +43,7 @@ asm_event_loadbool_before_wait(_Atomic bool *p)
 	return ret != 0U;
 }
 
-static inline __attribute__((always_inline)) uint8_t
+static inline ALWAYS_INLINE uint8_t
 asm_event_load8_before_wait(_Atomic uint8_t *p)
 {
 	uint8_t ret;
@@ -51,7 +51,7 @@ asm_event_load8_before_wait(_Atomic uint8_t *p)
 	return ret;
 }
 
-static inline __attribute__((always_inline)) uint16_t
+static inline ALWAYS_INLINE uint16_t
 asm_event_load16_before_wait(_Atomic uint16_t *p)
 {
 	uint16_t ret;
@@ -59,7 +59,7 @@ asm_event_load16_before_wait(_Atomic uint16_t *p)
 	return ret;
 }
 
-static inline __attribute__((always_inline)) uint32_t
+static inline ALWAYS_INLINE uint32_t
 asm_event_load32_before_wait(_Atomic uint32_t *p)
 {
 	uint32_t ret;
@@ -67,7 +67,7 @@ asm_event_load32_before_wait(_Atomic uint32_t *p)
 	return ret;
 }
 
-static inline __attribute__((always_inline)) uint64_t
+static inline ALWAYS_INLINE uint64_t
 asm_event_load64_before_wait(_Atomic uint64_t *p)
 {
 	uint64_t ret;

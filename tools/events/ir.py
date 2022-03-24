@@ -55,6 +55,85 @@ class ConstExpr(str, IRObject):
     pass
 
 
+class LockName(str, IRObject):
+    pass
+
+
+class LockAnnotation(IRObject):
+    def __init__(self, action, kind, lock):
+        self.action = action
+        self.kind = kind
+        self.lock = lock
+
+    def _check_kind(self, kinds):
+        if self.lock in kinds:
+            if kinds[self.lock] != self.kind:
+                logger.error("%s:%d:%d: "
+                             "error: inconsistent lock kinds for %s (%s, %s)",
+                             self.meta.filename, self.meta.line,
+                             self.meta.column, self.lock, self.kind,
+                             kinds[self.lock])
+                raise DSLError()
+        else:
+            kinds[self.lock] = self.kind
+
+    def apply(self, acquires, releases, requires, excludes, kinds):
+        self._check_kind(kinds)
+
+        if self.action == 'acquire':
+            if self.lock in acquires:
+                prev = next(acquires & set([self.lock]))
+                logger.error("%s:%d:%d: "
+                             "error: %s previously acquired at %s:%d:%d",
+                             self.meta.filename, self.meta.line,
+                             self.meta.column, self.lock, prev.meta.filename,
+                             prev.meta.line, prev.meta.column)
+                raise DSLError()
+            elif self.lock in releases:
+                releases.remove(self.lock)
+            else:
+                acquires.add(self.lock)
+                excludes.add(self.lock)
+        elif self.action == 'release':
+            if self.lock in releases:
+                prev = next(releases & set([self.lock]))
+                logger.error("%s:%d:%d: "
+                             "error: %s previously released at %s:%d:%d",
+                             self.meta.filename, self.meta.line,
+                             self.meta.column, self.lock, prev.meta.filename,
+                             prev.meta.line, prev.meta.column)
+                raise DSLError()
+            elif self.lock in acquires:
+                acquires.remove(self.lock)
+            else:
+                releases.add(self.lock)
+                requires.add(self.lock)
+        elif self.action == 'require':
+            if self.lock not in acquires:
+                requires.add(self.lock)
+        elif self.action == 'exclude':
+            if self.lock not in releases:
+                excludes.add(self.lock)
+        else:
+            raise NotImplementedError(self.action)
+
+    def combine(self, actions, kinds):
+        self._check_kind(kinds)
+        actions[self.action].add(self.lock)
+
+    def unwind(self):
+        if self.action == 'acquire':
+            ret = LockAnnotation('release', self.kind, self.lock)
+            ret.meta = self.meta
+            return ret
+        elif self.action == 'release':
+            ret = LockAnnotation('acquire', self.kind, self.lock)
+            ret.meta = self.meta
+            return ret
+        else:
+            return self
+
+
 class Priority(float, IRObject):
     pass
 
@@ -108,6 +187,10 @@ class AbstractEvent(IRObject, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractproperty
+    def lock_opts(self):
+        raise NotImplementedError
+
+    @abc.abstractproperty
     def return_type(self):
         raise NotImplementedError
 
@@ -137,6 +220,7 @@ class AbstractSortedEvent(AbstractEvent):
     def __init__(self, children):
         super().__init__(children)
         self._subscribers = []
+        self._lock_opts = None
 
     def subscribe(self, subscription):
         super().subscribe(subscription)
@@ -179,9 +263,32 @@ class AbstractSortedEvent(AbstractEvent):
                 raise DSLError()
         self._subscribers = tuple(subscribers)
 
+        acquires = set()
+        releases = set()
+        requires = set()
+        excludes = set()
+        kinds = {}
+        for s in self._subscribers:
+            for lock_opt in s.lock_opts:
+                lock_opt.apply(acquires, releases, requires, excludes, kinds)
+        lock_opts = []
+        for lock in acquires:
+            lock_opts.append(LockAnnotation('acquire', kinds[lock], lock))
+        for lock in releases:
+            lock_opts.append(LockAnnotation('release', kinds[lock], lock))
+        for lock in requires:
+            lock_opts.append(LockAnnotation('require', kinds[lock], lock))
+        for lock in excludes:
+            lock_opts.append(LockAnnotation('exclude', kinds[lock], lock))
+        self._lock_opts = tuple(lock_opts)
+
     @property
     def subscribers(self):
         return self._subscribers
+
+    @property
+    def lock_opts(self):
+        return self._lock_opts
 
 
 class Event(AbstractSortedEvent):
@@ -275,8 +382,7 @@ class SelectorEvent(AbstractEvent):
                          subscription.priority.meta.column,
                          subscription.priority, self.name)
             raise DSLError()
-        key = subscription.selectors[0]
-        if key is None:
+        if subscription.selectors is None:
             logger.error("%s:%d:%d: error: no selector specified for "
                          "subscription to selector event '%s'",
                          subscription.event_name.meta.filename,
@@ -294,7 +400,31 @@ class SelectorEvent(AbstractEvent):
                                  subscription.event_name.meta.column, new,
                                  self.name)
                     raise DSLError()
+        key = subscription.selectors[0]
         self._subscribers[key] = subscription
+
+    def finalise(self):
+        super().finalise()
+
+        kinds = {}
+        actions = {
+            'acquire': set(),
+            'release': set(),
+            'require': set(),
+            'exclude': set(),
+        }
+        for s in self._subscribers.values():
+            for lock_opt in s.lock_opts:
+                lock_opt.combine(actions, kinds)
+        lock_opts = []
+        for action in actions.keys():
+            for lock in actions[action]:
+                lock_opts.append(LockAnnotation(action, kinds[lock], lock))
+        self._lock_opts = tuple(lock_opts)
+
+    @property
+    def lock_opts(self):
+        return self._lock_opts
 
     @property
     def return_type(self):
@@ -324,6 +454,7 @@ class Subscription(IRObject):
             self.handler = Handler(_first_of_type_opt(children, ExpectedArgs))
         self.unwinder = _first_of_type_opt(children, Unwinder)
         self.priority = _first_of_type_opt(children, Priority)
+        self.lock_opts = _all_of_type(children, LockAnnotation)
 
     def set_owner(self, module):
         self.module = module
@@ -396,6 +527,11 @@ class AbstractFunction(IRObject, metaclass=abc.ABCMeta):
         for a in self.args:
             yield self.event.param(a)
 
+    @property
+    def lock_opts(self):
+        for opt in self.subscription.lock_opts:
+            yield opt
+
     def __lt__(self, other):
         return self.name < other.name
 
@@ -421,6 +557,11 @@ class Unwinder(AbstractFunction):
     @property
     def return_type(self):
         return 'void'
+
+    @property
+    def lock_opts(self):
+        for opt in self.subscription.lock_opts:
+            yield opt.unwind()
 
 
 class Constant(str, IRObject):

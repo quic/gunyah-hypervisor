@@ -7,6 +7,7 @@ extend cap_rights_thread bitfield {
 	1	affinity	bool;
 	2	priority	bool;
 	3	timeslice	bool;
+	7	lifecycle	bool;
 };
 
 define vcpu_trap_result enumeration {

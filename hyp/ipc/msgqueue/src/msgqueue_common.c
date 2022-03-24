@@ -49,9 +49,9 @@ msgqueue_send_msg(msgqueue_t *msgqueue, size_t size, kernel_or_gvaddr_t msg,
 
 		(void)memcpy(hyp_va, (void *)msg.kernel_addr, size);
 	} else {
-		ret.e = useraccess_copy_from_guest(
+		size_result_t ret_val = useraccess_copy_from_guest_va(
 			hyp_va, msgqueue->max_msg_size, msg.guest_addr, size);
-		if (ret.e != OK) {
+		if (ret_val.e != OK) {
 			goto out;
 		}
 	}
@@ -119,9 +119,9 @@ msgqueue_receive_msg(msgqueue_t *msgqueue, kernel_or_gvaddr_t buffer,
 
 		(void)memcpy((void *)buffer.kernel_addr, hyp_va, size);
 	} else {
-		ret.e = useraccess_copy_to_guest(buffer.guest_addr, max_size,
-						 hyp_va, size);
-		if (ret.e != OK) {
+		size_result_t ret_val = useraccess_copy_to_guest_va(
+			buffer.guest_addr, max_size, hyp_va, size, false);
+		if (ret_val.e != OK) {
 			goto out;
 		}
 	}

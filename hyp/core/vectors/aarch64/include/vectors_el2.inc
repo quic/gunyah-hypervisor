@@ -4,23 +4,11 @@
 
 // Size of the per-CPU memory reserved for nested fault context buffer and stack
 #if !defined(NDEBUG)
-#define NESTED_FAULT_STACK_SIZE_BITS 10		// 1024 bytes
+#define NESTED_FAULT_STACK_SIZE_BITS 11		// 2048 bytes
 #else
-#define NESTED_FAULT_STACK_SIZE_BITS 9		// 512 bytes
+#define NESTED_FAULT_STACK_SIZE_BITS 10		// 1024 bytes
 #endif
 #define NESTED_FAULT_STACK_SIZE (1 << NESTED_FAULT_STACK_SIZE_BITS)
-
-#if (((OFS_KERNEL_TRAP_FRAME_X(18) + 8) != OFS_KERNEL_TRAP_FRAME_X29) ||  \
-     ((OFS_KERNEL_TRAP_FRAME_X30 + 8) != OFS_KERNEL_TRAP_FRAME_PC))
-#error The layout of kernel_trap_frame structure has changed
-#endif
-
-#if (((OFS_KERNEL_TRAP_FRAME_FULL_X(30) + 8) !=				\
-       OFS_KERNEL_TRAP_FRAME_FULL_SP_EL2) ||                            \
-     ((OFS_KERNEL_TRAP_FRAME_FULL_PC + 8) !=				\
-       OFS_KERNEL_TRAP_FRAME_FULL_SPSR_EL2))
-#error The layout of kernel_trap_frame_full structure has changed
-#endif
 
 .macro	disable_phys_access
 #if ARCH_AARCH64_USE_PAN
@@ -34,26 +22,104 @@
 #endif
 .endm
 
-.macro	save_kernel_context
+#if defined(ARCH_ARM_8_3_PAUTH)
+// Define symbols for pointer auth offsets so we can access them from macros
+.equ	pauth_DA_ofs, OFS_AARCH64_PAUTH_KEYS_DA
+.equ	pauth_DB_ofs, OFS_AARCH64_PAUTH_KEYS_DB
+.equ	pauth_IA_ofs, OFS_AARCH64_PAUTH_KEYS_IA
+.equ	pauth_IB_ofs, OFS_AARCH64_PAUTH_KEYS_IB
+.equ	pauth_GA_ofs, OFS_AARCH64_PAUTH_KEYS_GA
+
+// Macro for loading an EL2 key
+.macro  kernel_pauth_entry_key k:req, kp:req, kl:req, kh:req
+	ldp	\kl, \kh, [\kp, pauth_\k\()_ofs]
+	msr	AP\k\()KeyLo_EL1, \kl
+	msr	AP\k\()KeyHi_EL1, \kh
+.endm
+#endif
+
+// Macro for restoring the EL2 pointer auth keys (discarding any EL1 keys)
+.macro kernel_pauth_entry kp:req, kl:req, kh:req
+#if defined(ARCH_ARM_8_3_PAUTH)
+	adrl	\kp, aarch64_pauth_keys
+	kernel_pauth_entry_key DA, \kp, \kl, \kh
+	kernel_pauth_entry_key DB, \kp, \kl, \kh
+	kernel_pauth_entry_key IA, \kp, \kl, \kh
+	kernel_pauth_entry_key IB, \kp, \kl, \kh
+	kernel_pauth_entry_key GA, \kp, \kl, \kh
+	isb
+#endif
+.endm
+
+.macro	check_stack_overflow
+	// Kernel stacks are aligned to twice their maximum allowed size.
+	// This means valid stack accesses will never have the bit at
+	// THREAD_STACK_MAX_SIZE set, otherwise we have a stack overflow.
+	// We must temporarily swap SP and X0 in order to test this.
+	sub	sp, sp, x0
+	add	x0, sp, x0
+	tst	x0, THREAD_STACK_MAX_SIZE
+	sub	x0, sp, x0
+	sub	sp, sp, x0
+	neg	x0, x0
+	b.ne	handle_stack_fault
+.endm
+
+.macro	save_kernel_context full:req
 	disable_phys_access
 
+.if \full
+	// SP (SP_EL2) points to the kernel stack in the thread structure
+	// Skip 256 bytes of stack so we don't clobber any stack history useful
+	// for debugging the exception.
+	sub	sp, sp, KERNEL_TRAP_FRAME_FULL_SIZE + 0x100
+.else
 	// SP (SP_EL2) points to the kernel stack in the thread structure
 	sub	sp, sp, KERNEL_TRAP_FRAME_SIZE
+.endif
+
+.if \full
+	// The exception may have been triggered by a stack overflow,
+	// so check for this before storing anything on the stack.
+	check_stack_overflow
+.endif
 
 	stp	x0, x1, [sp, OFS_KERNEL_TRAP_FRAME_X(0)]
-	stp	x2, x3, [sp, OFS_KERNEL_TRAP_FRAME_X(2)]
-	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_X(4)]
-	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_X(6)]
-	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_X(8)]
 	mrs	x0, ELR_EL2
+	stp	x2, x3, [sp, OFS_KERNEL_TRAP_FRAME_X(2)]
+	// Recalculate the SP from before we pushed the frame. Note that we
+	// can't do a regular PACIASP before changing SP because we need to
+	// save a register to load ELR_EL2 into first, and doing that before
+	// updating SP risks an infinite loop if the store faults.
+.if \full
+	add	x2, sp, KERNEL_TRAP_FRAME_FULL_SIZE + 0x100
+.else
+	add	x2, sp, KERNEL_TRAP_FRAME_SIZE
+.endif
+
+	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_X(4)]
+#if defined(ARCH_ARM_8_3_PAUTH)
+	// Insert PAC bits in ELR_EL2 before we save it (matching the ERETAA
+	// in vectors_kernel_return)
+	pacia	x0, x2
+#endif
+	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_X(6)]
+	mrs	x1, SPSR_EL2
+	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_X(8)]
 	stp	x10, x11, [sp, OFS_KERNEL_TRAP_FRAME_X(10)]
 	stp	x12, x13, [sp, OFS_KERNEL_TRAP_FRAME_X(12)]
 	stp	x14, x15, [sp, OFS_KERNEL_TRAP_FRAME_X(14)]
-	mrs	x1, SPSR_EL2
 	stp	x16, x17, [sp, OFS_KERNEL_TRAP_FRAME_X(16)]
-	stp	x18, x29, [sp, OFS_KERNEL_TRAP_FRAME_X(18)]
-	stp	x30, x0, [sp, OFS_KERNEL_TRAP_FRAME_X30]
-	str	x1, [sp, OFS_KERNEL_TRAP_FRAME_SPSR_EL2]
+#if ((OFS_KERNEL_TRAP_FRAME_X30 + 8) != OFS_KERNEL_TRAP_FRAME_SPSR_EL2) || \
+	((OFS_KERNEL_TRAP_FRAME_X29 + 8) != OFS_KERNEL_TRAP_FRAME_PC) || \
+	((OFS_KERNEL_TRAP_FRAME_X(18) + 8) != OFS_KERNEL_TRAP_FRAME_SP_EL2)
+#error The layout of kernel_trap_frame structure has changed
+#endif
+	// Save X18 and original SP_EL2
+	stp	x18, x2, [sp, OFS_KERNEL_TRAP_FRAME_X(18)]
+	stp	x29, x0, [sp, OFS_KERNEL_TRAP_FRAME_X29]
+	add	x29, sp, OFS_KERNEL_TRAP_FRAME_X29
+	stp	x30, x1, [sp, OFS_KERNEL_TRAP_FRAME_X30]
 
 	// The callee-saved registers (X19-X28) are not saved here. If any
 	// assembly code after this point wants to modify any of these
@@ -61,32 +127,40 @@
 .endm
 
 // Use this macro ONLY if jumping to panic or the kernel debugger afterwards.
+// There is no function that can restore this frame.
 .macro	save_kernel_context_full
 	disable_phys_access
 
 	// SP (SP_EL2) points to the kernel stack
 	sub	sp, sp, KERNEL_TRAP_FRAME_FULL_SIZE
 
-	stp	x0, x1, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(0)]
-	stp	x2, x3, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(2)]
-	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(4)]
-	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(6)]
-	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(8)]
-	mov	x0, sp
-	stp	x10, x11, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(10)]
-	stp	x12, x13, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(12)]
+	stp	x0, x1, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(0)]
+	stp	x2, x3, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(2)]
+	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(4)]
+	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(6)]
+	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(8)]
+	add	x0, sp, KERNEL_TRAP_FRAME_FULL_SIZE
+	stp	x10, x11, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(10)]
+	stp	x12, x13, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(12)]
 	mrs	x1, ELR_EL2
-	stp	x14, x15, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(14)]
-	stp	x16, x17, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(16)]
-	stp	x18, x19, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(18)]
+	stp	x14, x15, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(14)]
+	stp	x16, x17, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(16)]
 	mrs	x2, SPSR_EL2
-	stp	x20, x21, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(20)]
-	stp	x22, x23, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(22)]
-	stp	x24, x25, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(24)]
-	stp	x26, x27, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(26)]
-	stp	x28, x29, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(28)]
-	stp	x30, x0, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(30)]
-	stp	x1, x2, [sp, OFS_KERNEL_TRAP_FRAME_FULL_PC]
+#if ((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X30 + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_SPSR_EL2) || \
+	((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29 + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_PC) || \
+	((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(18) + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_SP_EL2)
+#error The layout of kernel_trap_frame structure has changed
+#endif
+	stp	x18, x0, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(18)]
+	stp	x29, x1, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29]
+	stp	x30, x2, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X30]
+	add	x29, sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29
+
+	stp	x19, x20, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X19]
+	stp	x21, x22, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X21]
+	stp	x23, x24, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X23]
+	stp	x25, x26, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X25]
+	stp	x27, x28, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X27]
 .endm
 
 // For the nested faults the stack may be corrupted, so we switch to a special
@@ -100,7 +174,7 @@
 
 	// Get the CPU number and use it to calculate the address of the nested
 	// fault context buffer for this CPU
-	adr_threadlocal	x1, cpulocal_my_index
+	adr_threadlocal	x1, current_thread + OFS_THREAD_CPULOCAL_CURRENT_CPU
 	ldrh	w1, [x1]
 
 	adrl	x0, aarch64_emergency_stacks
@@ -113,31 +187,46 @@
 	// Top of the stack is NESTED_FAULT_STACK_SIZE bytes higher. We also
 	// need to subtract CONTEXT_REG_FRAME_SIZE_ALIGNED to cater for what we
 	// are going to put on the stack. Do both in the same instruction.
-	add	sp, x0, NESTED_FAULT_STACK_SIZE - KERNEL_TRAP_FRAME_FULL_SIZE
+	// Don't modify sp yet because we want to save it in the frame.
+	add	x0, x0, NESTED_FAULT_STACK_SIZE - KERNEL_TRAP_FRAME_FULL_SIZE
 
-	mrs	x0, TPIDR_EL0
-	mrs	x1, TPIDR_EL1
+	// Push a few extra registers
+	stp	x2, x3, [x0, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(2)]
 
-	stp	x0, x1, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(0)]
-	stp	x2, x3, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(2)]
-	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(4)]
-	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(6)]
-	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(8)]
-	mov	x0, sp
-	stp	x10, x11, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(10)]
-	stp	x12, x13, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(12)]
+	// Restore the stashed x0 and x1 and push them too
+	mrs	x2, TPIDR_EL0
+	mrs	x3, TPIDR_EL1
+	stp	x2, x3, [x0, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(0)]
+
+	// Stash the faulting stack and update sp
+	mov	x3, sp
+	mov	sp, x0
+
+	// Push everything else
+	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(4)]
+	stp	x6, x7, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(6)]
+	stp	x8, x9, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(8)]
+	stp	x10, x11, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(10)]
+	stp	x12, x13, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(12)]
 	mrs	x1, ELR_EL2
-	stp	x14, x15, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(14)]
-	stp	x16, x17, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(16)]
-	stp	x18, x19, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(18)]
+	stp	x14, x15, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(14)]
+	stp	x16, x17, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(16)]
 	mrs	x2, SPSR_EL2
-	stp	x20, x21, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(20)]
-	stp	x22, x23, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(22)]
-	stp	x24, x25, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(24)]
-	stp	x30, x0, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(30)]
-	stp	x26, x27, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(26)]
-	stp	x28, x29, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X(28)]
-	stp	x1, x2, [sp, OFS_KERNEL_TRAP_FRAME_FULL_PC]
+#if ((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X30 + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_SPSR_EL2) || \
+	((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29 + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_PC) || \
+	((OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(18) + 8) != OFS_KERNEL_TRAP_FRAME_FULL_BASE_SP_EL2)
+#error The layout of kernel_trap_frame structure has changed
+#endif
+	stp	x18, x3, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X(18)]
+	stp	x29, x1, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29]
+	stp	x30, x2, [sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X30]
+	add	x29, sp, OFS_KERNEL_TRAP_FRAME_FULL_BASE_X29
+
+	stp	x19, x20, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X19]
+	stp	x21, x22, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X21]
+	stp	x23, x24, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X23]
+	stp	x25, x26, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X25]
+	stp	x27, x28, [sp, OFS_KERNEL_TRAP_FRAME_FULL_X27]
 .endm
 
 .macro thread_get_self, reg:req, tls_base, offset=0
@@ -152,53 +241,45 @@
 .macro el2_vectors name
 	vector vector_el2t_sync_\name\()
 		save_kernel_context_full
-#if !defined(NDEBUG)
 		mov	x0, sp
 		bl	dump_self_sync_fault
-#endif
 		panic	"EL2t vectors"
 	vector_end vector_el2t_sync_\name\()
 
 	vector vector_el2t_irq_\name\()
 		save_kernel_context_full
-#if !defined(NDEBUG)
 		mov	x0, sp
 		bl	dump_self_irq_fault
-#endif
 		panic	"EL2t vectors"
 	vector_end vector_el2t_irq_\name\()
 
 	vector vector_el2t_fiq_\name\()
 		save_kernel_context_full
-#if !defined(NDEBUG)
 		mov	x0, sp
 		bl	dump_self_fiq_fault
-#endif
 		panic	"EL2t vectors"
 	vector_end vector_el2t_fiq_\name\()
 
 	vector vector_el2t_serror_\name\()
 		save_kernel_context_full
-#if !defined(NDEBUG)
 		mov	x0, sp
 		bl	dump_self_serror
-#endif
 		panic	"EL2t vectors"
 	vector_end vector_el2t_serror_\name\()
 
 
 	// Hypervisor nested vectors
 	vector vector_el2h_sync_\name\()
-		save_kernel_context
+		save_kernel_context 1
 
 		mov	x0, sp
-		bl	vectors_exception_dispatch
+		bl	vectors_exception_dispatch_full
 		mov	x0, 0
 		b	vectors_kernel_return
 	vector_end vector_el2h_sync_\name\()
 
 	vector vector_el2h_irq_\name\()
-		save_kernel_context
+		save_kernel_context 0
 
 		bl	vectors_interrupt_dispatch
 		b	vectors_kernel_return
@@ -213,11 +294,11 @@
 	vector_end vector_el2h_fiq_\name\()
 
 	vector vector_el2h_serror_\name\()
-		save_kernel_context
+		save_kernel_context 1
 
 		// The dispatcher will inject a virtual SError to the RAS VM.
 		mov	x0, sp
-		bl	vectors_exception_dispatch
+		bl	vectors_exception_dispatch_full
 		mov	x0, 0
 		b	vectors_kernel_return
 	vector_end vector_el2h_serror_\name\()

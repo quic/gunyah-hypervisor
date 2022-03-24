@@ -20,7 +20,8 @@ vcpu_configure(thread_t *thread, vcpu_option_flags_t vcpu_options);
 // If the target VCPU has ever run, it must have called vcpu_poweroff() before
 // this function is called on it.
 bool
-vcpu_poweron(thread_t *vcpu, paddr_t entry_point, register_t context);
+vcpu_poweron(thread_t *vcpu, paddr_t entry_point, register_t context)
+	REQUIRE_SCHEDULER_LOCK(vcpu);
 
 // Tear down the current thread's VCPU execution state.
 //
@@ -51,7 +52,8 @@ vcpu_suspend(void);
 // revision E.a section D1.9.1, "PE state on reset to AArch64 state". The
 // entry point and context are also set as they would be by vcpu_poweron().
 void
-vcpu_warm_reset(paddr_t entry_point, register_t context);
+vcpu_warm_reset(paddr_t entry_point, register_t context)
+	EXCLUDE_PREEMPT_DISABLED;
 
 // Resume a suspended VCPU.
 //
@@ -59,7 +61,7 @@ vcpu_warm_reset(paddr_t entry_point, register_t context);
 // caller, and it must be currently blocked by the SCHEDULER_BLOCK_VCPU_SUSPEND
 // flag. This function clears that block flag.
 void
-vcpu_resume(thread_t *vcpu);
+vcpu_resume(thread_t *vcpu) REQUIRE_SCHEDULER_LOCK(vcpu);
 
 // Wake a specified VCPU from interrupt wait.
 //
@@ -70,7 +72,7 @@ vcpu_resume(thread_t *vcpu);
 // the target VCPU. If the VCPU is not currently waiting for interrupts, this
 // has no effect.
 void
-vcpu_wakeup(thread_t *vcpu);
+vcpu_wakeup(thread_t *vcpu) REQUIRE_SCHEDULER_LOCK(vcpu);
 
 // Prevent the current VCPU entering interrupt wait.
 //
@@ -103,10 +105,36 @@ vcpu_expects_wakeup(const thread_t *thread);
 // persistently returns true (e.g. if EL1 is calling with interrupts disabled
 // while an interrupt is pending).
 //
-// This may be called from any context where the caller is a VCPU, but it is
-// not guaranteed to be free of races unless preemption is disabled.
+// This must be called with preemption disabled.
 bool
-vcpu_pending_wakeup(void);
+vcpu_pending_wakeup(void) REQUIRE_PREEMPT_DISABLED;
+
+// Prepare to block hypervisor execution on behalf of the current VCPU.
+//
+// This function should be called before any potentially long running operation
+// that will block execution of both the calling VCPU and the hypervisor itself.
+// That includes waiting for interrupts on behalf of the VCPU (without switching
+// to hypervisor idle), and service calls forwarded to higher privilege levels.
+//
+// This function returns the same result as vcpu_pending_wakeup(). Additionally,
+// if it returns false, it may also reconfigure hardware-virtualised wakeup
+// sources to be able to readily interrupt an operation at higher privilege
+// levels if they would not be able to do that normally. In this case, the
+// caller must also call vcpu_block_finish() to clean up after the operation
+// returns or is interrupted.
+//
+// This must be called with preemption disabled. If it returns false, preemption
+// must remain disabled until vpcu_block_finish() returns.
+bool
+vcpu_block_start(void) REQUIRE_PREEMPT_DISABLED;
+
+// Clean up after blocking hypervisor execution on behalf of the current VCPU.
+//
+// This must be called exactly once for every call to vcpu_block_start() that
+// returns false, prior to re-enabling preemption. It must not be called after
+// a call to vcpu_block_start() returns true.
+void
+vcpu_block_finish(void) REQUIRE_PREEMPT_DISABLED;
 
 // Return the VCPU's general purpose registers
 register_t

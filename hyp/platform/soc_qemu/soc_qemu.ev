@@ -11,9 +11,22 @@ subscribe boot_cpu_cold_init
 
 subscribe boot_cold_init
 	handler soc_qemu_uart_init()
+	priority 5
 
 #if !defined(UNIT_TESTS)
 subscribe vcpu_activate_thread
+	// Run before the scheduler handler.
+	priority 10
 #endif
+
+subscribe power_system_off
+	// Run after other normal priority handlers as we'll power-off the
+	// system here.
+	priority last
+
+subscribe power_system_reset
+	// Run after other normal priority handlers as we'll reset the system
+	// here.
+	priority last
 
 subscribe log_message

@@ -17,19 +17,20 @@
 #include <trace.h>
 #include <util.h>
 
+#include "event_handlers.h"
 #include "exception_inject.h"
 
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 #error Exception injection to 32-bit EL1 is not implemented
 #endif
 
 static void
-exception_inject(void)
+exception_inject(ESR_EL1_t esr_el1)
 {
 	VBAR_EL1_t     vbar;
 	ELR_EL2_t      elr_el2;
 	SPSR_EL2_A64_t spsr_el2;
-	thread_t *     thread = thread_get_self();
+	thread_t	 *thread = thread_get_self();
 	register_t     guest_vector;
 
 	vbar	     = register_VBAR_EL1_read();
@@ -37,7 +38,7 @@ exception_inject(void)
 
 	spsr_el2 = thread->vcpu_regs_gpr.spsr_el2;
 
-	// FIXME: AArch32 bit guest support
+	// Adjust the vector based on the mode we came from
 	spsr_64bit_mode_t spsr_m = SPSR_EL2_A64_get_M(&spsr_el2);
 	switch (spsr_m) {
 	case SPSR_64BIT_MODE_EL0T:
@@ -72,23 +73,20 @@ exception_inject(void)
 	SPSR_EL1_A64_t spsr_el1 = SPSR_EL1_A64_cast(SPSR_EL2_A64_raw(spsr_el2));
 	register_SPSR_EL1_A64_write(spsr_el1);
 
-	// Set mode to EL1H, mask DAIF, clear IL and SS
-	SPSR_EL2_A64_set_D(&spsr_el2, true);
+	// Set mode to EL1H, mask AIF, clear IL and SS
 	SPSR_EL2_A64_set_A(&spsr_el2, true);
 	SPSR_EL2_A64_set_I(&spsr_el2, true);
 	SPSR_EL2_A64_set_F(&spsr_el2, true);
+	SPSR_EL2_A64_set_D(&spsr_el2, true);
 	SPSR_EL2_A64_set_IL(&spsr_el2, false);
 	SPSR_EL2_A64_set_SS(&spsr_el2, false);
 	SPSR_EL2_A64_set_M(&spsr_el2, SPSR_64BIT_MODE_EL1H);
-	thread->vcpu_regs_gpr.spsr_el2 = spsr_el2;
-
-#if defined(ARCH_ARM_8_0_SSBS) || (ARCH_ARM_VER >= 81) ||                      \
-	defined(ARCH_ARM_8_1_PAN)
+#if defined(ARCH_ARM_8_0_SSBS) || defined(ARCH_ARM_8_1_PAN)
 	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
 #if defined(ARCH_ARM_8_0_SSBS)
 	SPSR_EL2_A64_set_SSBS(&spsr_el2, SCTLR_EL1_get_DSSBS(&sctlr_el1));
 #endif
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_PAN)
+#if defined(ARCH_ARM_8_1_PAN)
 	if (!SCTLR_EL1_get_SPAN(&sctlr_el1)) {
 		SPSR_EL2_A64_set_PAN(&spsr_el2, true);
 	}
@@ -97,11 +95,20 @@ exception_inject(void)
 #if defined(ARCH_ARM_8_2_UAO)
 	SPSR_EL2_A64_set_UAO(&spsr_el2, false);
 #endif
+#if defined(ARCH_ARM_8_5_MEMTAG)
+	SPSR_EL2_A64_set_TCO(&spsr_el2, true);
+#endif
+#if defined(ARCH_ARM_8_5_BTI)
+	SPSR_EL2_A64_set_BTYPE(&spsr_el2, 0);
+#endif
+	thread->vcpu_regs_gpr.spsr_el2 = spsr_el2;
 
 	// Tell the guest where the exception came from
 	elr_el2		  = thread->vcpu_regs_gpr.pc;
 	ELR_EL1_t elr_el1 = ELR_EL1_cast(ELR_EL2_raw(elr_el2));
 	register_ELR_EL1_write(elr_el1);
+
+	register_ESR_EL1_write(esr_el1);
 
 	// Return to the guest's vector
 	ELR_EL2_set_ReturnAddress(&elr_el2, guest_vector);
@@ -112,7 +119,7 @@ bool
 inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 		       FAR_EL2_t far, vmaddr_t ipa, bool is_data_abort)
 {
-	thread_t *     thread  = thread_get_self();
+	thread_t	 *thread  = thread_get_self();
 	SPSR_EL2_A64_t spsr    = thread->vcpu_regs_gpr.spsr_el2;
 	ESR_EL1_t      esr_el1 = ESR_EL1_cast(ESR_EL2_raw(esr_el2));
 
@@ -149,7 +156,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 			if (util_balign_down(pc, 0x80U) == el1h_sync_vector) {
 				VTTBR_EL2_t vttbr = register_VTTBR_EL2_read();
 				TRACE_AND_LOG(
-					DEBUG, INFO,
+					DEBUG, DEBUG,
 					"Detected exception inject loop from "
 					"VM {:d}, original ESR_EL2 = {:#x}, "
 					"ELR_EL2 = {:#x}, VBAR_EL1 = {:#x}",
@@ -205,12 +212,11 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 					ESR_EL2_ISS_INST_ABORT_raw(iss));
 		}
 
-		register_ESR_EL1_write(esr_el1);
 		register_FAR_EL1_write(FAR_EL1_cast(FAR_EL2_raw(far)));
 
 		gvaddr_t va = FAR_EL2_get_VirtualAddress(&far);
 
-		TRACE_AND_LOG(DEBUG, INFO,
+		TRACE_AND_LOG(ERROR, WARN,
 			      "Injecting instruction/data abort to VM {:d}, "
 			      "original ESR_EL2 = {:#x}, fault VA = {:#x}, "
 			      "fault IPA = {:#x}, ELR_EL2 = {:#x}",
@@ -218,7 +224,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 			      ipa, ELR_EL2_raw(thread->vcpu_regs_gpr.pc));
 
 		// Inject the fault to the guest
-		exception_inject();
+		exception_inject(esr_el1);
 		break;
 	}
 	case ISS_DA_IA_FSC_ACCESS_FLAG_1:
@@ -236,6 +242,9 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 	case ISS_DA_IA_FSC_SYNC_PARITY_ECC_WALK_3:
 	case ISS_DA_IA_FSC_SYNC_TAG_CHECK:
 	case ISS_DA_IA_FSC_TLB_CONFLICT:
+#if defined(ARCH_ARM_8_1_TTHM)
+	case ISS_DA_IA_FSC_ATOMIC_HW_UPDATE:
+#endif
 	case ISS_DA_IA_FSC_PAGE_DOMAIN:
 	case ISS_DA_IA_FSC_SECTION_DOMAIN:
 	case ISS_DA_IA_FSC_DEBUG:
@@ -244,7 +253,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 	default: {
 		gvaddr_t va = FAR_EL2_get_VirtualAddress(&far);
 
-		TRACE_AND_LOG(ERROR, INFO,
+		TRACE_AND_LOG(ERROR, WARN,
 			      "instruction/data abort from VM {:d}, "
 			      "ESR_EL2 = {:#x}, fault VA = {:#x}, "
 			      "fault IPA = {:#x}, ELR_EL2 = {:#x}",
@@ -277,15 +286,26 @@ inject_undef_abort(ESR_EL2_t esr_el2)
 	ESR_EL1_init(&esr_el1);
 	ESR_EL1_set_IL(&esr_el1, ESR_EL2_get_IL(&esr_el2));
 	ESR_EL1_set_EC(&esr_el1, ESR_EC_UNKNOWN);
-	register_ESR_EL1_write(esr_el1);
 
 	thread_t *thread = thread_get_self();
-	TRACE_AND_LOG(ERROR, INFO,
+	TRACE_AND_LOG(DEBUG, DEBUG,
 		      "Injecting unknown abort to VM {:d}, "
 		      "original ESR_EL2 {:#x}",
 		      thread->addrspace->vmid, ESR_EL2_raw(esr_el2),
 		      ESR_EL2_raw(esr_el2));
 
 	// Inject the fault to the guest
-	exception_inject();
+	exception_inject(esr_el1);
+}
+
+// Default handler for BRK instructions that injects a BRK back to the guest
+// VM.
+vcpu_trap_result_t
+vcpu_handle_vcpu_trap_brk_instruction_guest(ESR_EL2_t esr)
+{
+	ESR_EL1_t esr_el1 = ESR_EL1_cast(ESR_EL2_raw(esr));
+
+	exception_inject(esr_el1);
+
+	return VCPU_TRAP_RESULT_RETRY;
 }

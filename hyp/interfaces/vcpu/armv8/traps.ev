@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-// FIXME: Add the events for the traps coming from AArch32
+// Add the events for the traps coming from AArch32
 
 interface vcpu
 
@@ -21,6 +21,10 @@ handled_event vcpu_trap_wfi
 
 handled_event vcpu_trap_fp_enabled
 	param esr: ESR_EL2_t
+
+#if defined(ARCH_ARM_8_3_PAUTH)
+handled_event vcpu_trap_pauth
+#endif
 
 handled_event vcpu_trap_illegal_state
 
@@ -41,11 +45,21 @@ handled_event vcpu_trap_sysreg_write
 	param iss: ESR_EL2_ISS_MSR_MRS_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
+#if defined(ARCH_ARM_8_3_PAUTH)
+handled_event vcpu_trap_eret
+	param esr: ESR_EL2_t
+#endif
+
 handled_event vcpu_trap_pf_abort_guest
 	param esr: ESR_EL2_t
 	param ipa: vmaddr_t
 	param far: FAR_EL2_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+#if defined(ARCH_ARM_8_2_SVE)
+handled_event vcpu_trap_sve_access
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+#endif
 
 handled_event vcpu_trap_pc_alignment_fault
 
@@ -73,6 +87,37 @@ handled_event vcpu_trap_watchpoint_guest
 	param esr: ESR_EL2_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
-handled_event vcpu_trap_serror
+handled_event vcpu_trap_brk_instruction_guest
 	param esr: ESR_EL2_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_serror
+	param iss: ESR_EL2_ISS_SERROR_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+// AArch32 traps
+#if ARCH_AARCH64_32BIT_EL0
+handled_event vcpu_trap_ldcstc_guest
+	param iss: ESR_EL2_ISS_LDC_STC_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_mcrmrc14_guest
+	param iss: ESR_EL2_ISS_MCR_MRC_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_mcrmrc15_guest
+	param esr: ESR_EL2_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_mcrrmrrc15_guest
+	param esr: ESR_EL2_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_mrrc14_guest
+	param esr: ESR_EL2_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+handled_event vcpu_trap_bkpt_guest
+	param esr: ESR_EL2_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+#endif

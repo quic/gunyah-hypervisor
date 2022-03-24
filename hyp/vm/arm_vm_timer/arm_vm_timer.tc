@@ -2,17 +2,27 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+define arm_vm_timer_type enumeration {
+	VIRTUAL;
+	PHYSICAL;
+};
+
 extend thread object {
-	timer	structure timer(contained);
-	timer_virq_src	structure virq_source;
+	virtual_timer structure timer(contained);
+	virtual_timer_virq_src structure virq_source(contained);
+
+	physical_timer structure timer(contained);
+	physical_timer_virq_src structure virq_source(contained);
 };
 
 extend timer_action enumeration {
 	virtual_timer;
+	physical_timer;
 };
 
 extend virq_trigger enumeration {
-	timer;
+	virtual_timer;
+	physical_timer;
 };
 
 extend hwirq_action enumeration {

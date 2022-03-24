@@ -16,6 +16,12 @@
     ${type_signature($hypcall)};
 #end for
 
+#for hypcall in sorted($vendor_hypcall_list, key=lambda x: x.name)
+
+    ${result_struct_definition($hypcall)}
+    ${type_signature($hypcall)};
+#end for
+
 \#else
 #if len($hypcall_dict)
 \#define HYPERCALL_BASE ${hex($hypcall_dict[0].abi.hypcall_base)}U

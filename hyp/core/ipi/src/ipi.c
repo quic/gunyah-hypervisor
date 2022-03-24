@@ -9,8 +9,10 @@
 #include <atomic.h>
 #include <compiler.h>
 #include <cpulocal.h>
+#include <idle.h>
 #include <ipi.h>
 #include <platform_ipi.h>
+#include <platform_timer.h>
 #include <preempt.h>
 #include <scheduler.h>
 #include <thread.h>
@@ -19,7 +21,9 @@
 #include <events/ipi.h>
 #include <events/scheduler.h>
 
+#include <asm/barrier.h>
 #include <asm/event.h>
+#include <asm/interrupt.h>
 #include <asm/prefetch.h>
 
 #include "event_handlers.h"
@@ -169,7 +173,7 @@ ipi_clear(ipi_reason_t ipi)
 
 #if IPI_FAST_WAKEUP || (PLATFORM_IPI_LINES <= ENUM_IPI_REASON_MAX_VALUE)
 static bool
-ipi_handle_pending(register_t pending)
+ipi_handle_pending(register_t pending) REQUIRE_PREEMPT_DISABLED
 {
 	bool reschedule = false;
 
@@ -222,9 +226,8 @@ ipi_handle_platform_ipi(void)
 bool
 ipi_handle_relaxed(void)
 {
+	assert_preempt_disabled();
 	bool reschedule = false;
-
-	cpulocal_begin();
 
 	_Atomic register_t *local_pending = &CPULOCAL(ipi_pending).bits;
 	prefetch_store_keep(local_pending);
@@ -232,15 +235,11 @@ ipi_handle_relaxed(void)
 	while (compiler_unexpected(pending != 0U)) {
 		ipi_reason_t ipi = (ipi_reason_t)(REGISTER_BITS - 1U -
 						  compiler_clz(pending));
-		preempt_disable();
 		if (ipi_clear_relaxed(ipi) && trigger_ipi_received_event(ipi)) {
 			reschedule = true;
 		}
-		preempt_enable();
 		pending = atomic_load_relaxed(local_pending);
 	}
-
-	cpulocal_end();
 
 	return reschedule;
 }
@@ -273,34 +272,19 @@ ipi_handle_idle_yield(bool in_idle_thread)
 		// Sleep until there is at least one event to handle or a
 		// preemption clears IPI_WAITING_IN_IDLE.
 		//
-		// We must enable preemption while waiting, because there is no
+		// We must enable interrupts while waiting, because there is no
 		// guarantee that asm_event_wait() will be woken by pending
 		// interrupts. The ARM implementation of it, a WFE instruction,
-		// is not woken.
-#if SCHEDULER_CAN_MIGRATE
-		// If we might be migrated, we have to re-calculate the
-		// local_pending pointer on every iteration to avoid possibly
-		// handling the wrong CPU's IPIs. It would be preferable to
-		// only enable interrupts and inhibit migration, but currently
-		// we don't have a mechanism to do that.
-		pending = asm_event_load_before_wait(local_pending);
-		while (pending == IPI_WAITING_IN_IDLE) {
-			preempt_enable();
-			asm_event_wait(local_pending);
-			preempt_disable();
-
-			local_pending = &CPULOCAL(ipi_pending).bits;
-			pending = asm_event_load_before_wait(local_pending);
-		}
-#else
-		preempt_enable();
+		// is not woken. This means that preempt_interrupt_dispatch
+		// needs to check the preempt disable count, and avoid context
+		// switching if it is nonzero!
+		asm_interrupt_enable_release(&local_pending);
 		pending = asm_event_load_before_wait(local_pending);
 		while (pending == IPI_WAITING_IN_IDLE) {
 			asm_event_wait(local_pending);
 			pending = asm_event_load_before_wait(local_pending);
 		}
-		preempt_disable();
-#endif
+		asm_interrupt_disable_acquire(&local_pending);
 
 		// Fetch and clear the events to handle; also clear the
 		// IPI_WAITING_IN_IDLE bit if it is still set.
@@ -353,3 +337,21 @@ ipi_handle_preempt_interrupt(void)
 	return false;
 }
 #endif
+
+void
+ipi_handle_scheduler_stop(void)
+{
+	ipi_others(IPI_REASON_ABORT_STOP);
+
+	// Delay approx 1ms to allow other cores to complete saving state.
+	// We don't wait for acknowledgement since they may be unresponsive.
+	uint32_t freq = platform_timer_get_frequency();
+
+	uint64_t now = platform_timer_get_current_ticks();
+	uint64_t end = now + (freq / 1024);
+
+	while (now < end) {
+		asm_yield();
+		now = platform_timer_get_current_ticks();
+	}
+}

@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#if (defined(UNIT_TESTS) && UNIT_TESTS) || ROOTVM_INIT
+#if (defined(UNIT_TESTS) && UNIT_TESTS) || defined(ROOTVM_INIT) ||             \
+	defined(UEFITZT)
 
 // Get the root VM's partition.
 //

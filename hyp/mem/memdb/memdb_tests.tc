@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(UNIT_TESTS)
+
+define MEMDB_RANGES_NUM public constant = 64;
+
+define memdb_range structure {
+	base	type paddr_t;
+	size	size;
+	obj	uintptr;
+	type	enumeration memdb_type;
+};
+
+define memdb_data structure {
+	ranges array(MEMDB_RANGES_NUM) structure memdb_range;
+	ranges_count type count_t;
+};
+
+#endif

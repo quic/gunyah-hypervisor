@@ -6,3 +6,10 @@ module rcu_sync
 
 subscribe rcu_update[RCU_UPDATE_CLASS_SYNC_COMPLETE]
 	handler rcu_sync_handle_update(entry)
+
+subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_RCU_SYNC]
+
+#if defined(UNITTESTS) && UNITTESTS
+subscribe tests_init
+subscribe tests_start
+#endif

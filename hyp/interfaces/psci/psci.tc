@@ -26,8 +26,6 @@ define psci_function enumeration(explicit) {
 	SYSTEM_RESET2 = 0x12;
 	MEM_PROTECT = 0x13;
 	MEM_PROTECT_CHECK_RANGE = 0x14;
-	// The last ID in the PSCI function ID range (0x0..0x1f).
-	LAST_ID = 0x1F;
 };
 
 define psci_ret enumeration(explicit) {

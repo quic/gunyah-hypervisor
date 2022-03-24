@@ -9,6 +9,7 @@ extend addrspace object {
 extend cap_rights_memextent bitfield {
 	0	map	bool;
 	1	derive	bool;
+	2	attach	bool;
 };
 
 define memextent_max_maps constant = 4;
@@ -20,7 +21,8 @@ define memextent_arg structure {
 };
 
 define memextent_mapping structure {
-	addrspace		pointer object addrspace;
+	// RCU-protected addrspace pointer
+	addrspace		pointer(atomic) object addrspace;
 	attrs			bitfield memextent_mapping_attrs;
 	mapping_list_node	structure list_node(contained);
 	vbase			type vmaddr_t;

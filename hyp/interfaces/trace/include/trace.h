@@ -30,9 +30,9 @@ extern register_t      trace_public_class_flags;
 
 #define TRACE_MAYBE(classes, X)                                                \
 	do {                                                                   \
-		register_t enabled = atomic_load_explicit(                     \
+		register_t enabled_ = atomic_load_explicit(                    \
 			&hyp_trace.enabled_class_flags, memory_order_relaxed); \
-		if (compiler_unexpected((enabled & classes) != 0)) {           \
+		if (compiler_unexpected((enabled_ & classes) != 0)) {          \
 			X;                                                     \
 		}                                                              \
 	} while (0)

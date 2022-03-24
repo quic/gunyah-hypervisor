@@ -6,16 +6,20 @@
 
 #include <asm/asm_defs.inc>
 
-	.global aarch64_boot_stack
+#include "vectors_el2.inc"
 
-	.section .bss.aarch64_boot_stack, "aw", @nobits
-	.balign 16
-	// This stack is used by boot_cold_init. It must be large enough to run
-	// all the first-boot event triggers. This memory is then reclaimed by
-	// the hypervisor_partition.
-aarch64_boot_stack:
+// This stack is used by boot_cold_init. It must be large enough to run
+// all the first-boot event triggers. This memory is then reclaimed by
+// the hypervisor_partition.
+	_bss aarch64_boot_stack, BOOT_STACK_SIZE, THREAD_STACK_MAP_ALIGN
 	.space BOOT_STACK_SIZE
-	.previous
+
+#if defined(ARCH_ARM_8_3_PAUTH)
+// Pointer authentication keys shared by all EL2 threads.
+	_bss aarch64_pauth_keys, AARCH64_PAUTH_KEYS_SIZE, \
+		AARCH64_PAUTH_KEYS_ALIGN
+	.space AARCH64_PAUTH_KEYS_SIZE
+#endif
 
 #if !defined(__ARM_FEATURE_UNALIGNED)
 #define SCTLR_EL2_BOOT_DEBUG SCTLR_EL2_VM_A_MASK
@@ -105,6 +109,29 @@ function aarch64_init
 	cmp	x8, x22
 	beq	aarch64_boot_error
 
+#if defined(ARCH_ARM_8_3_PAUTH)
+	// Generate the PAC keys
+	adrl	x21, aarch64_pauth_keys
+	mov	x23, AARCH64_PAUTH_KEYS_SIZE
+1:
+	bl	prng_get64
+	sub	x23, x23, 8
+	str	x0, [x21], 8
+	cbnz	x23, 1b
+
+	// Load the PAC keys into registers
+	kernel_pauth_entry x0, x1, x2
+
+	// Enable PAC
+	mrs	x9, SCTLR_EL2
+	orr	x9, x9, (SCTLR_EL2_VM_ENIA_MASK | SCTLR_EL2_VM_ENIB_MASK)
+	orr	x9, x9, SCTLR_EL2_VM_ENDA_MASK
+	orr	x9, x9, SCTLR_EL2_VM_ENDB_MASK
+	msr	SCTLR_EL2, x9
+#endif
+	// Ensure changes from runtime init and PAC enable take effect
+	isb
+
 	mov	w0, w20
 	b	boot_cold_init
 function_end aarch64_init
@@ -168,6 +195,20 @@ function aarch64_secondary_init
 	cmp	x8, x22
 	beq	aarch64_boot_error
 
+#if defined(ARCH_ARM_8_3_PAUTH)
+	// Load the PAC keys into registers
+	kernel_pauth_entry x0, x1, x2
+
+	// Enable PAC
+	mrs	x9, SCTLR_EL2
+	orr	x9, x9, (SCTLR_EL2_VM_ENIA_MASK | SCTLR_EL2_VM_ENIB_MASK)
+	orr	x9, x9, SCTLR_EL2_VM_ENDA_MASK
+	orr	x9, x9, SCTLR_EL2_VM_ENDB_MASK
+	msr	SCTLR_EL2, x9
+#endif
+	// Ensure changes from runtime init and PAC enable take effect
+	isb
+
 	// Start triggering the secondary cold boot events
 	mov	w0, w20
 	b	boot_secondary_init
@@ -224,6 +265,20 @@ function aarch64_warm_init
 	mrs	x8, TPIDR_EL2
 	cmp	x8, x22
 	beq	aarch64_boot_error
+
+#if defined(ARCH_ARM_8_3_PAUTH)
+	// Load the PAC keys into registers
+	kernel_pauth_entry x0, x1, x2
+
+	// Enable PAC
+	mrs	x9, SCTLR_EL2
+	orr	x9, x9, (SCTLR_EL2_VM_ENIA_MASK | SCTLR_EL2_VM_ENIB_MASK)
+	orr	x9, x9, SCTLR_EL2_VM_ENDA_MASK
+	orr	x9, x9, SCTLR_EL2_VM_ENDB_MASK
+	msr	SCTLR_EL2, x9
+#endif
+	// Ensure changes from runtime init and PAC enable take effect
+	isb
 
 	// Start triggering the warm boot events
 	b	boot_warm_init

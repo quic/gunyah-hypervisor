@@ -35,22 +35,22 @@ define ICC_DIR_EL1 bitfield<64> {
 	63:24		unknown=0;
 };
 
-define ICC_EOIR1_EL1 bitfield<64> {
+define ICC_EOIR_EL1 bitfield<64> {
 	23:0		INTID		type irq_t;
 	63:24		unknown=0;
 };
 
-define ICC_HPPIR1_EL1 bitfield<64> {
+define ICC_HPPIR_EL1 bitfield<64> {
 	23:0		INTID		type irq_t;
 	63:24		unknown=0;
 };
 
-define ICC_IAR1_EL1 bitfield<64> {
+define ICC_IAR_EL1 bitfield<64> {
 	23:0		INTID		type irq_t;
 	63:24		unknown=0;
 };
 
-define ICC_IGRPEN1_EL1 bitfield<64> {
+define ICC_IGRPEN_EL1 bitfield<64> {
 	0		Enable		bool;
 	63:1		unknown=0;
 };
@@ -90,14 +90,15 @@ define ICC_SRE_EL2 bitfield<64> {
 
 define ICH_HCR_EL2 bitfield<64> {
 	0		En		bool;
-	1		UTE		bool;
+	1		UIE		bool;
 	2		LRENPIE		bool;
 	3		NPIE		bool;
 	4		VGrp0EIE	bool;
 	5		VGrp0DIE	bool;
 	6		VGrp1EIE	bool;
 	7		VGrp1DIE	bool;
-	9:8		unknown=0;
+	8		unknown=0;
+	9		unknown=0;
 	10		TC		bool;
 	11		TALL0		bool;
 	12		TALL1		bool;
@@ -191,299 +192,5 @@ define ICH_VTR_EL2 bitfield<64> {
 	25:23		IDbits		enumeration ICC_CTLR_EL1_IDbits;
 	28:26		PREbits		type count_t;
 	31:29		PRIbits		type count_t;
-	63:32		unknown=0;
-};
-
-define GICD_CLRSPI_SETSPI_NSR_SR bitfield<32> {
-	12:0		INTID		type irq_t;
-	31:13		unknown=0;
-};
-
-define GICD_CTLR_S bitfield<32> {
-	0		EnableGrp0	bool;
-	1		EnableGrp1NS	bool;
-	2		EnableGrp1S	bool;
-	3		unknown=0;
-	4		ARE_S		bool;
-	5		ARE_NS		bool;
-	6		DS		bool(const) = 0;
-	7		E1NWF		bool;
-	30:8		unknown=0;
-	31		RWP		bool;
-};
-
-define GICD_CTLR_NS bitfield<32> {
-	0		EnableGrp1	bool;
-	1		EnableGrp1A	bool;
-	3:2		unknown=0;
-	4		ARE_NS		bool;
-	30:5		unknown=0;
-	31		RWP		bool;
-};
-
-define GICD_CTLR_DS bitfield<32> {
-	0		EnableGrp0	bool;
-	1		EnableGrp1	bool;
-	3:2		unknown=0;
-	4		ARE		bool;
-	5		unknown=0;
-	6		DS		bool(const) = 1;
-	7		E1NWF		bool;
-	30:8		unknown=0;
-	31		RWP		bool;
-};
-
-define GICD_CTLR union {
-	s		bitfield GICD_CTLR_S;
-	ns		bitfield GICD_CTLR_NS;
-	ds		bitfield GICD_CTLR_DS;
-};
-
-define GICD_IIDR bitfield<32> {
-	11:0		Implementer	uint16;
-	15:12		Revision	uint8;
-	19:16		Variant		uint8;
-	23:20		unknown=0;
-	31:24		ProductID	uint8;
-};
-
-define GICD_IROUTER bitfield<64> {
-	7:0		Aff0		uint8;
-	15:8		Aff1		uint8;
-	23:16		Aff2		uint8;
-	30:24		unknown=0;
-	31		IRM		bool;
-	39:32		Aff3		uint8;
-	63:40		unknown=0;
-};
-
-define GICD_SGIR bitfield<32> {
-	3:0		INTID			type irq_t;
-	14:4		unknown=0;
-	15		NSATT			bool;
-	23:16		CPUTargetList		uint8;
-	25:24		TargetListFilter	uint8;
-	31:26		unknown=0;
-};
-
-define GICD_STATUSR bitfield<32> {
-	0		RRD		bool;
-	1		WRD		bool;
-	2		RWOD		bool;
-	3		WROD		bool;
-	31:4		unknown=0;
-};
-
-define GICD_TYPER bitfield<32> {
-	4:0		ITLinesNumber	type count_t;
-	7:5		CPUNumber	type count_t;
-	8		ESPI		bool;
-	9		unknown=0;
-	10		SecurityExtn	bool;
-	15:11		num_LPIs	type count_t;
-	16		MBIS		bool;
-	17		LPIS		bool;
-	18		DVIS		bool;
-	23:19		IDbits		type count_t;
-	24		A3V		bool;
-	25		No1N		bool;
-	26		RSS		bool;
-	31:27		ESPI_range	type count_t;
-};
-
-define GICR_CLRLPIR_INVLPIR_SETLPIR bitfield<64> {
-	31:0		pINTID		type irq_t;
-	63:32		unknown=0;
-};
-
-define GICR_CTLR bitfield<32> {
-	0		Enable_LPIs	bool;
-	1		CES		bool;
-	2		unknown=0;
-	3		RWP		bool;
-	23:4		unknown=0;
-	24		DPG0		bool;
-	25		DPG1NS		bool;
-	26		DPG1S		bool;
-	30:27		unknown=0;
-	31		UWP		bool;
-};
-
-define GICR_IIDR bitfield<32> {
-	11:0		Implementer	uint16;
-	15:12		Revision	uint8;
-	19:16		Variant		uint8;
-	23:20		unknown=0;
-	31:24		ProductID	uint8;
-};
-
-define GICR_PENDBASER bitfield<64> {
-	6:0		unknown=0;
-	9:7		InnerCache	uint8;
-	11:10		Shareability	uint8;
-	15:12		unknown=0;
-	51:16		PA		uint64;
-	55:52		unknown=0;
-	58:56		OuterCache	uint8;
-	61:59		unknown=0;
-	62		PTZ		bool;
-	63		unknown=0;
-};
-
-define GICR_PROPBASER bitfield<64> {
-	4:0		IDbits		type count_t;
-	6:5		unknown=0;
-	9:7		InnerCache	uint8;
-	11:10		Shareability	uint8;
-	51:12		PA		uint64;
-	55:52		unknown=0;
-	58:56		OuterCache	uint8;
-	63:59		unknown=0;
-};
-
-define GICR_STATUSR bitfield<32> {
-	0		RRD		bool;
-	1		WRD		bool;
-	2		RWOD		bool;
-	3		WROD		bool;
-	31:4		unknown=0;
-};
-
-define GICR_SYNCR bitfield<32> {
-	0		Busy		bool;
-	31:1		unknown=0;
-};
-
-define GICR_TYPER_PPInum enumeration(explicit) {
-	MAX_31 = 0;
-	MAX_1087 = 1;
-	MAX_1119 = 2;
-};
-
-define GICR_TYPER bitfield<64> {
-	0		PLPIS		bool;
-	1		VLPIS		bool;
-	2		Dirty		bool;
-	3		DirectLPI	bool;
-	4		Last		bool;
-	5		DPGS		bool;
-	6		MPAM		bool;
-	7		unknown=0;
-	23:8		Processor_Num	uint16;
-	25:24		CommonLPIAff	uint8;
-	26		unknown=0;
-	31:27		PPInum		enumeration GICR_TYPER_PPInum;
-	39:32		Aff0		uint8;
-	47:40		Aff1		uint8;
-	55:48		Aff2		uint8;
-	63:56		Aff3		uint8;
-};
-
-define GICR_VPENDBASER bitfield<64> {
-	6:0		unknown=0;
-	9:7		InnerCache	uint8;
-	11:10		Shareability	uint8;
-	15:12		unknown=0;
-	51:16		PA		uint64;
-	55:52		unknown=0;
-	58:56		OuterCache	uint8;
-	59		unknown=0;
-	60		Dirty		bool;
-	61		PendingLast	bool;
-	62		IDAI		bool;
-	63		Valid		bool;
-};
-
-define GICR_VPROPBASER bitfield<64> {
-	4:0		IDbits		uint8;
-	6:5		unknown=0;
-	9:7		InnerCache	uint8;
-	11:10		Shareability	uint8;
-	51:12		PA		uint64;
-	55:52		unknown=0;
-	58:56		OuterCache	uint8;
-	63:59		unknown=0;
-};
-
-define GICR_WAKER bitfield<32> {
-	0		IMPDEF		bool;
-	1		ProcessorSleep	bool;
-	2		ChildrenAsleep	bool;
-	30:3		unknown=0;
-	31		IMPDEF2		bool;
-};
-
-define GICC_BPR_ABPR bitfield<64> {
-	2:0		BinaryPoint	uint8;
-	63:3		unknown=0;
-};
-
-define GICC_EOIR_HPPIR_IAR_DIR bitfield<64> {
-	23:0		INTID		type irq_t;
-	63:24		unknown=0;
-};
-
-define GICC_CTLR_DS0 bitfield<64> {
-	0		EnableGrp1	bool;
-	4:1		unknown=0;
-	5		FIQBypDisGrp1	bool;
-	6		IRQBypDisGrp1	bool;
-	8:7		unknown=0;
-	9		EOImodeNS	bool;
-	63:10		unknown=0;
-};
-
-define GICC_CTLR_DS1 bitfield<64> {
-	0		EnableGrp0	bool;
-	1		EnableGrp1	bool;
-	2		unknown=0;
-	3		FIQEn		bool;
-	4		CBPR		bool;
-	5		FIQBypDisGrp0	bool;
-	6		IRQBypDisGrp0	bool;
-	7		FIQBypDisGrp1	bool;
-	8		IRQBypDisGrp1	bool;
-	9		EOImode		bool;
-	63:10		unknown=0;
-};
-
-define GICC_IIDR bitfield<64> {
-	11:0		Implementer	uint16;
-	15:12		Revision	uint8;
-	19:16		ArchVer		uint8;
-	31:20		ProductID	uint16;
-	63:32		unknown=0;
-};
-
-define GICC_PMR_RPR bitfield<64> {
-	7:0		Priority	uint8;
-	63:8		unknown=0;
-};
-
-define GICC_STATUSR bitfield<64> {
-	0		RRD		bool;
-	1		WRD		bool;
-	2		RWOD		bool;
-	3		WROD		bool;
-	4		ASV		bool;
-	63:5		unknown=0;
-};
-
-define GICV_CTLR bitfield<64> {
-	0		EnableGrp0	bool;
-	1		EnableGrp1	bool;
-	2		AckCtl		bool;
-	3		FIQEn		bool;
-	4		CBPR		bool;
-	8:5		unknown=0;
-	9		EOImode		bool;
-	63:10		unknown=0;
-};
-
-define GICV_IIDR bitfield<64> {
-	11:0		Implementer	uint16;
-	15:12		Revision	uint8;
-	19:16		ArchVer		uint8;
-	31:20		ProductID	uint16;
 	63:32		unknown=0;
 };

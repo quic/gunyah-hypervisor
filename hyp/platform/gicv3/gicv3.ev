@@ -18,5 +18,17 @@ subscribe power_cpu_suspend()
 	unwinder gicv3_handle_power_cpu_resume()
 	// This writes to the GIC which is slow, so run it late
 	priority -10
+	require_preempt_disabled
 
 subscribe power_cpu_resume()
+	require_preempt_disabled
+
+#if defined(INTERFACE_VCPU) && INTERFACE_VCPU && GICV3_HAS_1N
+
+subscribe vcpu_poweron(vcpu)
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_poweroff(current)
+	require_scheduler_lock(current)
+
+#endif // INTERFACE_VCPU && GICV3_HAS_1N

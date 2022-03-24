@@ -14,6 +14,11 @@
 
 #include "event_handlers.h"
 
+#pragma message(                                                               \
+	"PLATFORM_HAS_NO_ETM_BASE is defined, if an ETM is present it may be"  \
+	" accessible and could trace the hypervisor.")
+#define VCPU_TRACE_CONTEXT_SAVED 1
+
 extern uintptr_t vcpu_aarch64_vectors;
 
 void
@@ -24,10 +29,11 @@ vcpu_context_switch_load(void)
 
 	thread_t *thread = thread_get_self();
 
+#if defined(ARCH_ARM_8_1_VHE)
 	CONTEXTIDR_EL2_t ctxidr = CONTEXTIDR_EL2_default();
 	CONTEXTIDR_EL2_set_PROCID(&ctxidr, (uint32_t)(uintptr_t)thread);
-
 	register_CONTEXTIDR_EL2_write(ctxidr);
+#endif
 
 	if (thread->kind == THREAD_KIND_VCPU) {
 		register_CPACR_EL1_write(thread->vcpu_regs_el1.cpacr_el1);
@@ -37,7 +43,7 @@ vcpu_context_switch_load(void)
 		register_ELR_EL1_write(thread->vcpu_regs_el1.elr_el1);
 		register_ESR_EL1_write(thread->vcpu_regs_el1.esr_el1);
 		register_FAR_EL1_write(thread->vcpu_regs_el1.far_el1);
-		register_PAR_EL1_RAW_write(thread->vcpu_regs_el1.par_el1);
+		register_PAR_EL1_base_write(thread->vcpu_regs_el1.par_el1.base);
 		register_MAIR_EL1_write(thread->vcpu_regs_el1.mair_el1);
 		register_SCTLR_EL1_write(thread->vcpu_regs_el1.sctlr_el1);
 		register_SP_EL0_write(thread->vcpu_regs_el1.sp_el0);
@@ -55,10 +61,19 @@ vcpu_context_switch_load(void)
 		register_VPIDR_EL2_write(thread->vcpu_regs_midr_el1);
 #endif
 
+		// Floating-point access should not be disabled for any VM
+#if defined(ARCH_ARM_8_1_VHE)
+		assert(CPTR_EL2_E2H1_get_FPEN(
+			       &thread->vcpu_regs_el2.cptr_el2) == 3);
 		register_CPTR_EL2_E2H1_write(thread->vcpu_regs_el2.cptr_el2);
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
-		assert(HCR_EL2_get_E2H(&thread->vcpu_regs_el2.hcr_el2) ==
-		       ARCH_AARCH64_USE_VHE);
+#else
+		assert(CPTR_EL2_E2H0_get_TFP(&thread->vcpu_regs_el2.cptr_el2) ==
+		       0);
+		register_CPTR_EL2_E2H0_write(thread->vcpu_regs_el2.cptr_el2);
+#endif
+
+#if defined(ARCH_ARM_8_1_VHE)
+		assert(HCR_EL2_get_E2H(&thread->vcpu_regs_el2.hcr_el2) == true);
 		assert(HCR_EL2_get_TGE(&thread->vcpu_regs_el2.hcr_el2) == 0);
 #endif
 		register_HCR_EL2_write(thread->vcpu_regs_el2.hcr_el2);
@@ -97,8 +112,8 @@ vcpu_context_switch_load(void)
 		HCR_EL2_set_FMO(&nonvm_hcr, true);
 		HCR_EL2_set_IMO(&nonvm_hcr, true);
 		HCR_EL2_set_AMO(&nonvm_hcr, true);
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
-		HCR_EL2_set_E2H(&nonvm_hcr, ARCH_AARCH64_USE_VHE);
+#if defined(ARCH_ARM_8_1_VHE)
+		HCR_EL2_set_E2H(&nonvm_hcr, true);
 #endif
 		HCR_EL2_set_TGE(&nonvm_hcr, true);
 		register_HCR_EL2_write(nonvm_hcr);
@@ -116,10 +131,11 @@ vcpu_context_switch_save(void)
 		thread->vcpu_regs_el1.csselr_el1 = register_CSSELR_EL1_read();
 		thread->vcpu_regs_el1.contextidr_el1 =
 			register_CONTEXTIDR_EL1_read();
-		thread->vcpu_regs_el1.elr_el1	= register_ELR_EL1_read();
-		thread->vcpu_regs_el1.esr_el1	= register_ESR_EL1_read();
-		thread->vcpu_regs_el1.far_el1	= register_FAR_EL1_read();
-		thread->vcpu_regs_el1.par_el1	= register_PAR_EL1_RAW_read();
+		thread->vcpu_regs_el1.elr_el1 = register_ELR_EL1_read();
+		thread->vcpu_regs_el1.esr_el1 = register_ESR_EL1_read();
+		thread->vcpu_regs_el1.far_el1 = register_FAR_EL1_read();
+		thread->vcpu_regs_el1.par_el1.base =
+			register_PAR_EL1_base_read();
 		thread->vcpu_regs_el1.mair_el1	= register_MAIR_EL1_read();
 		thread->vcpu_regs_el1.sctlr_el1 = register_SCTLR_EL1_read();
 		thread->vcpu_regs_el1.sp_el1	= register_SP_EL1_read();
@@ -137,6 +153,7 @@ vcpu_context_switch_save(void)
 		thread->vcpu_regs_midr_el1 = register_VPIDR_EL2_read();
 #endif
 
+		// Read back HCR_EL2 as VSE may have been cleared.
 		thread->vcpu_regs_el2.hcr_el2 = register_HCR_EL2_read();
 		thread->vcpu_regs_fpr.fpcr    = register_FPCR_read();
 		thread->vcpu_regs_fpr.fpsr    = register_FPSR_read();

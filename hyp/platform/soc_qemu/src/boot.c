@@ -30,8 +30,8 @@ platform_ram_probe(void)
 	// ranges do not overlap with the ranges specified in the QEMU start
 	// command.
 	ram_info.num_ranges	   = 0x1;
-	ram_info.ram_range[0].base = PLATFORM_LMA_BASE;
-	ram_info.ram_range[0].size = 0x40000000; // 1Gb of RAM
+	ram_info.ram_range[0].base = 0x40000000;
+	ram_info.ram_range[0].size = 0x80000000; // 1Gb of RAM
 
 	return OK;
 }
@@ -152,19 +152,23 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 	env_data->hlos_ramfs_base = 0x44400000;
 	env_data->device_me_base  = PLATFORM_DEVICES_BASE;
 
+#if defined(WATCHDOG_DISABLE)
+	env_data->watchdog_supported = false;
+#endif
+
 	// Add memory of VM to memdb first, so that we can use it to create a
 	// non-device memextent
-	paddr_t phys_start = env_data->hlos_vm_base;
-	paddr_t phys_end =
-		env_data->hlos_vm_base + (env_data->hlos_vm_size - 1U);
+	//paddr_t phys_start = env_data->hlos_vm_base;
+	//paddr_t phys_end =
+	//	env_data->hlos_vm_base + (env_data->hlos_vm_size - 1U);
 
-	partition_t *hyp_partition = partition_get_private();
-	error_t	     err = memdb_insert(hyp_partition, phys_start, phys_end,
-					(uintptr_t)root_partition,
-					MEMDB_TYPE_PARTITION);
-	if (err != OK) {
-		panic("Error adding VM memory to hyp_partition");
-	}
+	//partition_t *hyp_partition = partition_get_private();
+	//error_t	     err = memdb_insert(hyp_partition, phys_start, phys_end,
+	//				(uintptr_t)root_partition,
+	//				MEMDB_TYPE_PARTITION);
+	//if (err != OK) {
+	//	panic("Error adding VM memory to hyp_partition");
+	//}
 
 	// Create a device memextent to cover the full HW physical address
 	// space reserved for devices, so that the resource manager can derive
@@ -177,8 +181,8 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 		PLATFORM_DEVICES_SIZE, PGTABLE_ACCESS_RW,
 		MEMEXTENT_MEMTYPE_DEVICE, &env_data->device_me_capid);
 
-	// Derive memextents for GICD and GICR to effectively remove them from
-	// the device memextent we provide to the rootvm.
+	// Derive memextents for GICD, GICR and watchdog to effectively remove
+	// them from the device memextent we provide to the rootvm.
 
 	memextent_ptr_result_t me_ret;
 	me_ret = memextent_derive(me, PLATFORM_GICD_BASE, 0x10000U,

@@ -25,15 +25,15 @@
 // uintmax_t instead, and offset the results for the ones that are
 // size-dependent.
 
-#define _compiler_bitsize_offset(x)                                            \
+#define compiler_bitsize_offset(x)                                             \
 	(8 * (int)(sizeof(x) - sizeof(unsigned long long)))
 #define compiler_ffs(x) (index_t) __builtin_ffsll((unsigned long long)(x))
 #define compiler_clz(x)                                                        \
-	(index_t)(_compiler_bitsize_offset(x) +                                \
+	(index_t)(compiler_bitsize_offset(x) +                                 \
 		  __builtin_clzll((unsigned long long)(x)))
 #define compiler_ctz(x) (index_t) __builtin_ctzll((unsigned long long)(x))
 #define compiler_clrsb(x)                                                      \
-	(index_t)(_compiler_bitsize_offset(x) +                                \
+	(index_t)(compiler_bitsize_offset(x) +                                 \
 		  __builtin_clrsbll((long long)(x)))
 
 // Ensure this is never compiled to object code
@@ -70,6 +70,8 @@ __asm__(".error");
 // clang-format on
 
 #endif // !defined(CLANG_CTU_AST)
+
+#define compiler_msb(x) ((sizeof(x) * 8U) - 1U - compiler_clz(x))
 
 // Object sizes, for use in minimum buffer size assertions. These return
 // (size_t)-1 if the size cannot be determined statically, so the assertion

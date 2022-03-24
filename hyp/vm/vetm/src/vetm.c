@@ -74,7 +74,7 @@ vetm_protect_trcvi_ctlr(ETM_TRCVI_CTLR_t trcvi_ctlr)
 	ETM_TRCVI_CTLR_EXLEVEL_NS_t exlevel_ns = ETM_TRCVI_CTLR_EXLEVEL_NS_cast(
 		ETM_TRCVI_CTLR_get_exlevel_ns(&trcvi_ctlr));
 
-	// disable hlos hypervisor tracing
+	// disable hypervisor tracing
 	if (ETM_TRCVI_CTLR_EXLEVEL_NS_get_el2(&exlevel_ns)) {
 		ETM_TRCVI_CTLR_EXLEVEL_NS_set_el2(&exlevel_ns, false);
 
@@ -122,8 +122,8 @@ vetm_vdevice_read(thread_t *vcpu, cpu_index_t pcpu, size_t offset,
 }
 
 bool
-vetm_handle_vdevice_access(vmaddr_t ipa, size_t access_size, register_t *value,
-			   bool is_write)
+vetm_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
+				      register_t *value, bool is_write)
 {
 	bool ret;
 
@@ -132,9 +132,7 @@ vetm_handle_vdevice_access(vmaddr_t ipa, size_t access_size, register_t *value,
 	thread_t *vcpu = thread_get_self();
 	assert(vcpu != NULL);
 
-	cpu_index_t pcpu = cpulocal_get_index();
-	thread_t *  hlos = scheduler_get_primary_vcpu(pcpu);
-	if (hlos != thread_get_self()) {
+	if (!vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
 		ret = false;
 		goto out;
 	}
@@ -173,8 +171,7 @@ vetm_handle_thread_load_state(void)
 	thread_t *vcpu = thread_get_self();
 	assert(vcpu != NULL);
 
-	cpu_index_t pcpu = cpulocal_get_index();
-	if (vcpu == scheduler_get_primary_vcpu(pcpu)) {
+	if (vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
 		etm_set_reg(pcpu, offsetof(etm_t, trcvictlr),
 			    ETM_TRCVI_CTLR_raw(vcpu->vetm_trcvi_ctlr),
 			    sizeof(vcpu->vetm_trcvi_ctlr));
@@ -187,8 +184,7 @@ vetm_handle_thread_context_switch_pre(void)
 	thread_t *vcpu = thread_get_self();
 	assert(vcpu != NULL);
 
-	cpu_index_t pcpu = cpulocal_get_index();
-	if (vcpu == scheduler_get_primary_vcpu(pcpu)) {
+	if (vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
 		// clear trcvi_ctlr
 		ETM_TRCVI_CTLR_t trcvi_ctlr = ETM_TRCVI_CTLR_default();
 		etm_set_reg(pcpu, offsetof(etm_t, trcvictlr),

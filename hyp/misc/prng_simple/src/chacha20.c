@@ -19,8 +19,8 @@ rotl32(uint32_t x, index_t shift)
 	return (x << shift) | (x >> (32U - shift));
 }
 
-static void Qround(uint32_t (*state)[16], index_t a, index_t b, index_t c,
-		   index_t d)
+static void
+Qround(uint32_t (*state)[16], index_t a, index_t b, index_t c, index_t d)
 {
 	(*state)[a] += (*state)[b];
 	(*state)[d] ^= (*state)[a];
@@ -36,7 +36,8 @@ static void Qround(uint32_t (*state)[16], index_t a, index_t b, index_t c,
 	(*state)[b] = rotl32((*state)[b], 7U);
 }
 
-static void chacha20_inner_block(uint32_t (*state)[16])
+static void
+chacha20_inner_block(uint32_t (*state)[16])
 {
 	Qround(state, 0U, 4U, 8U, 12U);
 	Qround(state, 1U, 5U, 9U, 13U);

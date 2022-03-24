@@ -48,7 +48,7 @@ hypercall_memextent_configure(cap_id_t memextent_cap, paddr_t phys_base,
 			      size_t size, memextent_attrs_t attributes)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -89,7 +89,7 @@ hypercall_memextent_configure_derive(cap_id_t memextent_cap,
 				     memextent_attrs_t attributes)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	memextent_ptr_result_t m = cspace_lookup_memextent(

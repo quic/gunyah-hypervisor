@@ -2,10 +2,6 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-extend timer_action enumeration {
-	physical_timer;
-};
-
 #if !defined(IRQ_NULL)
 extend hwirq_action enumeration {
 	hyp_timer;

@@ -147,6 +147,68 @@ class NewELF():
         if self.header.e_shoff >= p_adj:
             self.header.e_shoff += p_off
 
+    # Insert a segment into a pre-sorted ELF
+    def insert_segment(self, newseg, phys):
+        print("inserting...")
+
+        phys_offset = self.segments[0].header.p_paddr - \
+            self.segments[0].header.p_vaddr
+        newseg.header.p_paddr = phys
+        newseg.header.p_vaddr = phys - phys_offset
+
+        p_adj = 0
+        idx = 0
+        # Find the position to insert segment
+        for seg in self.segments:
+            if seg.header.p_paddr > newseg.header.p_paddr:
+                break
+            idx += 1
+            # print(seg, hex(seg.header.p_paddr))
+            last = seg.header.p_offset + seg.header.p_filesz
+            assert(last >= p_adj)
+            p_adj = last
+
+        p_prev = p_adj
+
+        # Append new segment
+        p_adj = (p_adj + (newseg.header.p_align - 1)) & \
+                (0xffffffffffffffff ^ (newseg.header.p_align - 1))
+        # print(hex(p_adj))
+        newseg.header.p_offset = p_adj
+        # print(newseg.header)
+        self.segments.insert(idx, newseg)
+        self.header.e_phnum += 1
+
+        p_adj = p_adj + newseg.header.p_filesz
+
+        p_off = p_adj - p_prev
+        # print(">>", hex(p_adj), hex(p_prev), hex(p_off))
+
+        # Update file offsets of remaining segments
+        for seg in self.segments[idx+1:]:
+            last = seg.header.p_offset + seg.header.p_filesz
+            assert(last >= p_prev)
+            p_next = seg.header.p_offset + p_off
+            p_adj = (p_next + (seg.header.p_align - 1)) & \
+                    (0xffffffffffffffff ^ (seg.header.p_align - 1))
+            seg.header.p_offset = p_adj
+            p_off += p_adj - p_next
+
+        # Adjust file offsets for affected sections
+        for sec in self.sections:
+            if sec.header.sh_offset >= p_prev:
+                # print(sec.header)
+                align = sec.header.sh_addralign
+                if align > 1:
+                    p_off = (p_off + (align - 1)) & \
+                            (0xffffffffffffffff ^ (align - 1))
+                # print("SA", hex(sec.header.sh_offset), hex(p_off),
+                #       hex(sec.header.sh_offset + p_off))
+                sec.header.sh_offset += p_off
+
+        if self.header.e_shoff >= p_prev:
+            self.header.e_shoff += p_off
+
     def write(self, f):
 
         print("writing...")
@@ -256,9 +318,7 @@ def package_files(base, app, runtime, output):
     segment.add_data(run_data)
     segment.add_data(app_data)
 
-    segment.header.p_paddr = pkg_phys
-
-    new.append_segment(segment)
+    new.insert_segment(segment, pkg_phys)
     new.write(output)
 
 

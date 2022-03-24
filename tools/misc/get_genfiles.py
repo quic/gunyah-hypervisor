@@ -25,6 +25,7 @@ files = set()
 incdirs = set()
 
 include_regex = re.compile('(-iquote|-I) (\\w+[-\\{:s}\\w]+)'.format(os.sep))
+imacros_regex = re.compile('(-imacros) (\\w+[-\\{:s}\\w.]+)'.format(os.sep))
 
 for dir, dir_dirs, dir_files in os.walk(build_dir):
     if commands_file in dir_files:
@@ -65,6 +66,8 @@ try:
             for t, dir in include_regex.findall(cmd):
                 if dir.startswith(build_dir):
                     incdirs.add(dir)
+            for t, f in imacros_regex.findall(cmd):
+                files.add(f)
 except FileNotFoundError:
     exit(1)
 

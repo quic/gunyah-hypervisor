@@ -12,8 +12,12 @@ import sys
 
 
 class Object:
+    __slots__ = 'name', 'config'
+
     def __init__(self, name):
-        self.name = name
+        items = name.split(',')
+        self.name = items[0]
+        self.config = items[1:]
 
     def __str__(self):
         return self.name

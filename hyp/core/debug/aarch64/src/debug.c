@@ -9,14 +9,16 @@
 
 #include <cpulocal.h>
 
+#include <events/debug.h>
+
 #include <asm/barrier.h>
 
 #include "debug_bps.h"
 #include "event_handlers.h"
 
+#if PLATFORM_DEBUG_SAVE_STATE
 static struct asm_ordering_dummy debug_asm_order;
 
-#if PLATFORM_DEBUG_SAVE_STATE
 CPULOCAL_DECLARE_STATIC(debug_ext_state_t, debug_ext_state);
 
 static void
@@ -57,8 +59,12 @@ debug_handle_power_cpu_suspend(bool may_poweroff)
 
 		debug_os_lock();
 
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+		state->dbgclaim = DBGCLAIM_EL1_default();
+#else
 		state->dbgclaim =
 			register_DBGCLAIMCLR_EL1_read_ordered(&debug_asm_order);
+#endif
 
 		if (debug_force_save_ext() ||
 		    DBGCLAIM_EL1_get_debug_ext(&state->dbgclaim)) {

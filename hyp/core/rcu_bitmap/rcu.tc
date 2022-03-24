@@ -35,8 +35,7 @@
 #include <asm/cpu.h>
 
 extend rcu_entry structure {
-	// FIXME: We should pack the class in here so we can use a unified
-	// queue.
+	// We should pack the class in here so we can use a unified queue.
 	next pointer structure rcu_entry;
 };
 
@@ -61,7 +60,7 @@ extend ipi_reason enumeration {
 
 // A batch of RCU updates, from one grace period on one CPU.
 define rcu_batch structure {
-	// FIXME: We have a list head for each update class.
+	// We have a list head for each update class.
 	heads array(maxof(enumeration rcu_update_class) + 1) pointer
 		structure rcu_entry;
 };

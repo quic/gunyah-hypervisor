@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // A wait-queue structure, to be embedded in an object.
-define wait_queue structure {
+define wait_queue structure(lockable) {
 	list	structure list;
 	lock	structure spinlock;
 };
@@ -11,3 +11,6 @@ define wait_queue structure {
 extend thread object module wait_queue {
 	list_node	structure list_node(contained);
 };
+
+// Used to validate correct ordering of wait_queue_get/wait/put calls.
+define wait_queue_condition global structure opaque_lock;

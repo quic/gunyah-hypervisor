@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <hyptypes.h>
+#include <string.h>
 
 #include <bitmap.h>
 #include <compiler.h>
@@ -23,14 +24,15 @@
 
 #include "event_handlers.h"
 
+// Needs to be called holding a reference to the addrspace to be used
 static error_t
 memextent_do_map(memextent_t *me, memextent_mapping_t *map, size_t offset,
 		 size_t size)
 {
-	assert((me != NULL) && (map != NULL) && (map->addrspace != NULL));
+	assert((me != NULL) && (map != NULL));
 
-	addrspace_t *const s = map->addrspace;
-	assert(!s->vm_read_only);
+	addrspace_t *const s = atomic_load_consume(&map->addrspace);
+	assert((s != NULL) && !s->vm_read_only);
 
 	spinlock_acquire(&s->pgtable_lock);
 
@@ -40,6 +42,8 @@ memextent_do_map(memextent_t *me, memextent_mapping_t *map, size_t offset,
 	assert(!util_add_overflows(me->phys_base + offset, size - 1U));
 	assert(!util_add_overflows(map->vbase + offset, size - 1U));
 
+	pgtable_vm_start(&s->vm_pgtable);
+
 	// We do not set the try_map option, as we want to do the mapping even
 	// if the specified range has already been mapped
 	error_t ret = pgtable_vm_map(
@@ -48,6 +52,8 @@ memextent_do_map(memextent_t *me, memextent_mapping_t *map, size_t offset,
 		memextent_mapping_attrs_get_memtype(&map->attrs),
 		memextent_mapping_attrs_get_kernel_access(&map->attrs),
 		memextent_mapping_attrs_get_user_access(&map->attrs), false);
+
+	pgtable_vm_commit(&s->vm_pgtable);
 
 	if (ret != OK) {
 		goto error;
@@ -76,7 +82,7 @@ memextent_activate_derive_basic(memextent_t *me)
 		// haven't set up the mapping pointers yet. We do that after the
 		// memdb update so we don't have to undo them if the memdb
 		// update fails.
-		spinlock_acquire(&me->lock);
+		spinlock_acquire_nopreempt(&me->lock);
 
 		partition_t *hyp_partition = partition_get_private();
 
@@ -95,7 +101,7 @@ memextent_activate_derive_basic(memextent_t *me)
 		// deleted memextent has not yet been cleaned up, so drop the
 		// locks, wait for an RCU grace period, and then retry. If it
 		// still fails after that, there's a real conflict.
-		spinlock_release(&me->lock);
+		spinlock_release_nopreempt(&me->lock);
 		spinlock_release(&me->parent->lock);
 		rcu_sync();
 		retried = true;
@@ -104,13 +110,16 @@ memextent_activate_derive_basic(memextent_t *me)
 	size_t offset = me->phys_base - me->parent->phys_base;
 
 	for (index_t i = 0; i < util_array_size(me->mappings); i++) {
-		memextent_mapping_t *	   map = &me->mappings[i];
+		memextent_mapping_t	    *map = &me->mappings[i];
 		const memextent_mapping_t *parent_map =
 			&me->parent->mappings[i];
-		addrspace_t *as = parent_map->addrspace;
 
+		// RCU protects ->addrspace
+		rcu_read_start();
+		addrspace_t *as = atomic_load_consume(&parent_map->addrspace);
 		if (as == NULL) {
-			*map = (memextent_mapping_t){ 0 };
+			memset((void *)map, 0U, sizeof(map));
+			rcu_read_finish();
 			continue;
 		}
 
@@ -125,17 +134,19 @@ memextent_activate_derive_basic(memextent_t *me)
 		if (!object_get_addrspace_safe(as)) {
 			// Either there is no mapping, or the address space is
 			// in the process of being deleted.
-			*map = (memextent_mapping_t){ 0 };
+			memset((void *)map, 0U, sizeof(map));
+			rcu_read_finish();
 			continue;
 		}
+		rcu_read_finish();
 
 		*map = *parent_map;
 
 		map->vbase = vbase;
 
-		spinlock_acquire(&as->mapping_list_lock);
+		spinlock_acquire_nopreempt(&as->mapping_list_lock);
 		list_insert_at_head(&as->mapping_list, &map->mapping_list_node);
-		spinlock_release(&as->mapping_list_lock);
+		spinlock_release_nopreempt(&as->mapping_list_lock);
 
 		pgtable_access_t access_user =
 			memextent_mapping_attrs_get_user_access(&map->attrs);
@@ -156,12 +167,10 @@ memextent_activate_derive_basic(memextent_t *me)
 			continue;
 		}
 
-		pgtable_vm_start(&map->addrspace->vm_pgtable);
 		ret = memextent_do_map(me, map, 0, me->size);
 		if (ret != OK) {
 			panic("unhandled memextent remap failure");
 		}
-		pgtable_vm_commit(&map->addrspace->vm_pgtable);
 
 		object_put_addrspace(as);
 	}
@@ -170,20 +179,21 @@ memextent_activate_derive_basic(memextent_t *me)
 			    &me->children_list_node);
 
 out_locked:
-	spinlock_release(&me->lock);
+	spinlock_release_nopreempt(&me->lock);
 	spinlock_release(&me->parent->lock);
 
 	return ret;
 }
 
+// Needs to be called holding a reference to the addrspace to be used
 static void
 memextent_do_unmap(memextent_t *me, memextent_mapping_t *map, size_t offset,
 		   size_t size)
 {
-	assert((me != NULL) && (map != NULL) && (map->addrspace != NULL));
+	assert((me != NULL) && (map != NULL));
 
-	addrspace_t *const s = map->addrspace;
-	assert(!s->vm_read_only);
+	addrspace_t *const s = atomic_load_consume(&map->addrspace);
+	assert((s != NULL) && !s->vm_read_only);
 
 	spinlock_acquire(&s->pgtable_lock);
 
@@ -264,14 +274,21 @@ memextent_map_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base,
 {
 	assert((me != NULL) && (addrspace != NULL));
 
-	error_t		     ret	   = OK;
+	error_t ret = OK;
+
+	if (util_add_overflows(vm_base, me->size - 1U)) {
+		ret = ERROR_ADDR_OVERFLOW;
+		goto out;
+	}
+
+	spinlock_acquire(&me->lock);
+
 	bool		     mappings_full = true;
 	memextent_mapping_t *map	   = NULL;
-
 	for (index_t i = 0; i < util_array_size(me->mappings); i++) {
 		map = &me->mappings[i];
 
-		if (map->addrspace == NULL) {
+		if (atomic_load_relaxed(&map->addrspace) == NULL) {
 			mappings_full = false;
 			break;
 		}
@@ -279,12 +296,7 @@ memextent_map_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base,
 
 	if (mappings_full) {
 		ret = ERROR_MEMEXTENT_MAPPINGS_FULL;
-		goto out;
-	}
-
-	if (util_add_overflows(vm_base, me->size - 1U)) {
-		ret = ERROR_ADDR_OVERFLOW;
-		goto out;
+		goto out_locked;
 	}
 
 	pgtable_access_t access_user =
@@ -298,18 +310,16 @@ memextent_map_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base,
 	// we don't race with its destruction.
 	if (!object_get_addrspace_safe(addrspace)) {
 		ret = ERROR_OBJECT_STATE;
-		goto out;
+		goto out_locked;
 	}
 
-	spinlock_acquire(&me->lock);
-
 	// Add mapping to address space's list
-	spinlock_acquire(&addrspace->mapping_list_lock);
+	spinlock_acquire_nopreempt(&addrspace->mapping_list_lock);
 	list_insert_at_head(&addrspace->mapping_list, &map->mapping_list_node);
-	spinlock_release(&addrspace->mapping_list_lock);
+	spinlock_release_nopreempt(&addrspace->mapping_list_lock);
 
-	map->addrspace = addrspace;
-	map->vbase     = vm_base;
+	atomic_store_relaxed(&map->addrspace, addrspace);
+	map->vbase = vm_base;
 
 	memextent_mapping_attrs_set_memtype(&map->attrs, memtype);
 	memextent_mapping_attrs_set_user_access(&map->attrs,
@@ -317,11 +327,9 @@ memextent_map_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base,
 	memextent_mapping_attrs_set_kernel_access(&map->attrs,
 						  access_kernel & me->access);
 
-	pgtable_vm_start(&map->addrspace->vm_pgtable);
-
 	if (list_is_empty(&me->children_list)) {
 		ret = memextent_do_map(me, map, 0, me->size);
-		goto out_locked;
+		goto out_mapping_recorded;
 	}
 
 	memextent_arg_t arg = { me, { NULL }, 0 };
@@ -341,21 +349,31 @@ memextent_map_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base,
 				 memextent_unmap_range, (void *)&arg);
 	}
 
-out_locked:
-	pgtable_vm_commit(&map->addrspace->vm_pgtable);
+out_mapping_recorded:
+	// If mapping failed, clear the map structure.
+	if (ret != OK) {
+		spinlock_acquire_nopreempt(&addrspace->mapping_list_lock);
+		list_delete_node(&addrspace->mapping_list,
+				 &map->mapping_list_node);
+		spinlock_release_nopreempt(&addrspace->mapping_list_lock);
+		memset((void *)map, 0U, sizeof(map));
+	}
 	object_put_addrspace(addrspace);
+
+out_locked:
 	spinlock_release(&me->lock);
 out:
 	return ret;
 }
 
+// Needs to be called holding a reference to the addrspace to be used
 static void
 memextent_remove_map_from_addrspace_list(memextent_mapping_t **mapping)
 {
 	assert(*mapping != NULL);
 
 	memextent_mapping_t *map = *mapping;
-	addrspace_t *	     as	 = map->addrspace;
+	addrspace_t	    *as	 = atomic_load_consume(&map->addrspace);
 
 	assert(as != NULL);
 
@@ -363,7 +381,7 @@ memextent_remove_map_from_addrspace_list(memextent_mapping_t **mapping)
 	list_delete_node(&as->mapping_list, &map->mapping_list_node);
 	spinlock_release(&as->mapping_list_lock);
 
-	*map = (memextent_mapping_t){ 0 };
+	memset((void *)map, 0U, sizeof(map));
 
 	*mapping = map;
 }
@@ -377,10 +395,13 @@ memextent_unmap_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base)
 	bool		     addrspace_not_mapped = true;
 	memextent_mapping_t *map		  = NULL;
 
+	spinlock_acquire(&me->lock);
+
 	for (index_t i = 0; i < util_array_size(me->mappings); i++) {
 		map = &me->mappings[i];
 
-		if ((map->addrspace == addrspace) && (map->vbase == vm_base)) {
+		if ((atomic_load_relaxed(&map->addrspace) == addrspace) &&
+		    (map->vbase == vm_base)) {
 			addrspace_not_mapped = false;
 			break;
 		}
@@ -391,27 +412,33 @@ memextent_unmap_basic(memextent_t *me, addrspace_t *addrspace, vmaddr_t vm_base)
 		goto out;
 	}
 
-	spinlock_acquire(&me->lock);
+	// Take a reference to the address space to ensure that
+	// we don't race with its destruction.
+	if (!object_get_addrspace_safe(addrspace)) {
+		ret = ERROR_OBJECT_STATE;
+		goto out;
+	}
 
 	if (list_is_empty(&me->children_list)) {
 		memextent_do_unmap(me, map, 0, me->size);
-		goto out_locked;
+	} else {
+		memextent_arg_t arg = { me, { NULL }, 0 };
+		arg.map[0]	    = map;
+
+		// Walk through the memory extent physical range and unmap the
+		// contiguous ranges it owns.
+		ret = memdb_range_walk((uintptr_t)me, MEMDB_TYPE_EXTENT,
+				       me->phys_base,
+				       me->phys_base + (me->size - 1U),
+				       memextent_unmap_range, (void *)&arg);
 	}
 
-	memextent_arg_t arg = { me, { NULL }, 0 };
-	arg.map[0]	    = map;
-
-	// Walk through the memory extent physical range and unmap the
-	// contiguous ranges it owns.
-	ret = memdb_range_walk((uintptr_t)me, MEMDB_TYPE_EXTENT, me->phys_base,
-			       me->phys_base + (me->size - 1U),
-			       memextent_unmap_range, (void *)&arg);
-
-out_locked:
 	assert(ret == OK);
 	memextent_remove_map_from_addrspace_list(&map);
-	spinlock_release(&me->lock);
+	object_put_addrspace(addrspace);
+
 out:
+	spinlock_release(&me->lock);
 	return ret;
 }
 
@@ -425,11 +452,22 @@ memextent_unmap_all_basic(memextent_t *me)
 
 	spinlock_acquire(&me->lock);
 
+	// RCU protects ->addrspace
+	rcu_read_start();
 	for (index_t j = 0; j < util_array_size(me->mappings); j++) {
-		if (me->mappings[j].addrspace != NULL) {
+		addrspace_t *addrspace =
+			atomic_load_consume(&me->mappings[j].addrspace);
+		if (addrspace != NULL) {
+			// Take a reference to the address space to ensure that
+			// we don't race with its destruction.
+			if (!object_get_addrspace_safe(addrspace)) {
+				continue;
+			}
+
 			if (list_is_empty(&me->children_list)) {
 				memextent_do_unmap(me, &me->mappings[j], 0,
 						   me->size);
+				object_put_addrspace(addrspace);
 				continue;
 			} else {
 				arg.map[index] = &me->mappings[j];
@@ -437,6 +475,7 @@ memextent_unmap_all_basic(memextent_t *me)
 			}
 		}
 	}
+	rcu_read_finish();
 
 	if (list_is_empty(&me->children_list)) {
 		goto out;
@@ -458,6 +497,9 @@ memextent_unmap_all_basic(memextent_t *me)
 		for (index_t j = 0; j < index; j++) {
 			memextent_mapping_t *map = arg.map[j];
 			memextent_remove_map_from_addrspace_list(&map);
+
+			object_put_addrspace(
+				atomic_load_consume(&map->addrspace));
 		}
 	}
 
@@ -484,7 +526,8 @@ memextent_update_access_basic(memextent_t *me, addrspace_t *addrspace,
 	for (index_t j = 0; j < util_array_size(me->mappings); j++) {
 		map = &me->mappings[j];
 
-		if ((map->addrspace == addrspace) && (map->vbase == vm_base)) {
+		if ((atomic_load_relaxed(&map->addrspace) == addrspace) &&
+		    (map->vbase == vm_base)) {
 			addrspace_not_mapped = false;
 			break;
 		}
@@ -492,6 +535,13 @@ memextent_update_access_basic(memextent_t *me, addrspace_t *addrspace,
 
 	if (addrspace_not_mapped) {
 		ret = ERROR_ADDR_INVALID;
+		goto out;
+	}
+
+	// Take a reference to the address space to ensure that
+	// we don't race with its destruction.
+	if (!object_get_addrspace_safe(addrspace)) {
+		ret = ERROR_OBJECT_STATE;
 		goto out;
 	}
 
@@ -505,9 +555,9 @@ memextent_update_access_basic(memextent_t *me, addrspace_t *addrspace,
 	memextent_mapping_attrs_set_kernel_access(&map->attrs,
 						  access_kernel & me->access);
 
-	pgtable_vm_start(&map->addrspace->vm_pgtable);
 	ret = memextent_do_map(me, map, 0, me->size);
-	pgtable_vm_commit(&map->addrspace->vm_pgtable);
+
+	object_put_addrspace(addrspace);
 
 out:
 	spinlock_release(&me->lock);
@@ -532,13 +582,19 @@ memextent_revert_mappings(memextent_t *me)
 		       parent_matched) = { 0 };
 
 	for (index_t j = 0; j < util_array_size(me->mappings); j++) {
+		// RCU protects ->addrspace
+		rcu_read_start();
 		memextent_mapping_t *map = &me->mappings[j];
-		addrspace_t *	     s	 = map->addrspace;
+		addrspace_t	    *s	 = atomic_load_consume(&map->addrspace);
 
-		if (s == NULL) {
+		// Take a reference to the address space to ensure that
+		// we don't race with its destruction.
+		if ((s == NULL) || !object_get_addrspace_safe(s)) {
 			// Nothing to do.
+			rcu_read_finish();
 			continue;
 		}
+		rcu_read_finish();
 
 		bool matched = false;
 
@@ -546,7 +602,7 @@ memextent_revert_mappings(memextent_t *me)
 		     i++) {
 			memextent_mapping_t *p_map = &parent->mappings[i];
 
-			if (p_map->addrspace != s) {
+			if (atomic_load_relaxed(&p_map->addrspace) != s) {
 				continue;
 			}
 
@@ -558,12 +614,8 @@ memextent_revert_mappings(memextent_t *me)
 				// Revert attributes if they have changed.
 				if (memextent_mapping_attrs_raw(p_map->attrs) !=
 				    memextent_mapping_attrs_raw(map->attrs)) {
-					pgtable_vm_start(
-						&p_map->addrspace->vm_pgtable);
 					memextent_do_map(parent, p_map, offset,
 							 me->size);
-					pgtable_vm_commit(
-						&p_map->addrspace->vm_pgtable);
 				}
 
 				memextent_remove_map_from_addrspace_list(&map);
@@ -575,20 +627,27 @@ memextent_revert_mappings(memextent_t *me)
 			memextent_do_unmap(me, map, 0, me->size);
 			memextent_remove_map_from_addrspace_list(&map);
 		}
+
+		object_put_addrspace(s);
 	}
 
 	BITMAP_FOREACH_CLEAR_BEGIN(i, parent_matched,
 				   util_array_size(parent->mappings))
-
+		// RCU protects ->addrspace
+		rcu_read_start();
 		memextent_mapping_t *p_map = &parent->mappings[i];
-		if (p_map->addrspace == NULL) {
+		addrspace_t *addrspace = atomic_load_consume(&p_map->addrspace);
+		if ((addrspace == NULL) ||
+		    (!object_get_addrspace_safe(addrspace))) {
+			rcu_read_finish();
 			continue;
 		}
+		rcu_read_finish();
 
 		// Revert the mapping
-		pgtable_vm_start(&p_map->addrspace->vm_pgtable);
 		memextent_do_map(parent, p_map, offset, me->size);
-		pgtable_vm_commit(&p_map->addrspace->vm_pgtable);
+
+		object_put_addrspace(addrspace);
 	BITMAP_FOREACH_CLEAR_END
 
 	spinlock_release(&parent->lock);
@@ -622,7 +681,7 @@ memextent_cleanup_basic(memextent_t *me)
 	}
 
 	// release ownership of the range
-	void *	     new_owner;
+	void	     *new_owner;
 	memdb_type_t new_type;
 
 	memextent_t *parent = me->parent;

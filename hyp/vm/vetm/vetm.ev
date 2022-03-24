@@ -8,7 +8,7 @@ subscribe boot_hypervisor_start()
 
 subscribe boot_cpu_cold_init()
 
-subscribe vdevice_access
+subscribe vdevice_access_fixed_addr
 
 subscribe thread_context_switch_pre()
 

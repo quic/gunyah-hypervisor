@@ -10,6 +10,20 @@
 \#include <hypconstants.h>
 \#include <asm/asm_defs.inc>
 
+\#if defined(ARCH_ARM_8_5_BTI)
+#define BTI_J	bti j
+#define BTI_NOP	nop
+#define HYPERCALL_ALIGN	0x10
+\#else
+#define BTI_J
+#define BTI_NOP
+#define HYPERCALL_ALIGN	0x8
+\#endif
+
+\#if (ARCH_SANITIZE_STACK_SIZE % 16) != 0
+\#error ARCH_SANITIZE_STACK_SIZE alignment
+\#endif
+
 #if len($hypcall_dict)
 	.balign 16
 	.global hypercall_table
@@ -18,35 +32,56 @@ hypercall_table:
 #for hypcall_num in range(0, max($hypcall_dict.keys()) + 1)
 $hypcall_num:
     #if $hypcall_num not in $hypcall_dict
+	BTI_J
 	mov	x0, ENUM_ERROR_UNIMPLEMENTED
 	b	vcpu_${prefix}return_sanitize_x1
+	BTI_NOP	// Align hypercall
     #else
 	#set $hypcall = $hypcall_dict[$hypcall_num]
+	#set $num_in = len($hypcall.inputs)
 	#set $num_out = len($hypcall.outputs)
+	#set $sensitive = $hypcall.properties.get('sensitive', False)
+	BTI_J
+	adr	x9, ${prefix}${hypcall.name}__c_wrapper
 	#if $num_out <= 2
 	## return fits in registers
-	bl	${prefix}${hypcall.name}__c_wrapper
-	b	vcpu_${prefix}return_sanitize_x${num_out}
+#if $sensitive
+#error unimplemented
+#end if
+	b	vcpu_${prefix}entry_x${num_in}_x${num_out}
 	#else
 	## return is larger than two registers and must be indirect
-	adr	x9, ${prefix}${hypcall.name}__c_wrapper
-	b	vcpu_${prefix}slow_call
+#if $sensitive
+	b	vcpu_${prefix}entry_x${num_in}_sensitive
+#else
+	b	vcpu_${prefix}entry_x${num_in}_slow
+#end if
 	#end if
+	BTI_NOP	// Align hypercall
     #end if
-.if . - ${hypcall_num}b != 8
+.if . - ${hypcall_num}b != HYPERCALL_ALIGN
 .err // bad alignment
 .endif
 #end for
-	.size hypercall_table, . - hypercall_table#slurp
+	.size hypercall_table, . - hypercall_table
 
-
-function vcpu_${prefix}slow_call
+#for out in ["x0", "x1", "x2", "slow", "sensitive"]
+	.balign 64
+function vcpu_${prefix}entry_x0_${out}
+#for input in range(0, 8)
+#set $next_in = $input + 1
+	## sanitise unused HVC argument registers
+	mov	x${input}, xzr
+function_chain vcpu_${prefix}entry_x${input}_${out}, vcpu_${prefix}entry_x${next_in}_${out}
+#end for
+#if $out in ["slow", "sensitive"]
 	// Allocate stack space for the maximum allowed return size
 	sub	sp, sp, 64
 	mov	x8, sp
 
-	// Zero-initialise the allocated stack space, since any padding in the
-	// struct may be left uninitialised by the compiler
+	// Zero-initialise the allocated stack space, since any unused returns
+	// in the struct may be left uninitialised by the compiler and returned
+	// to the caller.
 	stp	xzr, xzr, [sp, #0]
 	stp	xzr, xzr, [sp, #16]
 	stp	xzr, xzr, [sp, #32]
@@ -61,7 +96,23 @@ function vcpu_${prefix}slow_call
 	ldp	x4, x5, [sp, #32]
 	ldp	x6, x7, [sp, #48]
 	add	sp, sp, 64
+#if $out == "sensitive"
+
+	// Zero any sensitive stack values
+	sub	x9, sp, ARCH_SANITIZE_STACK_SIZE
+	mov	x10, sp
+local zero_stack:
+	stp	xzr, xzr, [x9], 16
+	cmp	x9, x10
+	bne	LOCAL(zero_stack)
+#end if
 
 	b	vcpu_${prefix}return_sanitize_x8
-function_end vcpu_${prefix}slow_call
+#else
+	blr	x9
+	b	vcpu_${prefix}return_sanitize_${out}
+#end if
+function_end vcpu_${prefix}entry_x8_${out}
+
+#end for
 #end if

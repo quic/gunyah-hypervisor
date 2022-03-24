@@ -2,7 +2,11 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#include <types/bitmap.h>
+
 define ROOT_VM_VMID constant type count_t = 255;
+
+define ADDRSPACE_MAX_THREADS constant type count_t = PLATFORM_MAX_CORES;
 
 extend cap_rights_addrspace bitfield {
 	0	attach	bool;
@@ -15,14 +19,13 @@ extend addrspace object {
 	vm_pgtable		structure pgtable_vm;
 	vmid			type vmid_t;
 	vm_read_only		bool;
+	stack_range		structure virt_range;
+	stack_bitmap		BITMAP(ADDRSPACE_MAX_THREADS, atomic);
 };
 
 extend thread object {
-	addrspace	pointer object addrspace;
-};
-
-extend scheduler_block enumeration {
-	addrspace_null;
+	addrspace		pointer object addrspace;
+	stack_map_index		type index_t;
 };
 
 extend boot_env_data structure {

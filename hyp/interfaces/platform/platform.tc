@@ -18,3 +18,30 @@ define platform_ram_info structure {
 	ram_range	array(PLATFORM_RAM_RANGES_MAX)
 			structure platform_ram_range;
 };
+
+define platform_cpu_features bitfield<32> {
+};
+
+#if IRQ_HAS_MSI
+
+define platform_msi_controller_id_t newtype uint32;
+define platform_msi_event_id_t newtype uint32;
+define platform_msi_device_id_t newtype uint32;
+
+define platform_msi_id bitfield<64> {
+	31:0	event_id	type platform_msi_event_id_t;
+	53:32	device_id	type platform_msi_device_id_t;
+	63:54	its_index	type platform_msi_controller_id_t;
+};
+
+define platform_msi_device structure {
+	device_id	type platform_msi_device_id_t;
+	max_event	type platform_msi_event_id_t;
+};
+
+define platform_msi_controller structure {
+	num_devices	type count_t;
+	devices		pointer structure platform_msi_device;
+};
+
+#endif // IRQ_HAS_MSI

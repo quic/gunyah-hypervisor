@@ -5,8 +5,10 @@
 module vgic
 
 subscribe boot_hypervisor_start()
+	require_preempt_disabled
 
 subscribe boot_cpu_warm_init()
+	require_preempt_disabled
 
 subscribe rootvm_init
 	// Run early so other modules can bind VIRQs. Must run after PSCI,
@@ -23,11 +25,8 @@ subscribe object_deactivate_vic
 subscribe object_cleanup_vic(vic)
 
 subscribe object_create_hwirq
-	unwinder(hwirq_create)
 
 subscribe object_deactivate_hwirq
-
-subscribe object_cleanup_hwirq(hwirq)
 
 subscribe object_create_thread
 
@@ -44,15 +43,23 @@ subscribe irq_received[HWIRQ_ACTION_VGIC_FORWARD_SPI]
 
 subscribe irq_received[HWIRQ_ACTION_VGIC_MAINTENANCE]
 	handler vgic_handle_irq_received_maintenance()
+	require_preempt_disabled
+
+subscribe ipi_received[IPI_REASON_VGIC_ENABLE]
+	handler vgic_handle_ipi_received_enable()
+	require_preempt_disabled
 
 subscribe ipi_received[IPI_REASON_VGIC_SYNC]
 	handler vgic_handle_ipi_received_sync()
+	require_preempt_disabled
 
 subscribe ipi_received[IPI_REASON_VGIC_DELIVER]
 	handler vgic_handle_ipi_received_deliver()
+	require_preempt_disabled
 
 subscribe ipi_received[IPI_REASON_VGIC_SGI]
 	handler vgic_handle_ipi_received_sgi()
+	require_preempt_disabled
 
 subscribe vic_bind_hwirq[HWIRQ_ACTION_VGIC_FORWARD_SPI]
 	handler vgic_bind_hwirq_spi(vic, hwirq, virq)
@@ -66,10 +73,6 @@ subscribe virq_set_enabled[VIRQ_TRIGGER_VGIC_FORWARDED_SPI]
 subscribe virq_set_mode[VIRQ_TRIGGER_VGIC_FORWARDED_SPI]
 	handler vgic_handle_virq_set_mode_hwirq_spi(source, mode)
 
-subscribe scheduler_affinity_changed(thread, need_sync)
-
-subscribe scheduler_affinity_changed_sync(thread)
-
 subscribe thread_save_state
 
 subscribe thread_context_switch_post(prev)
@@ -79,7 +82,10 @@ subscribe thread_context_switch_post(prev)
 
 subscribe thread_load_state()
 
-subscribe vdevice_access
+subscribe scheduler_affinity_changed(thread, next_cpu)
+
+subscribe vdevice_access_fixed_addr
+	handler vgic_handle_vdevice_access
 	// Raise priority as this is more likely to be performance-critical
 	// than other vdevices. This can be removed once we have proper
 	// device-kind tracking for vdevices
@@ -88,8 +94,13 @@ subscribe vdevice_access
 subscribe vcpu_trap_sysreg_read
 
 subscribe vcpu_trap_sysreg_write
+	// Run early, because SGI1R is the most performance-critical sysreg
+	// write trap
+	priority 100
 
 subscribe vcpu_trap_wfi()
+	// Run early, in case we need to trigger a wakeup
+	priority 100
 
 subscribe vcpu_pending_wakeup
 

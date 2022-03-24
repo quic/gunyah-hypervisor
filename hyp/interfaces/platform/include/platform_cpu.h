@@ -11,11 +11,11 @@ platform_cpu_on(cpu_index_t cpu);
 // Power off the calling CPU. Returns after the CPU is powered on again by a
 // platform_cpu_on() call on another CPU.
 void
-platform_cpu_off(void);
+platform_cpu_off(void) REQUIRE_PREEMPT_DISABLED;
 
 // The system and CPUs are reset, and will restart from the firmware/bootloader.
 void
-platform_system_reset(void);
+platform_system_reset(void) REQUIRE_PREEMPT_DISABLED;
 
 // Suspend the calling CPU until a wakeup event occurs.
 //
@@ -30,7 +30,8 @@ platform_system_reset(void);
 // attempt to sleep was aborted due to a pending wakeup on another CPU in the
 // same power domain.
 bool_result_t
-platform_cpu_suspend(platform_power_state_t power_state);
+platform_cpu_suspend(platform_power_state_t power_state)
+	REQUIRE_PREEMPT_DISABLED;
 
 // Set the suspend mode used by the hypervisor
 //
@@ -49,13 +50,21 @@ platform_psci_set_suspend_mode(psci_mode_t mode);
 // Suspend the calling CPU until a wakeup event occurs. Similar to cpu suspend,
 // but the caller does not need to specify a power state parameter.
 bool_result_t
-platform_cpu_default_suspend(void);
+platform_cpu_default_suspend(void) REQUIRE_PREEMPT_DISABLED;
 #endif
 
-#if defined(ARCH_ARM) && (ARCH_ARM_VER >= 80)
+#if defined(ARCH_ARM)
 psci_mpidr_t
 platform_cpu_index_to_mpidr(cpu_index_t cpu);
 
 cpu_index_result_t
 platform_cpu_mpidr_to_index(psci_mpidr_t mpidr);
 #endif
+
+#if defined(ARCH_ARM_8_5_BTI)
+bool
+platform_cpu_bti_enabled(void);
+#endif
+
+uint32_t
+platform_cpu_stack_size(void);

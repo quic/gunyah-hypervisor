@@ -1,5 +1,6 @@
 " Vim syntax file
 " Language:	Gunyah Event Files
+" Maintainer:	Carl van Schaik <quic_cvanscha@quicinc.com>
 " Extensions:   *.ev
 "
 " © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
@@ -25,6 +26,8 @@ syn match priorityNum contained /[0-9]\+\>/
 syn keyword priorityKeyword contained first last
 syn match priorityVal /[_A-Za-z0-9]\+/ contained contains=priorityNum,priorityKeyword
 syn keyword priority priority contained skipwhite nextgroup=priorityVal
+
+syn match lockAttrib /(acquire|release|require|exclude)_(lock|read|count)/ contained skipwhite
 
 syn match evName contained /[_A-Za-z0-9]\+/
 syn keyword evDirective subscribe event selector_event handled_event contained skipwhite nextgroup=evName
@@ -55,6 +58,7 @@ hi def link module		PreProc
 hi def link priorityNum		Constant
 hi def link priorityKeyword	Special
 hi def link priority		PreProc
+hi def link lockAttrib		PreProc
 hi def link moduleName		Label
 
 "hi def link evEventBody		TODO

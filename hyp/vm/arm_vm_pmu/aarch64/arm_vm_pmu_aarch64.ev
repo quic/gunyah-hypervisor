@@ -7,7 +7,10 @@ module arm_vm_pmu
 subscribe object_activate_thread
 	handler arm_vm_pmu_aarch64_handle_object_activate_thread
 
-#if defined(ARCH_ARM_PMU_HPMN_UNPREDICTABLE)
+// The PMU counters are read often, give them a higher priority
 subscribe vcpu_trap_sysreg_read
+	handler arm_vm_pmu_handle_vcpu_trap_sysreg_access
+	priority 5
+
 subscribe vcpu_trap_sysreg_write
-#endif
+	handler arm_vm_pmu_handle_vcpu_trap_sysreg_access

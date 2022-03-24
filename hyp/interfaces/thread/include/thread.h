@@ -25,7 +25,7 @@ thread_get_self(void);
 // This function will fail if the specified thread is already running on another
 // CPU. The scheduler is responsible for guaranteeing this.
 error_t
-thread_switch_to(thread_t *thread);
+thread_switch_to(thread_t *thread) REQUIRE_PREEMPT_DISABLED;
 
 // Kill a thread. This marks it as exiting, sends an interrupt to any CPU that
 // is currently running it, and switches to it on the current CPU if it is not
@@ -38,7 +38,7 @@ thread_switch_to(thread_t *thread);
 //
 // The caller must either be the specified thread, or hold a reference to the
 // specified thread.
-void
+error_t
 thread_kill(thread_t *thread);
 
 // Return true if the specified thread has had thread_kill() called on it.
@@ -83,7 +83,7 @@ thread_join_killable(thread_t *thread);
 // that is potentially powering off. This will typically be an idle thread.
 register_t
 thread_freeze(register_t (*fn)(register_t), register_t param,
-	      register_t resumed_result);
+	      register_t resumed_result) REQUIRE_PREEMPT_DISABLED;
 
 // Reset the current thread's stack.
 //

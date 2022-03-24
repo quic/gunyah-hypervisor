@@ -64,7 +64,7 @@ class TopLevel:
             if d in seen:
                 return
             seen.add(d)
-            for dep in d.dependencies:
+            for dep in sorted(d.dependencies, key=lambda x: x.indicator):
                 visit(dep)
             sorted_defs.append(d)
 
@@ -90,16 +90,6 @@ class TopLevel:
             code += c
             extra += e
 
-        code.append('\n')
-        code.append('#pragma clang diagnostic push\n')
-        code.append('#pragma clang diagnostic ignored "-Wpadded"\n')
-        code += PrimitiveType.gen_result_types()
-        for d in sorted_defs:
-            if public_only and not d.is_public:
-                continue
-            code += d.gen_result_types()
-        code.append('#pragma clang diagnostic pop\n\n')
-
         # FIXME: move to a template file
         output = "// Automatically generated. Do not modify.\n//\n"
         output += '// ' + '\n// '.join(default_copyright.split('\n')) + '\n\n'
@@ -112,9 +102,13 @@ class TopLevel:
         # output += "#include <assert.h>\n"
         # output += "#include <string.h>\n"
         output += "#include <stdnoreturn.h>\n"
-        output += "#include <hyperror.h>\n"
         output += "\n"
         output += ' '.join(code)
+        output += "\n"
+        if public_only:
+            output += "#include <guest_hypresult.h>\n"
+        else:
+            output += "#include <hypresult.h>\n"
         output += "\n"
         output += ' '.join(extra)
         output += ' '.join(footer)
@@ -127,6 +121,9 @@ class TopLevel:
                                   if d.is_public or not public_only),
             'definitions': tuple(d for d in self.definitions
                                  if d.is_public or not public_only),
+            'primitives': tuple(PrimitiveType(t) for t in
+                                PrimitiveType.c_type_names),
+            'public_only': public_only,
         }]
         template = Template(file=template_file, searchList=ns)
         return str(template)
@@ -191,6 +188,7 @@ class ICustomized:
     ALTERNATIVE = "alternative"
     IMPORT = "import"
     CONSTANT = "constant"
+    GLOBAL = "global"
 
 
 class ICustomizedReference(ICustomized, metaclass=abc.ABCMeta):
@@ -388,6 +386,20 @@ class MaxofOperation(TypePropertyOperation):
     _type_property = 'maximum_value'
 
 
+class PureFunctionCall(IConstantExpression):
+    """
+    A constant expression that applies a pure function to another expression.
+    """
+
+    def __init__(self, expr, f):
+        super().__init__()
+        self.expr = expr
+        self.f = f
+
+    def to_int(self):
+        return self.f(int(self.expr))
+
+
 class IType(metaclass=abc.ABCMeta):
     """
     Interface for all types.
@@ -430,32 +442,66 @@ class IType(metaclass=abc.ABCMeta):
         """
         return ([])
 
-    def gen_expr(self):
+    def _gen_type(self, unqualified=False):
         """
-        When need to construct C output expressions, it
-        returns (left, right) parts, which is use for expression:
-        left variable_name right.
+        Construct a C type name or declaration.
 
-        For example, int *a[8];
-        left part is "int *", right part is "[8];"
-        """
-        return ([], [])
+        This returns a tuple of two lists. The first list contains tokens that
+        should appear to the left of the identifier if this type name is used
+        as a declaration; the second list contains tokens that should appear
+        to the right of the identifier.
 
-    def gen_type(self):
-        """
-        When need to construct C typdef expressions, if the type is too complex
-        to directly use, it returns (left, right) parts, which is use for
-        expression:
-        typedef left variable_name right.
+        For example, to declare a constant pointer to an array of 8 atomic
+        pointers to volatile integers:
 
-        For example, typedef int *a[8];
-        left part is "int *", right part is "[8];"
+            volatile int *_Atomic (*const a)[8];
+
+        The returned value will be:
+
+            (['volatile', 'int', '*', '_Atomic', '(*', 'const'],
+             [')', '[', '8', ']'])
+
+        If unqualified is true, the top-level type's qualifiers will be
+        omitted, which is necessary when it is used as the return value of
+        a field accessor function.
         """
-        return ([], [])
+        raise NotImplementedError
+
+    def gen_declaration(self, identifier):
+        """
+        Construct a C declaration of an object of this type.
+
+        This returns a declaration (excluding any final ; or linebreak) for
+        an object of this type with the specified identifier.
+        """
+        l, r = self._gen_type()
+        return ' '.join(itertools.chain(l, [identifier], r))
+
+    def gen_type_name(self, unqualified=False):
+        """
+        Construct a C type name for this type.
+
+        This returns the type name (type-name in the C grammar), which is used
+        for casts, sizeof, alignof, the parenthesised form of _Atomic,
+        _Generic, and initialisers.
+        """
+        l, r = self._gen_type(unqualified=unqualified)
+        return ' '.join(l) + ' '.join(r)
 
     @property
     def basic_type(self):
         return self
+
+    @property
+    def has_suffix_declarator(self):
+        """
+        True if a type declarator appears to the right of the identifier.
+
+        Type specifiers and pointer type declarators appear to the left of the
+        identifier. Array and function declarators appear to the right of the
+        identifier.
+        """
+        return self.is_array
 
     @property
     def bitsize(self):
@@ -463,9 +509,10 @@ class IType(metaclass=abc.ABCMeta):
         The size of this type's value in bits.
 
         Returns None if the true range of the type is not known, which is the
-        case for all scalar types other than booleans and enumerations.
+        case for all scalar types other than booleans, enumerations, and
+        non-void pointers.
 
-        Implemented only for scalar types.
+        Implemented only for scalar types (including pointers).
         """
         raise DSLError("Non-scalar type cannot be used in this context",
                        self.indicator)
@@ -589,6 +636,13 @@ class IType(metaclass=abc.ABCMeta):
         """
         return False
 
+    @property
+    def pointer(self):
+        """
+        A pointer type that points to this type.
+        """
+        return PointerType(base_type=self)
+
     @abc.abstractproperty
     def dependencies(self):
         """
@@ -684,11 +738,8 @@ class ICustomizedType(ICustomizedReference, IType):
         except AttributeError:
             raise DSLError(self.type_name + " is not defined", self.type_name)
 
-    def gen_expr(self):
-        return ([self.type_name + self.type_suffix], [";\n"])
-
-    def gen_type(self):
-        return ([self.type_name + self.type_suffix], [";"])
+    def _gen_type(self, **_):
+        return ([self.type_name + self.type_suffix], [])
 
     @property
     def dependencies(self):
@@ -777,14 +828,18 @@ class ICustomizedDefinition(ICustomized, IType, IAggregation, IUpdate):
     def indicator(self):
         return self.type_name
 
-    def gen_result_types(self):
+    @property
+    def is_container(self):
         """
-        Generate result and pointer-result wrapper structures for the type.
+        True if offset macros and container_of functions should be generated.
         """
-        return (
-            "HYPTYPES_DECLARE_RESULT({:s})\n".format(self.type_name),
-            "HYPTYPES_DECLARE_RESULT_PTR({:s})\n".format(self.type_name),
-        )
+        return False
+
+    def gen_type_name(self, unqualified=False):
+        """
+        Construct a C type name for this type.
+        """
+        return self.type_name + '_t'
 
 
 class IDeclaration(IUpdate):
@@ -891,11 +946,8 @@ class PrimitiveType(IType):
         self._align = ctype.align
         self._bitsize = ctype.bitsize
 
-    def gen_expr(self):
-        return ([self.c_type_name], [";\n"])
-
-    def gen_type(self):
-        return ([self.c_type_name], [";"])
+    def _gen_type(self, **_):
+        return ([self.c_type_name], [])
 
     @property
     def size(self):
@@ -925,21 +977,6 @@ class PrimitiveType(IType):
         dependencies as they can be forward declared.
         """
         return ()
-
-    @classmethod
-    def gen_result_types(cls):
-        """
-        Generate result and pointer-result wrapper structures for all types.
-        """
-        code = ["\n"]
-        for name, c_name in itertools.chain(cls.c_type_names.items()):
-            code.append(
-                "HYPTYPES_DECLARE_RESULT_({:s}, {:s})\n".format(name, c_name))
-            code.append(
-                "HYPTYPES_DECLARE_RESULT_PTR_({:s}, {:s})\n"
-                .format(name, c_name))
-        code.append('HYPTYPES_DECLARE_RESULT_PTR_(void, void)\n')
-        return code
 
 
 class BitFieldType(ICustomizedType):
@@ -1064,18 +1101,21 @@ class BitFieldMemberMapping:
         self.field_signed = signed
 
     def add_bit_range(self, field_bit, mapped_bit, length):
+        assert field_bit >= 0
         fmap = FieldMap(field_bit, mapped_bit, length)
         self.field_maps.append(fmap)
 
-    def update(self):
+    def update(self, unit_size):
         """compact field_maps"""
         i = 0
         try:
             while True:
                 a = self.field_maps[i]
                 b = self.field_maps[i + 1]
-                assert(a.field_bit + a.length == b.field_bit)
-                if (a.mapped_bit + a.length == b.mapped_bit):
+                assert a.field_bit + a.length == b.field_bit
+                if (a.mapped_bit // unit_size == b.mapped_bit // unit_size) \
+                        and (a.mapped_bit + a.length == b.mapped_bit):
+                    assert a.field_bit >= 0
                     c = FieldMap(a.field_bit, a.mapped_bit,
                                  a.length + b.length)
                     self.field_maps[i] = c
@@ -1107,13 +1147,13 @@ class BitFieldSpecifier:
         self.bit_length = None
         self.shift = 0
         self.auto_width = None
-        self.bit_ranges = []
+        self._bit_ranges = []
         self.mapping = None
 
-    def add_bit_range(self, bit, width):
+    def add_bit_range(self, bit_range):
         assert(self.specifier_type in (self.NONE, self.RANGE))
         self.specifier_type = self.RANGE
-        self.bit_ranges.append((bit, width))
+        self._bit_ranges.append(bit_range)
 
     def set_type_shift(self, shift):
         assert(self.specifier_type in (self.RANGE, self.AUTO))
@@ -1128,8 +1168,21 @@ class BitFieldSpecifier:
         assert(self.specifier_type is self.NONE)
         self.specifier_type = self.OTHERS
 
-    def update_ranges(self, declaration, physical_ranges):
-        self.mapping = BitFieldMemberMapping(self.shift)
+    @property
+    def bit_ranges(self):
+        return tuple(r.get_bits() for r in self._bit_ranges)
+
+    @property
+    def range_width(self):
+        assert self.specifier_type is self.RANGE
+        bits = 0
+        for bit, width in self.bit_ranges:
+            bits += width
+        return bits
+
+    def update_ranges(self, declaration, physical_ranges, unit_size):
+        shift = int(self.shift)
+        self.mapping = BitFieldMemberMapping(shift)
 
         # FIXME - reserved members defaults need to be considered
         #       - extended registers need to have reserved ranges / defaults
@@ -1138,18 +1191,29 @@ class BitFieldSpecifier:
         #    print(" - skip", declaration.member_name)
         #    return
 
-        if self.specifier_type is self.RANGE:
-            field_bit = self.shift
+        # Split up any ranges that cross unit boundaries
+        split_ranges = []
+        for bit, width in self.bit_ranges:
+            while (bit // unit_size) != (bit + width - 1) // unit_size:
+                split_point = ((bit // unit_size) + 1) * unit_size
+                split_width = split_point - bit
+                split_ranges.append((bit, split_width))
+                bit = split_point
+                width -= split_width
+            split_ranges.append((bit, width))
 
-            for r in reversed(self.bit_ranges):
-                if not physical_ranges.insert_range(r, declaration):
+        if self.specifier_type is self.RANGE:
+            field_bit = shift
+
+            for bit, width in reversed(split_ranges):
+                if not physical_ranges.insert_range((bit, width), declaration):
                     raise DSLError("bitfield member conflicts with previously "
                                    "specified bits, freelist:\n" +
                                    str(physical_ranges),
                                    declaration.member_name)
-                self.mapping.add_bit_range(field_bit, *r)
-                field_bit += r[1]
-            self.mapping.update()
+                self.mapping.add_bit_range(field_bit, bit, width)
+                field_bit += width
+            self.mapping.update(unit_size)
             self.bit_length = field_bit
 
     def set_signed(self, signed):
@@ -1161,23 +1225,32 @@ class DirectType(IType):
         super().__init__()
         self._basic_type = None
 
-    def gen_expr(self):
-        le, re = self._basic_type.gen_expr()
-        for q in self.qualifiers:
-            if q.is_restrict:
-                raise DSLError("Restrict qualifier is only for pointer",
-                               self._basic_type.indicator)
-            le.extend(q.gen_qualifier())
-        return (le, re)
-
-    def gen_type(self):
-        # FIXME: need to double check how to handle qualifier for template
-        l, r = self._basic_type.gen_type()
-        return (l, r)
+    def _gen_type(self, unqualified=False):
+        l, r = self._basic_type._gen_type()
+        ql = []
+        if not unqualified:
+            for q in self.qualifiers:
+                if q.is_restrict:
+                    raise DSLError("Restrict qualifier is only for pointer",
+                                   self._basic_type.indicator)
+                ql.extend(q.gen_qualifier())
+        return (ql + l, r)
 
     def set_basic_type(self, type):
         assert self._basic_type is None
         self._basic_type = type
+
+    @property
+    def category(self):
+        return self._basic_type.category
+
+    @property
+    def type_name(self):
+        return self._basic_type.type_name
+
+    @property
+    def definition(self):
+        return self._basic_type.definition
 
     @property
     def indicator(self):
@@ -1229,12 +1302,8 @@ class ArrayType(IType):
     def indicator(self):
         return self._indicator
 
-    def gen_expr(self):
-        l, r = self.base_type.gen_expr()
-        return (l, ["[{:d}]".format(self.length)] + r)
-
-    def gen_type(self):
-        l, r = self.base_type.gen_type()
+    def _gen_type(self, **_):
+        l, r = self.base_type._gen_type()
         return (l, ["[{:d}]".format(self.length)] + r)
 
     @property
@@ -1268,10 +1337,9 @@ class ArrayType(IType):
 
 
 class PointerType(IType):
-    def __init__(self, indicator):
+    def __init__(self, indicator=None, base_type=None):
         super().__init__()
-        self.base_type = None
-        self.has_pointer = False
+        self.base_type = base_type
         self._indicator = indicator
 
     @property
@@ -1282,23 +1350,33 @@ class PointerType(IType):
         self._size = abi.pointer_size
         self._align = abi.pointer_align
 
-    def gen_expr(self):
-        l, r = self.base_type.gen_expr()
-        ql = list(itertools.chain(*(
-            q.gen_qualifier() for q in self.qualifiers)))
+    def _gen_type(self, unqualified=False):
+        l, r = self.base_type._gen_type()
 
-        if self.has_pointer:
+        if unqualified:
+            ql = []
+        else:
+            ql = list(itertools.chain(*(
+                q.gen_qualifier() for q in self.qualifiers)))
+
+        if self.base_type.has_suffix_declarator:
+            # Needs parentheses to bind the * on the left before the base
+            # type's declarator on the right.
             return (l + ["(*"] + ql, [")"] + r)
         else:
             return (l + ["*"] + ql, r)
 
-    def gen_type(self):
-        l, r = self.base_type.gen_type()
-        return (l + ["*"], r)
-
     @property
     def size(self):
         return self._size
+
+    @property
+    def bitsize(self):
+        return (self.size * 8) - (self.base_type.alignment - 1).bit_length()
+
+    @property
+    def is_signed(self):
+        return False
 
     @property
     def default_alignment(self):
@@ -1392,7 +1470,7 @@ class BitFieldDeclaration(IDeclaration):
 
     def gen_code(self):
         # validate parameters
-        # XXX
+        # FIXME:
         # if self.bitfield_specifier.sign_map is not None and \
         #   not self.is_signed:
         #    raise DSLError("specified sign map for unsigned type",
@@ -1433,8 +1511,8 @@ class BitFieldDeclaration(IDeclaration):
         if not self.is_ignore and self.compound_type is None:
             return
 
-        if self.complex_type:
-            raise DSLError("cannot declare a complex type in a bitfield",
+        if self.compound_type.is_array:
+            raise DSLError("cannot declare an array in a bitfield",
                            self.member_name)
 
         b = self.bitfield_specifier
@@ -1452,11 +1530,25 @@ class BitFieldDeclaration(IDeclaration):
 
             r = self.ranges.alloc_range(width, self)
             if r is None:
-                raise DSLError("unable to allocate bits", self.member_name)
+                raise DSLError(
+                    "unable to allocate {:d} bits from {:s}".format(
+                        width, repr(self.ranges)),
+                    self.member_name)
             assert(r[1] == width)
 
             b.bit_length = width
-            b.mapping.add_bit_range(b.shift, r[0], width)
+            range_shift = b.shift
+            unit_size = self.unit_size
+            bit = r[0]
+            while ((width > 0) and
+                   ((bit // unit_size) != (bit + width - 1) // unit_size)):
+                split_point = ((bit // unit_size) + 1) * unit_size
+                split_width = split_point - bit
+                b.mapping.add_bit_range(range_shift, bit, split_width)
+                bit = split_point
+                width -= split_width
+                range_shift += split_width
+            b.mapping.add_bit_range(range_shift, bit, width)
 
         assert(b.bit_length is not None)
 
@@ -1515,31 +1607,42 @@ class BitFieldDeclaration(IDeclaration):
         return self.compound_type.is_writeonly
 
     @property
-    def is_bitfield(self):
-        return self.compound_type._basic_type.category == 'bitfield'
-
-    @property
-    def field_type(self):
-        # FIXME: find better solution
-        return ' '.join(self.compound_type.gen_type()[0])
-
-    @property
-    def field_type_name(self):
-        return self.compound_type._basic_type.type_name
-
-    @property
-    def field_unit_type(self):
-        if self.is_bitfield:
-            return self.compound_type._basic_type.definition.unit_type
-        else:
-            raise TypeError
+    def is_nested_bitfield(self):
+        return (not self.compound_type.is_pointer and
+                self.compound_type.category == 'bitfield')
 
     @property
     def field_name(self):
         return self._get_member_name(self.prefix)
 
-    def update_ranges(self, ranges):
-        self.bitfield_specifier.update_ranges(self, ranges)
+    def update_ranges(self, ranges, unit_size):
+        if self.compound_type is not None and self.compound_type.is_pointer:
+            # Pointers are automatically shifted left as far as possible,
+            # because their bitsize reflects the low bits being fixed to zero
+            # by the alignment of the target type. They should never have an
+            # explicitly specified shift.
+            assert self.bitfield_specifier.shift == 0
+            b = self.bitfield_specifier
+            ptr_size = self.compound_type.size * 8
+            ptr_bits = self.compound_type.bitsize
+
+            if b.specifier_type is BitFieldSpecifier.RANGE:
+                range_width = b.range_width
+                ptr_bits = range_width
+
+            if ptr_bits < self.compound_type.bitsize:
+                raise DSLError(
+                    "too few bits {:d}, for pointer bitsize {:d}".format(
+                        ptr_bits, self.compound_type.bitsize),
+                    self.member_name)
+            if ptr_bits > ptr_size:
+                raise DSLError(
+                    "too many bits {:d}, for pointer type size {:d}".format(
+                        ptr_bits, ptr_size),
+                    self.member_name)
+            self.bitfield_specifier.set_type_shift(ptr_size - ptr_bits)
+
+        self.bitfield_specifier.update_ranges(self, ranges, unit_size)
 
 
 class StructurePadding:
@@ -1547,8 +1650,8 @@ class StructurePadding:
         super().__init__()
         self._length = length
 
-    def gen_expr(self):
-        return (['uint8_t'], ['[{:d}];\n'.format(self._length)])
+    def gen_declaration(self, identifier):
+        return 'uint8_t {:s}[{:d}]'.format(identifier, self._length)
 
 
 class StructureDefinition(IGenCode, ICustomizedDefinition):
@@ -1652,8 +1755,6 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
                 pass
             elif q.is_atomic or q.is_const:
                 code.extend(q.gen_qualifier())
-            else:
-                raise DSLError("Invalid qualifier for structure", q.name)
         code.append("struct " + self.type_name + ' ' + self.type_name + '_t'
                     ";\n")
 
@@ -1670,7 +1771,7 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         for q in self.qualifiers:
             if q.is_aligned or q.is_atomic or q.is_const:
                 pass
-            elif q.is_packed:
+            elif q.is_packed or q.is_lockable:
                 code.extend(q.gen_qualifier())
             else:
                 raise DSLError("Invalid qualifier for structure", q.name)
@@ -1682,10 +1783,7 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
                 code.extend(q.gen_qualifier())
 
         for member_name, member_type, member_offset in self._layout:
-            l, r = member_type.gen_expr()
-            code.extend(l)
-            code.append(member_name)
-            code.extend(r)
+            code.append(member_type.gen_declaration(member_name) + ';\n')
 
         code.append("} ")
 
@@ -1710,6 +1808,10 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         return ((n, t, p)
                 for n, t, p in self.layout_with_padding
                 if not isinstance(t, StructurePadding))
+
+    @property
+    def is_container(self):
+        return True
 
     @property
     def default_alignment(self):
@@ -1750,11 +1852,24 @@ class ObjectDefinition(StructureDefinition):
         else:
             return ([], [])
 
-    def gen_result_types(self):
+    def gen_forward_decl(self):
         if self.need_export:
-            return super().gen_result_types()
+            return super().gen_forward_decl()
         else:
-            return ()
+            return ([])
+
+    @property
+    def is_container(self):
+        return self.need_export
+
+    def gen_type_name(self, unqualified=False):
+        """
+        Construct a C type name for this type.
+        """
+        if self.need_export:
+            return super().gen_type_name()
+        else:
+            return None
 
 
 class UnionDefinition(IGenCode, ICustomizedDefinition):
@@ -1805,10 +1920,7 @@ class UnionDefinition(IGenCode, ICustomizedDefinition):
                                member_decl.member_name)
             for q in align_qualifiers:
                 code.extend(q.gen_qualifier())
-            l, r = member_type.gen_expr()
-            code.extend(l)
-            code.append(member_name)
-            code.extend(r)
+            code.append(member_type.gen_declaration(member_name) + ';\n')
 
         code.append("} ")
 
@@ -2094,22 +2206,16 @@ class AlternativeDefinition(IDeclarationDefinition):
         extra = []
 
         # generate code now
-        l, r = self.compound_type.gen_expr()
-        code = ["typedef"] + l + [self.type_name] + r + ['\n']
+        decl = self.compound_type.gen_declaration(self.type_name)
+        code = ["typedef ", decl, ';\n']
 
         return (code, extra)
 
-    def gen_result_types(self):
+    def gen_type_name(self, unqualified=False):
         """
-        Generate result and pointer-result wrapper structures for the type.
+        Construct a C type name for this type.
         """
-        if not self.type_name.endswith('_t'):
-            return super().gen_result_types()
-        r = "HYPTYPES_DECLARE_RESULT({:s})\n".format(self.type_name[:-2])
-        rp = "HYPTYPES_DECLARE_RESULT_PTR({:s})\n".format(self.type_name[:-2])
-        if self.compound_type.is_array:
-            return (rp,)
-        return (r, rp)
+        return self.type_name
 
 
 class ConstantDefinition(IDeclarationDefinition):
@@ -2125,25 +2231,35 @@ class ConstantDefinition(IDeclarationDefinition):
         # generate code now
         val = int(self.value)
         if self.compound_type is not None:
-            # FIXME: find better solution
-            l, _ = self.compound_type.gen_type()
-            cast = '({:s})'.format(' '.join(l))
+            t = self.compound_type.gen_type_name(unqualified=True)
+            cast = '({:s})'.format(t)
             suffix = '' if self.compound_type.is_signed else 'U'
             if val < 0 and not self.compound_type.is_signed:
                 val &= ((1 << (self.compound_type.size * 8)) - 1)
+            val = '{:d}{:s} // {:#x}'.format(val, suffix, val)
         else:
+            val = '{:d}'.format(val)
             cast = ''
-            suffix = ''
-        code.append("#define {:s} {:s}{:d}{:s}\n".format(
-            self.type_name, cast, val, suffix))
+        code.append("#define {:s} {:s}{:s}\n".format(
+            self.type_name, cast, val))
 
         return (code, extra)
 
-    def gen_result_types(self):
-        """
-        Generate result and pointer-result wrapper structures for the type.
-        """
-        return ()
+
+class GlobalDefinition(IDeclarationDefinition):
+    def __init__(self, type_name):
+        super().__init__(type_name)
+        self.category = self.GLOBAL
+
+    def gen_code(self):
+        code = []
+        extra = []
+
+        # generate code now
+        t = self.compound_type.gen_type_name(unqualified=True)
+        code.append("extern {:s} {:s};\n\n".format(t, self.type_name))
+
+        return (code, extra)
 
 
 class BitFieldDefinition(IGenCode, ICustomizedDefinition):
@@ -2161,6 +2277,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
         self._ranges = None
         self.const = False
         self._signed = False
+        self._has_set_ops = None
 
     def update_unit_info(self):
         if self.length <= 8:
@@ -2219,6 +2336,16 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
     def all_fields_boolean(self):
         return all(m.compound_type.bitsize == 1 for m in self.fields)
 
+    @property
+    def has_set_ops(self):
+        if self._has_set_ops is None:
+            return self.all_fields_boolean
+        return self._has_set_ops
+
+    @has_set_ops.setter
+    def has_set_ops(self, value):
+        self._has_set_ops = bool(value)
+
     def _gen_definition_code(self):
         """
         Return type definition code if this type needs it.
@@ -2233,9 +2360,12 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
             "type_name": self.type_name,
             "unit_type": self.unit_type,
             "unit_cnt": self.unit_count,
+            "declarations": self._all_declarations,
             "init_values": self.init_values,
             "compare_masks": self.compare_masks,
+            "boolean_masks": self.boolean_masks,
             "all_fields_boolean": self.all_fields_boolean,
+            "has_set_ops": self.has_set_ops,
         }
         fn = os.path.join(__loc__, self.TYPE_TEMPLATE)
         t = Template(file=open(fn, 'r', encoding='utf-8'), searchList=ns)
@@ -2274,6 +2404,11 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
 
     @property
     def compare_masks(self):
+        """
+        Tuple of per-unit masks of non-writeonly fields.
+
+        This is used for generating comparison operations.
+        """
         compare_mask = 0
         for d in self.fields:
             if d.is_writeonly:
@@ -2283,6 +2418,27 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
                 compare_mask |= field_mask << field_map.mapped_bit
         unit_mask = (1 << self.unit_size) - 1
         return tuple((compare_mask >> (i * self.unit_size)) & unit_mask
+                     for i in range(self.unit_count))
+
+    @property
+    def boolean_masks(self):
+        """
+        Tuple of per-unit masks of boolean typed fields.
+
+        This is used for generating bitwise set operations that exclude non-
+        boolean fields, if there are any. This allows the binary set
+        operations to be constructed such that any non-boolean fields from the
+        left hand argument are preserved in the result.
+        """
+        boolean_mask = 0
+        for d in self.fields:
+            if d.compound_type.bitsize != 1:
+                continue
+            for field_map in d.field_maps:
+                field_mask = (1 << field_map.length) - 1
+                boolean_mask |= field_mask << field_map.mapped_bit
+        unit_mask = (1 << self.unit_size) - 1
+        return tuple((boolean_mask >> (i * self.unit_size)) & unit_mask
                      for i in range(self.unit_count))
 
     def gen_code(self):
@@ -2328,7 +2484,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
 
         self._ranges = BitFieldRangeCollector(self.length)
         for d in self._all_declarations:
-            d.update_ranges(self._ranges)
+            d.update_ranges(self._ranges, self.unit_size)
 
         for d in self._all_declarations:
             if d.is_ignore:
@@ -2492,7 +2648,7 @@ class Qualifier:
 
     @property
     def is_writeonly(self):
-        return self.name == 'writeonly'
+        return False
 
     @property
     def is_restrict(self):
@@ -2512,6 +2668,10 @@ class Qualifier:
 
     @property
     def is_contained(self):
+        return False
+
+    @property
+    def is_lockable(self):
         return False
 
     def gen_qualifier(self):
@@ -2581,6 +2741,33 @@ class ContainedQualifier(Qualifier):
 
     @property
     def is_contained(self):
+        return True
+
+
+class WriteonlyQualifier(Qualifier):
+    def gen_qualifier(self):
+        return [""]
+
+    @property
+    def is_writeonly(self):
+        return True
+
+
+class LockableQualifier(Qualifier):
+    def __init__(self, name):
+        super().__init__(name)
+        self.resource_name = None
+
+    def gen_qualifier(self):
+        if self.resource_name is None:
+            raise DSLError(
+                "Only structure and object definitions may be lockable",
+                self.name)
+        return ['__attribute__((capability("{:s}")))'
+                .format(self.resource_name)]
+
+    @property
+    def is_lockable(self):
         return True
 
 

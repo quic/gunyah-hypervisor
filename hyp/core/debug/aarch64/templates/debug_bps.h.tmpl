@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+\#if defined(MODULE_CORE_DEBUG)
 static inline bool
 debug_save_common(debug_common_registers_t *regs,
 		  struct asm_ordering_dummy *order)
@@ -49,3 +50,4 @@ debug_load_common(const debug_common_registers_t *regs,
 
 	register_MDSCR_EL1_write_ordered(regs->mdscr, order);
 }
+\#endif

@@ -14,3 +14,5 @@ handled_event platform_ipi
 event platform_timer_expiry
 
 event platform_pmu_counter_overflow
+
+event platform_watchdog_bark

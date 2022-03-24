@@ -17,6 +17,7 @@
 #include <object.h>
 #include <scheduler.h>
 #include <spinlock.h>
+#include <thread.h>
 #include <vcpu.h>
 
 #include "event_handlers.h"
@@ -32,12 +33,15 @@ hypercall_vcpu_configure(cap_id_t cap_id, vcpu_option_flags_t vcpu_options)
 {
 	error_t ret = OK;
 
-	if (vcpu_option_flags_get_res0_0(&vcpu_options) != 0) {
+	// Check for unknown option flags
+	vcpu_option_flags_t clean = vcpu_option_flags_clean(vcpu_options);
+	if (vcpu_option_flags_raw(vcpu_options) !=
+	    vcpu_option_flags_raw(clean)) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
 
-	cspace_t *	    cspace = cspace_get_self();
+	cspace_t		 *cspace = cspace_get_self();
 	object_type_t	    type;
 	object_ptr_result_t result = cspace_lookup_object_any(
 		cspace, cap_id, CAP_RIGHTS_GENERIC_OBJECT_ACTIVATE, &type);
@@ -47,7 +51,7 @@ hypercall_vcpu_configure(cap_id_t cap_id, vcpu_option_flags_t vcpu_options)
 	}
 
 	if (compiler_unexpected(type != OBJECT_TYPE_THREAD)) {
-		ret = ERROR_ARGUMENT_INVALID;
+		ret = ERROR_CSPACE_WRONG_OBJECT_TYPE;
 		object_put(type, result.r);
 		goto out;
 	}
@@ -78,6 +82,11 @@ hypercall_vcpu_set_affinity(cap_id_t cap_id, cpu_index_t affinity)
 	error_t	  ret;
 	cspace_t *cspace = cspace_get_self();
 
+	if (((1UL << affinity) & PLATFORM_USABLE_CORES) == 0) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
 	thread_ptr_result_t result = cspace_lookup_thread_any(
 		cspace, cap_id, CAP_RIGHTS_THREAD_AFFINITY);
 	if (compiler_unexpected(result.e != OK)) {
@@ -100,9 +109,9 @@ hypercall_vcpu_set_affinity(cap_id_t cap_id, cpu_index_t affinity)
 #else
 	if (state == OBJECT_STATE_INIT) {
 #endif
-		scheduler_lock(vcpu);
+		scheduler_lock_nopreempt(vcpu);
 		ret = scheduler_set_affinity(vcpu, affinity);
-		scheduler_unlock(vcpu);
+		scheduler_unlock_nopreempt(vcpu);
 	} else {
 		ret = ERROR_OBJECT_STATE;
 	}
@@ -166,9 +175,16 @@ hypercall_vcpu_poweroff(cap_id_t cap_id)
 
 	thread_t *vcpu = result.r;
 
-	ret = ERROR_UNIMPLEMENTED;
+	if (compiler_expected(vcpu->kind == THREAD_KIND_VCPU) &&
+	    (vcpu == thread_get_self())) {
+		object_put_thread(vcpu);
+		ret = vcpu_poweroff();
+		// It will not reach here if it succeeded
+	} else {
+		ret = ERROR_ARGUMENT_INVALID;
+		object_put_thread(vcpu);
+	}
 
-	object_put_thread(vcpu);
 out:
 	return ret;
 }
@@ -197,9 +213,9 @@ hypercall_vcpu_set_priority(cap_id_t cap_id, priority_t priority)
 	spinlock_acquire(&vcpu->header.lock);
 	object_state_t state = atomic_load_relaxed(&vcpu->header.state);
 	if (state == OBJECT_STATE_INIT) {
-		scheduler_lock(vcpu);
+		scheduler_lock_nopreempt(vcpu);
 		ret = scheduler_set_priority(vcpu, priority);
-		scheduler_unlock(vcpu);
+		scheduler_unlock_nopreempt(vcpu);
 	} else {
 		ret = ERROR_OBJECT_STATE;
 	}
@@ -234,13 +250,39 @@ hypercall_vcpu_set_timeslice(cap_id_t cap_id, nanoseconds_t timeslice)
 	spinlock_acquire(&vcpu->header.lock);
 	object_state_t state = atomic_load_relaxed(&vcpu->header.state);
 	if (state == OBJECT_STATE_INIT) {
-		scheduler_lock(vcpu);
+		scheduler_lock_nopreempt(vcpu);
 		ret = scheduler_set_timeslice(vcpu, timeslice);
-		scheduler_unlock(vcpu);
+		scheduler_unlock_nopreempt(vcpu);
 	} else {
 		ret = ERROR_OBJECT_STATE;
 	}
 	spinlock_release(&vcpu->header.lock);
+
+	object_put_thread(vcpu);
+out:
+	return ret;
+}
+
+error_t
+hypercall_vcpu_kill(cap_id_t cap_id)
+{
+	error_t	  ret;
+	cspace_t *cspace = cspace_get_self();
+
+	thread_ptr_result_t result = cspace_lookup_thread(
+		cspace, cap_id, CAP_RIGHTS_THREAD_LIFECYCLE);
+	if (compiler_unexpected(result.e != OK)) {
+		ret = result.e;
+		goto out;
+	}
+
+	thread_t *vcpu = result.r;
+
+	if (compiler_expected(vcpu->kind == THREAD_KIND_VCPU)) {
+		ret = thread_kill(vcpu);
+	} else {
+		ret = ERROR_ARGUMENT_INVALID;
+	}
 
 	object_put_thread(vcpu);
 out:

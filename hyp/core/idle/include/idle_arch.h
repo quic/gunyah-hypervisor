@@ -20,4 +20,4 @@
 // This function returns true if a reschedule may be necessary. An
 // implementation that enables interrupts must always return true.
 bool
-idle_arch_wait(void);
+idle_arch_wait(void) REQUIRE_PREEMPT_DISABLED;

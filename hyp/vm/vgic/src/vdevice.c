@@ -6,6 +6,7 @@
 #include <hyptypes.h>
 
 #include <hypconstants.h>
+#include <hypregisters.h>
 
 #include <atomic.h>
 #include <compiler.h>
@@ -22,7 +23,18 @@
 #include <util.h>
 
 #include "event_handlers.h"
+#include "gicv3.h"
 #include "internal.h"
+#include "vgic.h"
+
+// Qualcomm's JEP106 identifier is 0x70, with no continuation bytes. This is
+// used in the virtual GICD_IIDR and GICR_IIDR.
+#define JEP106_IDENTITY	 0x70U
+#define JEP106_CONTCODE	 0x0U
+#define IIDR_IMPLEMENTER ((JEP106_CONTCODE << 8U) | JEP106_IDENTITY)
+#define IIDR_PRODUCTID	 (uint8_t)'G' /* For "Gunyah" */
+#define IIDR_VARIANT	 0U
+#define IIDR_REVISION	 0U
 
 static register_t
 vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
@@ -32,8 +44,8 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 	assert(offset >= base_offset);
 	assert(offset <= base_offset + (31 * sizeof(uint32_t)));
 
-	uint32_t bits = 0U;
-	count_t	 range_base =
+	register_t bits = 0U;
+	count_t	   range_base =
 		(count_t)((offset - base_offset) / sizeof(uint32_t)) * 32U;
 	count_t range_size =
 		util_min(32U, GIC_SPECIAL_INTIDS_BASE - range_base);
@@ -115,13 +127,11 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 			goto next_vcpu;
 		}
 
-		spinlock_acquire(&check_vcpu->vgic_lr_lock);
+		cpu_index_t remote_cpu = vgic_lr_owner_lock(check_vcpu);
 
 		// If it's remotely running, we can't check its LRs. If any of
 		// the range is listed in this VCPU, we're out of luck.
-		if ((thread_get_self() != check_vcpu) &&
-		    cpulocal_index_valid(
-			    atomic_load_relaxed(&check_vcpu->vgic_lr_owner))) {
+		if (cpulocal_index_valid(remote_cpu)) {
 			goto next_vcpu_locked;
 		}
 
@@ -171,13 +181,73 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 		}
 
 	next_vcpu_locked:
-		spinlock_release(&check_vcpu->vgic_lr_lock);
+		vgic_lr_owner_unlock(check_vcpu);
 	next_vcpu:
 		rcu_read_finish();
 	}
 
 out:
-	return (register_t)bits;
+	return bits;
+}
+
+static register_t
+vgic_read_priority(vic_t *vic, thread_t *vcpu, size_t offset,
+		   size_t access_size)
+{
+	register_t bits = 0U;
+
+	_Atomic vgic_delivery_state_t *dstates =
+		vgic_find_dstate(vic, vcpu, (count_t)offset);
+	if (dstates == NULL) {
+		goto out;
+	}
+	assert(compiler_sizeof_object(dstates) >=
+	       access_size * sizeof(*dstates));
+
+	for (count_t i = 0; i < access_size; i++) {
+		vgic_delivery_state_t this_dstate =
+			atomic_load_relaxed(&dstates[i]);
+
+		bits |= (register_t)vgic_delivery_state_get_priority(
+				&this_dstate)
+			<< (i * 8U);
+	}
+
+out:
+	return bits;
+}
+
+static register_t
+vgic_read_config(vic_t *vic, thread_t *vcpu, size_t offset)
+{
+	assert(vic != NULL);
+	assert(vcpu != NULL);
+	assert(offset <= (63 * sizeof(uint32_t)));
+
+	register_t bits	      = 0U;
+	count_t	   range_base = (count_t)(offset / sizeof(uint32_t)) * 16U;
+	count_t	   range_size =
+		util_min(16U, GIC_SPECIAL_INTIDS_BASE - range_base);
+
+	_Atomic vgic_delivery_state_t *dstates =
+		vgic_find_dstate(vic, vcpu, range_base);
+	if (dstates == NULL) {
+		goto out;
+	}
+	assert(compiler_sizeof_object(dstates) >=
+	       range_size * sizeof(*dstates));
+
+	for (count_t i = 0; i < range_size; i++) {
+		vgic_delivery_state_t this_dstate =
+			atomic_load_relaxed(&dstates[i]);
+
+		if (vgic_delivery_state_get_cfg_is_edge(&this_dstate)) {
+			bits |= 2U << (i * 2U);
+		}
+	}
+
+out:
+	return bits;
 }
 
 static bool
@@ -185,15 +255,12 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 {
 	bool	  ret	 = true;
 	thread_t *thread = thread_get_self();
-	vic_t *	  vic	 = thread->vgic_vic;
+	vic_t    *vic	 = thread->vgic_vic;
 
 	if (vic == NULL) {
 		ret = false;
 		goto out;
 	}
-
-	gicd_t *gicd = vic->gicd;
-	assert(gicd != NULL);
 
 	if ((offset == OFS_GICD_SETSPI_NSR) ||
 	    (offset == OFS_GICD_CLRSPI_NSR) || (offset == OFS_GICD_SETSPI_SR) ||
@@ -204,6 +271,40 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 		GICD_STATUSR_set_RWOD(&statusr, true);
 		vgic_gicd_set_statusr(vic, statusr, true);
 		*val = 0U;
+
+	} else if (offset == offsetof(gicd_t, ctlr)) {
+		*val = GICD_CTLR_DS_raw(atomic_load_relaxed(&vic->gicd_ctlr));
+
+	} else if (offset == offsetof(gicd_t, statusr)) {
+		*val = GICD_STATUSR_raw(vic->gicd_statusr);
+
+	} else if (offset == OFS_GICD_TYPER) {
+		GICD_TYPER_t typer = GICD_TYPER_default();
+		GICD_TYPER_set_ITLinesNumber(
+			&typer, util_balign_up(GIC_SPI_NUM, 32U) / 32U);
+		GICD_TYPER_set_MBIS(&typer, true);
+#if VGIC_HAS_EXT_IRQS
+#error Extended IRQs not yet implemented
+#else
+		GICD_TYPER_set_ESPI(&typer, false);
+#endif
+
+		GICD_TYPER_set_IDbits(&typer, VGIC_IDBITS - 1U);
+		GICD_TYPER_set_A3V(&typer, true);
+		GICD_TYPER_set_No1N(&typer, VGIC_HAS_1N == 0U);
+		*val = GICD_TYPER_raw(typer);
+
+	} else if (offset == OFS_GICD_IIDR) {
+		GICD_IIDR_t iidr = GICD_IIDR_default();
+		GICD_IIDR_set_Implementer(&iidr, IIDR_IMPLEMENTER);
+		GICD_IIDR_set_ProductID(&iidr, IIDR_PRODUCTID);
+		GICD_IIDR_set_Variant(&iidr, IIDR_VARIANT);
+		GICD_IIDR_set_Revision(&iidr, IIDR_REVISION);
+		*val = GICD_IIDR_raw(iidr);
+
+	} else if (offset == OFS_GICD_TYPER2) {
+		GICD_TYPER2_t typer2 = GICD_TYPER2_default();
+		*val = GICD_TYPER2_raw(typer2);
 
 	} else if (offset == OFS_GICD_PIDR2) {
 		*val = VGIC_PIDR2;
@@ -243,34 +344,20 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ICACTIVER(0U),
 					 offset);
 
-	} else if (((offset >= OFS_GICD_CTLR) && (offset <= OFS_GICD_IIDR)) ||
-		   (offset == OFS_GICD_STATUSR) ||
-		   ((offset >= OFS_GICD_IPRIORITYR(0U)) &&
-		    (offset <= OFS_GICD_SPENDSGIR(15U))) ||
-		   ((offset >= OFS_GICD_IROUTER(0U)) &&
-		    (offset <= OFS_GICD_IROUTER(GIC_SPI_NUM - 1U)))) {
-		// We have called gicd_access_allowed() before getting here so
-		// we know this particular offset can be accessed using this
-		// particular access_size.
-		switch (access_size) {
-		case sizeof(uint64_t):
-			*val = *(uint64_t *)((uintptr_t)gicd + offset);
-			break;
-		case sizeof(uint32_t):
-			*val = *(uint32_t *)((uintptr_t)gicd + offset);
-			break;
-		case sizeof(uint16_t):
-			*val = *(uint16_t *)((uintptr_t)gicd + offset);
-			break;
-		case sizeof(uint8_t):
-			*val = *(uint8_t *)((uintptr_t)gicd + offset);
-			break;
-		default:
-			// We should never get here as gicd_access_allowed()
-			// would already have caught invalid access sizes. The
-			// default case is to keep MISRA happy.
-			*val = 0U;
-		}
+	} else if (util_offset_in_range(offset, gicd_t, ipriorityr)) {
+		*val = vgic_read_priority(vic, thread,
+					  offset - offsetof(gicd_t, ipriorityr),
+					  access_size);
+
+	} else if (util_offset_in_range(offset, gicd_t, icfgr)) {
+		*val = vgic_read_config(vic, thread,
+					offset - offsetof(gicd_t, icfgr));
+
+	} else if (util_offset_in_range(offset, gicd_t, itargetsr) ||
+		   util_offset_in_range(offset, gicd_t, igrpmodr) ||
+		   util_offset_in_range(offset, gicd_t, nsacr)) {
+		// RAZ ranges
+		*val = 0U;
 
 	} else {
 		// Unknown register
@@ -290,7 +377,7 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 {
 	bool	  ret	 = true;
 	thread_t *thread = thread_get_self();
-	vic_t *	  vic	 = thread->vgic_vic;
+	vic_t    *vic	 = thread->vgic_vic;
 
 	if (vic == NULL) {
 		ret = false;
@@ -299,14 +386,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 	VGIC_TRACE(GICD_WRITE, vic, NULL, "GICD_WRITE reg = {:x}, val = {:#x}",
 		   offset, val);
 
-	gicd_t *gicd = vic->gicd;
-	assert(gicd != NULL);
-
 	if (offset == OFS_GICD_CTLR) {
 		vgic_gicd_set_control(vic, GICD_CTLR_DS_cast((uint32_t)val));
 
 	} else if ((offset == OFS_GICD_TYPER) || (offset == OFS_GICD_IIDR) ||
-		   (offset == OFS_GICD_PIDR2)) {
+		   (offset == OFS_GICD_PIDR2) || (offset == OFS_GICD_TYPER2)) {
 		// RO registers
 		GICD_STATUSR_t statusr;
 		GICD_STATUSR_init(&statusr);
@@ -539,6 +623,18 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 					 GICD_IROUTER_get_IRM(&irouter));
 
 	}
+#if GICV3_HAS_GICD_ICLAR
+	else if (offset == OFS_GICD_SETCLASSR) {
+		GICD_SETCLASSR_t setclassr = GICD_SETCLASSR_cast((uint32_t)val);
+		virq_t		 virq	   = GICD_SETCLASSR_get_SPI(&setclassr);
+		if (vgic_irq_is_spi(virq)) {
+			vgic_gicd_set_irq_classes(
+				vic, virq,
+				GICD_SETCLASSR_get_Class0(&setclassr),
+				GICD_SETCLASSR_get_Class1(&setclassr));
+		}
+	}
+#endif
 #if VGIC_HAS_EXT_IRQS
 #error extended SPI support not implemented
 #endif
@@ -621,9 +717,7 @@ static bool
 gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		  size_t offset, register_t *val, size_t access_size)
 {
-	bool		 ret	  = true;
-	gicr_rd_base_t * gicr_rd  = gicr_vcpu->vgic_gicr_rd;
-	gicr_sgi_base_t *gicr_sgi = gicr_vcpu->vgic_gicr_sgi;
+	bool ret = true;
 
 	(void)vic;
 
@@ -657,6 +751,7 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 				(atomic_load_relaxed(
 					 &vic->gicr_vcpus[gicr_num + 1U]) ==
 				 NULL));
+		GICR_TYPER_set_Processor_Num(&typer, gicr_num);
 		*val = GICR_TYPER_raw(typer);
 
 		if (offset != OFS_GICR_RD_TYPER) {
@@ -665,38 +760,42 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 			*val >>= 32U;
 		}
 
+	} else if (offset == OFS_GICR_RD_IIDR) {
+		GICR_IIDR_t iidr = GICR_IIDR_default();
+		GICR_IIDR_set_Implementer(&iidr, IIDR_IMPLEMENTER);
+		GICR_IIDR_set_ProductID(&iidr, IIDR_PRODUCTID);
+		GICR_IIDR_set_Variant(&iidr, IIDR_VARIANT);
+		GICR_IIDR_set_Revision(&iidr, IIDR_REVISION);
+		*val = GICR_IIDR_raw(iidr);
+
 	} else if (offset == OFS_GICR_PIDR2) {
 		*val = VGIC_PIDR2;
 
-	} else if (((offset >= OFS_GICR_RD_CTLR) &&
-		    (offset <= OFS_GICR_RD_WAKER)) ||
-		   (offset == OFS_GICR_RD_PROPBASER) ||
-		   (offset <= OFS_GICR_RD_PENDBASER) ||
-		   (offset <= OFS_GICR_RD_SYNCR)) {
-		offset &= GICR_PAGE_MASK;
+	} else if (offset == OFS_GICR_RD_CTLR) {
+		*val = GICR_CTLR_raw(vgic_gicr_rd_get_control(vic, gicr_vcpu));
 
-		// We have called gicr_access_allowed() before getting here so
-		// we know this particular offset can be accessed using this
-		// particular access_size.
-		switch (access_size) {
-		case sizeof(uint64_t):
-			*val = *(uint64_t *)((uintptr_t)gicr_rd + offset);
-			break;
-		case sizeof(uint32_t):
-			*val = *(uint32_t *)((uintptr_t)gicr_rd + offset);
-			break;
-		case sizeof(uint16_t):
-			*val = *(uint16_t *)((uintptr_t)gicr_rd + offset);
-			break;
-		case sizeof(uint8_t):
-			*val = *(uint8_t *)((uintptr_t)gicr_rd + offset);
-			break;
-		default:
-			// We should never get here as gicr_access_allowed()
-			// would already have caught invalid access sizes. The
-			// default case is to keep MISRA happy.
-			*val = 0U;
-		}
+	} else if (offset == OFS_GICR_RD_STATUSR) {
+		*val = GICR_STATUSR_raw(
+			atomic_load_relaxed(&gicr_vcpu->vgic_gicr_rd_statusr));
+
+	} else if (offset == OFS_GICR_RD_WAKER) {
+		GICR_WAKER_t gicr_waker = GICR_WAKER_default();
+		GICR_WAKER_set_ProcessorSleep(
+			&gicr_waker,
+			atomic_load_relaxed(&gicr_vcpu->vgic_sleep));
+		GICR_WAKER_set_ChildrenAsleep(
+			&gicr_waker, vgic_gicr_rd_check_sleep(gicr_vcpu));
+
+		*val = GICR_WAKER_raw(gicr_waker);
+
+	} else if (offset == OFS_GICR_RD_PROPBASER) {
+		*val = 0U;
+
+	} else if (offset == OFS_GICR_RD_PENDBASER) {
+		*val = 0U;
+
+	} else if (offset == OFS_GICR_RD_SYNCR) {
+		*val = 0U;
 
 	} else if ((offset == OFS_GICR_SGI_IGROUPR0) ||
 		   (offset == OFS_GICR_SGI_ISENABLER0) ||
@@ -708,32 +807,19 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		*val = vgic_read_irqbits(vic, gicr_vcpu, offset - OFS_GICR_SGI,
 					 offset - OFS_GICR_SGI);
 
-	} else if ((offset >= OFS_GICR_SGI_IPRIORITYR(0U)) &&
-		   (offset <= OFS_GICR_SGI_NSACR)) {
-		offset &= GICR_PAGE_MASK;
+	} else if ((offset == OFS_GICR_SGI_IGRPMODR0) ||
+		   (offset == OFS_GICR_SGI_NSACR)) {
+		// RAZ/WI because GICD_CTLR.DS==1
+		*val = 0U;
 
-		// We have called gicr_access_allowed() before getting here so
-		// we know this particular offset can be accessed using this
-		// particular access_size.
-		switch (access_size) {
-		case sizeof(uint64_t):
-			*val = *(uint64_t *)((uintptr_t)gicr_sgi + offset);
-			break;
-		case sizeof(uint32_t):
-			*val = *(uint32_t *)((uintptr_t)gicr_sgi + offset);
-			break;
-		case sizeof(uint16_t):
-			*val = *(uint16_t *)((uintptr_t)gicr_sgi + offset);
-			break;
-		case sizeof(uint8_t):
-			*val = *(uint8_t *)((uintptr_t)gicr_sgi + offset);
-			break;
-		default:
-			// We should never get here as gicr_access_allowed()
-			// would already have caught invalid access sizes. The
-			// default case is to keep MISRA happy.
-			*val = 0U;
-		}
+	} else if (util_offset_in_range(offset, gicr_t, sgi.ipriorityr)) {
+		*val = vgic_read_priority(
+			vic, gicr_vcpu,
+			offset - offsetof(gicr_t, sgi.ipriorityr), access_size);
+
+	} else if (util_offset_in_range(offset, gicr_t, sgi.icfgr)) {
+		*val = vgic_read_config(vic, gicr_vcpu,
+					offset - offsetof(gicr_t, sgi.icfgr));
 
 	} else {
 		// Unknown register
@@ -756,13 +842,7 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 	VGIC_TRACE(GICR_WRITE, vic, gicr_vcpu,
 		   "GICR_WRITE reg = {:x}, val = {:#x}", offset, val);
 
-	if (access_size == sizeof(uint64_t)) {
-		// All writable 64-bit registers deal with LPIs which we don't
-		// support, WI
-#if VGIC_HAS_LPI != 0
-#error LPI support not implemented
-#endif
-	} else if (offset == OFS_GICR_RD_CTLR) {
+	if (offset == OFS_GICR_RD_CTLR) {
 		vgic_gicr_rd_set_control(vic, gicr_vcpu,
 					 GICR_CTLR_cast((uint32_t)val));
 
@@ -781,18 +861,29 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 		vgic_gicr_rd_set_statusr(gicr_vcpu, statusr, false);
 
 	} else if (offset == OFS_GICR_RD_WAKER) {
-		vgic_gicr_rd_set_wake(vic, gicr_vcpu,
-				      GICR_WAKER_get_ProcessorSleep(
-					      &GICR_WAKER_cast((uint32_t)val)));
+		bool new_sleep = GICR_WAKER_get_ProcessorSleep(
+			&GICR_WAKER_cast((uint32_t)val));
+#if VGIC_HAS_1N
+		bool old_sleep = atomic_exchange_explicit(
+			&gicr_vcpu->vgic_sleep, new_sleep,
+			memory_order_relaxed);
+		if (old_sleep && !new_sleep) {
+			// Leaving sleep, so clear any pending 1-of-N wakeup.
+			scheduler_lock(gicr_vcpu);
+			gicr_vcpu->vgic_wakeup_1n = false;
+			scheduler_unlock(gicr_vcpu);
+		}
+#else
+		atomic_store_relaxed(&gicr_vcpu->vgic_sleep, new_sleep);
+#endif
 
 	} else if ((offset == OFS_GICR_RD_SETLPIR) ||
-		   (offset == OFS_GICR_RD_CLRLPIR) ||
-		   (offset == OFS_GICR_RD_INVLPIR) ||
-		   (offset == OFS_GICR_RD_INVALLR)) {
-		// WI
-#if VGIC_HAS_LPI != 0
-#error LPI support not implemented
-#endif
+		   (offset == OFS_GICR_RD_CLRLPIR)) {
+		// Direct LPIs not implemented, WI
+		//
+		// Implementing these is strictly required by the GICv3 spec
+		// when the VCPU has LPI support but no ITS. We define that to
+		// be a configuration error in VM provisioning.
 
 	} else if (offset == OFS_GICR_SGI_IGROUPR0) {
 		// 32-bit register, 32-bit access only
@@ -853,11 +944,11 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 			shifted_val >>= 8U;
 		}
 
-	} else if (offset == OFS_GICR_SGI_ICFGR0) {
+	} else if (offset == OFS_GICR_SGI_ICFGR(0U)) {
 		// All interrupts in this register are SGIs, which are always
 		// edge-triggered, so it is entirely WI
 
-	} else if (offset == OFS_GICR_SGI_ICFGR1) {
+	} else if (offset == OFS_GICR_SGI_ICFGR(1U)) {
 		// 32-bit register, 32-bit access only
 		for (index_t i = 0U; i < GIC_PPI_NUM; i++) {
 			vgic_gicr_sgi_set_ppi_config(
@@ -947,7 +1038,7 @@ vgic_handle_vdevice_access(vmaddr_t ipa, size_t access_size, register_t *value,
 				  (PLATFORM_MAX_CORES << GICR_STRIDE_SHIFT))) {
 		index_t gicr_num = (index_t)((ipa - PLATFORM_GICR_BASE) >>
 					     GICR_STRIDE_SHIFT);
-		vic_t * vic	 = thread_get_self()->vgic_vic;
+		vic_t  *vic	 = thread_get_self()->vgic_vic;
 		if (vic == NULL) {
 			ret = false;
 		} else if (gicr_num >= vic->gicr_count) {

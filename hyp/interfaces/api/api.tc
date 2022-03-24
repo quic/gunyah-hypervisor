@@ -2,20 +2,24 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#define HYP_VARIANT_GUNYAH 0x48
+#define HYP_VARIANT_QUALCOMM 0x51
+
 define hyp_variant public enumeration {
 	UNKNOWN		= 0;
-	GUNYAH		= 0x48;
+	GUNYAH		= HYP_VARIANT_GUNYAH;
+	QUALCOMM	= HYP_VARIANT_QUALCOMM;
 };
 
-define hyp_api_info public bitfield<64, const> {
+define hyp_api_info public bitfield<64>(const) {
 	13:0		api_version	uint16 = 1;
 	14		big_endian	bool = !ARCH_ENDIAN_LITTLE;
 	15		is_64bit	bool = ARCH_IS_64BIT;
 	55:16		unknown=0;
-	63:56		variant		enumeration hyp_variant = 0x48;
+	63:56		variant		enumeration hyp_variant = HYP_VARIANT_QUALCOMM;
 };
 
-define hyp_api_flags0 public bitfield<64, const> {
+define hyp_api_flags0 public bitfield<64>(const) {
 	0		partition_cspace bool = 0;
 	1		doorbell	bool = 0;
 	2		msgqueue	bool = 0;
@@ -24,16 +28,18 @@ define hyp_api_flags0 public bitfield<64, const> {
 	5		vcpu		bool = 0;
 	6		memextent	bool = 0;
 	7		trace_ctrl	bool = 0;
-	23:16		hyp_variant_reserved uint8 = 0;
-	31:28	scheduler	enumeration scheduler_variant = SCHEDULER_VARIANT;
-	others	unknown=0;
+	8		watchdog	bool = 0;
+	9		virtio_mmio	bool = 0;
+	10		prng		bool = 0;
+	31:28		scheduler	enumeration scheduler_variant = SCHEDULER_VARIANT;
+	63:32,27:16,15:11 res0_0	uint64 = 0;
 };
 
-define hyp_api_flags1 public bitfield<64, const> {
+define hyp_api_flags1 public bitfield<64>(const) {
 	63:0		res0_0		uint64 = 0;
 };
 
-define hyp_api_flags2 public bitfield<64, const> {
+define hyp_api_flags2 public bitfield<64>(const) {
 	63:0		res0_0		uint64 = 0;
 };
 

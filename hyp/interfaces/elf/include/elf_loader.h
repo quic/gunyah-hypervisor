@@ -4,7 +4,7 @@
 
 // Read the ELF header its program headers and return true if valid
 bool
-elf_valid(void *elf_file);
+elf_valid(void *elf_file, size_t max_size);
 
 // Return ELF's entry point
 Elf_Addr

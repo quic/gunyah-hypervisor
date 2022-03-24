@@ -39,9 +39,9 @@ scheduler_trivial_handle_object_create_thread(thread_create_t thread_create)
 
 	spinlock_init(&thread->scheduler_lock);
 
-	cpu_index_t cpu = thread_create.scheduler_affinity_valid
-				  ? thread_create.scheduler_affinity
-				  : cpulocal_get_index();
+	cpu_index_t cpu		   = thread_create.scheduler_affinity_valid
+					     ? thread_create.scheduler_affinity
+					     : cpulocal_get_index();
 	thread->scheduler_affinity = cpu;
 
 	return OK;
@@ -135,9 +135,10 @@ scheduler_schedule(void)
 
 		rcu_read_finish();
 
+		bool can_idle = true;
+		trigger_scheduler_selected_thread_event(target, &can_idle);
+
 		if (target != thread_get_self()) {
-			assert(target->state != THREAD_STATE_INIT);
-			assert(target->state != THREAD_STATE_EXITED);
 			// The reference we took above will be released when the
 			// thread stops running.
 			error_t err = thread_switch_to(target);
@@ -313,8 +314,8 @@ out:
 }
 
 bool
-scheduler_current_can_idle(void)
+scheduler_will_preempt_current(thread_t *thread)
 {
 	assert_preempt_disabled();
-	return true;
+	return false;
 }

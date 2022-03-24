@@ -39,7 +39,7 @@ define msgqueue_send hypercall {
 	msgqueue	input type cap_id_t;
 	size		input size;
 	data		input type user_ptr_t;
-	send_flags	input uregister;
+	send_flags	input bitfield msgqueue_send_flags;
 	_res0		input uregister;
 	error		output enumeration error;
 	not_full	output bool;

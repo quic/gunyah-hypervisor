@@ -32,4 +32,10 @@ extend boot_env_data structure {
 	ipa_offset	uintptr;
 	app_ipa		type vmaddr_t;
 	runtime_ipa	type vmaddr_t;
+
+	usable_cores	uint64;
+	boot_core	type cpu_index_t;
+
+	app_heap_ipa	type vmaddr_t;
+	app_heap_size	size;
 };

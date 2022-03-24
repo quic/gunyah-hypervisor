@@ -113,7 +113,7 @@ vector vector_guest64_serror
 vector_end vector_guest64_serror
 
 
-#if defined(CONFIG_AARCH64_32BIT_EL1)
+#if ARCH_AARCH64_32BIT_EL1
 vector vector_guest32_sync
 	disable_phys_access
 	// First check whether this is a hypercall or some other exception, as
@@ -132,18 +132,15 @@ vector vector_guest32_sync
 vector_end vector_guest32_sync
 
 vector vector_guest32_irq
-	save_kernel_context_vcpu_zero_0_13
-	save_guest_context_vcpu_zero_14_29
-
-	bl	vcpu_interrupt_dispatch
-	b	vcpu_exception_return
+	save_kernel_context_vcpu_zero_0_13_irq
+	b	irq_32_entry
 vector_end vector_guest32_irq
 
 vector vector_guest32_fiq
 	// In current implementations, all FIQs should go directly to TrustZone
 	// and thus if we ever get one, panic.
 	save_kernel_context_full
-
+	kernel_pauth_entry
 	panic	"32-bit guest vectors"
 vector_end vector_guest32_fiq
 
@@ -153,51 +150,70 @@ vector vector_guest32_serror
 	bl	exception_32_entry
 vector_end vector_guest32_serror
 
-#else	// defined(CONFIG_AARCH64_32BIT_EL1)
+#else // !ARCH_AARCH64_32BIT_EL1
 
 // In theory we should never get to any of these
 vector vector_guest32_sync
 	save_kernel_context_full
-	panic	"32-bit guest vectors"
+	bl vector_guest32_panic
 vector_end vector_guest32_sync
 
 vector vector_guest32_irq
 	save_kernel_context_full
-	panic	"32-bit guest vectors"
+	bl vector_guest32_panic
 vector_end vector_guest32_irq
 
 vector vector_guest32_fiq
 	save_kernel_context_full
-	panic	"32-bit guest vectors"
+	bl vector_guest32_panic
 vector_end vector_guest32_fiq
 
 vector vector_guest32_serror
 	save_kernel_context_full
-	panic	"32-bit guest vectors"
+	bl vector_guest32_panic
 vector_end vector_guest32_serror
 
-#endif // defined(CONFIG_AARCH64_32BIT_EL1)
+function vector_guest32_panic
+	kernel_pauth_entry x0, x1, x2
+	panic	"32-bit guest vectors"
+function_end vector_guest32_panic
+
+#endif
 
 
+// Entry conditions:
+//      x0..x7          - call arguments
+//      x18             - hypercall number
+//      x8,x12..x23     - zeroed
+//      x9, x10, x11    - not zeroed/overwritten yet
+//      x24..x29        - need to be zeroed
 function hypercall_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	mrs	x10, elr_el2
-	clear_guest_registers "24,25"
+	clear_guest_registers "24"
 	mrs	x11, spsr_el2
-	clear_guest_registers "26,27"
 
-	// Compute the hypercall table handler address in x9.
+	vcpu_pauth_entry x9, x25, x26, x27, x28, x29
+	clear_guest_registers "25,26,27"
+
+	// Get the hypercall table handler base address.
 	adr	x9, hypercall_table
 
 	// Save ELR_EL2 and SPSR_EL2.
 	stp	x10, x11, [sp, #-16]!
 
+	// Compute hypercall jump table index.
+#if defined(ARCH_ARM_8_5_BTI)
+	add	x9, x9, x18, lsl 4
+#else
 	add	x9, x9, x18, lsl 3
+#endif
 	clear_guest_registers "28,29"
 
 	// ELR_EL2, SPSR_EL2 are also VM controlled values, zero them as well.
 	clear_guest_registers "10,11"
 
-	// Jump to the hypercall table handler.
+	// Jump to the hypercall table entry. The unused HVC argument
+	// registers will be cleared before the handler is called.
 	br	x9
 function_end hypercall_64_entry
 
@@ -216,12 +232,19 @@ function irq_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	b	vcpu_exception_return
 function_end irq_64_entry
 
-#if defined(CONFIG_AARCH64_32BIT_EL1)
-function exception_32_entry local
+#if ARCH_AARCH64_32BIT_EL1
+function exception_32_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	save_guest_exception_context_zero_1_29
 
 	mov	x0, 0		// 0: AArch32
 	bl	vcpu_exception_dispatch
 	b	vcpu_exception_return
 function_end exception_32_entry
-#endif // defined(CONFIG_AARCH64_32BIT_EL1)
+
+function irq_32_entry local, align=(1 << CPU_L1D_LINE_BITS)
+	save_guest_context_vcpu_zero_14_29_irq
+
+	bl	vcpu_interrupt_dispatch
+	b	vcpu_exception_return
+function_end irq_32_entry
+#endif

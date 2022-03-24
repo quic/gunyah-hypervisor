@@ -9,5 +9,13 @@ subscribe boot_cold_init()
 subscribe object_create_hwirq
 	priority last
 
+subscribe object_activate_hwirq
+	// Run last so the IRQ is not inserted in the global table prematurely
+	priority last
+
 subscribe object_deactivate_hwirq
 	priority first
+
+#if IRQ_HAS_MSI
+subscribe object_cleanup_hwirq(hwirq)
+#endif

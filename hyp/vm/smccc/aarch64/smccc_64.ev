@@ -5,5 +5,17 @@
 module smccc
 
 subscribe vcpu_trap_smc64(iss)
+	exclude_preempt_disabled
 
 subscribe vcpu_trap_hvc64(iss)
+	exclude_preempt_disabled
+
+subscribe vcpu_trap_smc64
+	handler smccc_handle_vcpu_trap_default()
+	priority last
+	exclude_preempt_disabled
+
+subscribe vcpu_trap_hvc64
+	handler smccc_handle_vcpu_trap_default()
+	priority last
+	exclude_preempt_disabled

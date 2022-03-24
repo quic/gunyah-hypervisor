@@ -56,3 +56,21 @@ gicv3_write_ich_aprs(const uint32_t *ap0rs, const uint32_t *ap1rs) {
 #end for
 #end for
 }
+
+#for group in (0, 1)
+static inline void
+gicv3_ich_ap${group}r_clear_highest(void) {
+	uint32_t apr;
+#for i in range(0, $CPU_GICH_APR_COUNT)
+	apr = register_ICH_AP${group}R${i}_EL2_read();
+        if (apr != 0U) {
+		index_t bit = compiler_ctz(apr);
+		apr &= ~util_bit(bit);
+		register_ICH_AP${group}R${i}_EL2_write(apr);
+		goto out;
+        }
+#end for
+out:
+	return;
+}
+#end for

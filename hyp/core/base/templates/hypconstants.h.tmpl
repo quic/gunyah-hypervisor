@@ -6,7 +6,7 @@
 
 // Struct and object member offsets
 
-#def print_offsets(prefix, base, d, categories)
+#def print_offsets(prefix, base, d)
 #for $name, $type, $ofs in $d.layout
 #set upper_name = $name.upper()
 #set offset = base + ofs
@@ -16,22 +16,22 @@
 \#define ${prefix}_${upper_name}(n) ($offset + ($type.base_type.size * (n)))
 #end if
 #if $type != $type.basic_type
-#if $type.basic_type.category in categories
-#set d = $type.basic_type.definition
+#set d = getattr($type.basic_type, 'definition', None)
+#if $d and $d.is_container
 #set p = prefix + '_' + $name.upper()
-$print_offsets($p, $offset, $d, categories)
+$print_offsets($p, $offset, $d)
 #end if
 #end if
 #end for
 #end def
 
 #for $d in $definitions
-#if $d.category in ("structure", "object")
+#if $d.is_container
 #set typename = $d.type_name.upper()
 \#define ${typename}_SIZE $d.size
 \#define ${typename}_ALIGN $d.alignment
 #set prefix = 'OFS_' + typename
-$print_offsets(prefix, 0, d, ('object', 'structure'))
+$print_offsets(prefix, 0, d)
 #end if
 
 #end for
@@ -60,14 +60,15 @@ $print_offsets(prefix, 0, d, ('object', 'structure'))
 #if $d.category == "bitfield"
 #set typename = $d.type_name.upper()
 #for dec in d.fields
-#if $dec.field_name != "unknown" and $len($dec.field_maps) == 1
 #set map = $dec.field_maps[0]
 #set field_name = $dec.field_name.upper()
+#if $dec.field_name != "unknown" and $len($dec.field_maps) == 1
 #set $mask = ((1 << $map.length) - 1) << $map.mapped_bit
 \#define ${typename}_${field_name}_SHIFT (${map.mapped_bit}U)
 \#define ${typename}_${field_name}_BITS (${map.length}U)
 \#define ${typename}_${field_name}_MASK (${hex(mask)}U)
 #end if
+\#define ${typename}_${field_name}_PRESHIFT (${map.field_bit}U)
 #end for
 #end if
 

@@ -15,6 +15,13 @@ import inspect
 import pickle
 
 
+if __name__ == '__main__' and __package__ is None:
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from utils import genfile
+else:
+    from ..utils import genfile
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,19 +41,18 @@ def main():
                            help="Template file used to generate output")
     mode_args.add_argument('--dump-tree', action='store_true',
                            help="Print the parse tree and exit")
-    mode_args.add_argument('-P', '--dump-pickle', type=argparse.FileType('wb'),
+    mode_args.add_argument('-P', '--dump-pickle',
+                           type=genfile.GenFileType('wb'),
                            help="Dump the IR to a Python pickle")
 
     args.add_argument('-m', '--module', default=None,
                       help="Constrain output to a particular module")
     args.add_argument('-I', '--extra-include', action='append', default=[],
                       help="Extra headers to include")
-    args.add_argument('-d', "--deps",
-                      type=argparse.FileType('w', encoding='utf-8'),
+    args.add_argument('-d', "--deps", type=genfile.GenFileType('w'),
                       help="Write implicit dependencies to Makefile",
                       default=None)
-    args.add_argument('-o', '--output',
-                      type=argparse.FileType('w', encoding='utf-8'),
+    args.add_argument('-o', '--output', type=genfile.GenFileType('w'),
                       default=sys.stdout, help="Write output to file")
     args.add_argument("-f", "--formatter",
                       help="specify clang-format to format the code")

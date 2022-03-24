@@ -476,7 +476,7 @@ allocator_allocate_object(allocator_t *allocator, size_t size, size_t alignment)
 	// TODO: Update allocation total (increment +1)
 
 #if defined(ALLOCATOR_DEBUG)
-	char * data  = (char *)ret.r;
+	char  *data  = (char *)ret.r;
 	size_t start = 0UL;
 	size_t end   = size;
 
@@ -649,13 +649,18 @@ deallocate_block(allocator_node_t **head, void *object, size_t size)
 		next	 = next->next;
 	}
 
-	object_location	  = (uint64_t)object;
-	next_location	  = (uint64_t)next;
-	previous_location = (uint64_t)previous;
+	object_location = (uint64_t)object;
+	next_location	= (uint64_t)next;
+	if (previous != NULL) {
+		previous_location = (uint64_t)previous;
+	} else {
+		previous_location = (uint64_t)~0UL;
+	}
 
 	assert((object_location <= next_location) || (next_location == 0UL));
 
-	if ((previous_location + previous->size) == object_location) {
+	if ((previous != NULL) &&
+	    (previous_location + previous->size) == object_location) {
 		// Combine the free memory into the previous node.
 		assert(!util_add_overflows(previous->size, size));
 		previous->size += size;
@@ -667,7 +672,8 @@ deallocate_block(allocator_node_t **head, void *object, size_t size)
 			freed_node->size += next->size;
 			freed_node->next = next->next;
 		}
-	} else if (object_location < previous_location) {
+	} else if ((previous == NULL) ||
+		   (object_location < previous_location)) {
 		// Create node as head
 		freed_node	 = object;
 		freed_node->size = size;
@@ -682,6 +688,8 @@ deallocate_block(allocator_node_t **head, void *object, size_t size)
 			freed_node->next = previous->next;
 		}
 	} else {
+		assert(previous != NULL);
+
 		// Create a new header in the object.
 		freed_node	 = object;
 		freed_node->size = size;

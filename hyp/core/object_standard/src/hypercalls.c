@@ -18,7 +18,7 @@ error_t
 hypercall_object_activate(cap_id_t cap)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -38,7 +38,7 @@ error_t
 hypercall_object_activate_from(cap_id_t cspace_cap, cap_id_t cap)
 {
 	error_t	      err;
-	cspace_t *    cspace = cspace_get_self();
+	cspace_t	 *cspace = cspace_get_self();
 	object_type_t type;
 
 	cspace_ptr_result_t c;

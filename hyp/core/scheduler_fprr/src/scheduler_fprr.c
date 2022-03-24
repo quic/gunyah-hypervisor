@@ -24,6 +24,9 @@
 #include <thread.h>
 #include <timer_queue.h>
 #include <trace.h>
+#if defined(INTERFACE_VCPU)
+#include <vcpu.h>
+#endif
 
 #include <events/scheduler.h>
 
@@ -34,6 +37,9 @@
 CPULOCAL_DECLARE_STATIC(scheduler_t, scheduler);
 CPULOCAL_DECLARE_STATIC(thread_t *_Atomic, primary_thread);
 CPULOCAL_DECLARE_STATIC(thread_t *, running_thread);
+CPULOCAL_DECLARE_STATIC(thread_t *, yielded_from);
+
+static BITMAP_DECLARE(SCHEDULER_NUM_BLOCK_BITS, non_killable_block_mask);
 
 static_assert((SCHEDULER_DEFAULT_PRIORITY >= SCHEDULER_MIN_PRIORITY) &&
 		      (SCHEDULER_DEFAULT_PRIORITY <= SCHEDULER_MAX_PRIORITY),
@@ -41,22 +47,30 @@ static_assert((SCHEDULER_DEFAULT_PRIORITY >= SCHEDULER_MIN_PRIORITY) &&
 static_assert((SCHEDULER_DEFAULT_TIMESLICE <= SCHEDULER_MAX_TIMESLICE) &&
 		      (SCHEDULER_DEFAULT_TIMESLICE >= SCHEDULER_MIN_TIMESLICE),
 	      "Default timeslice is invalid.");
+static_assert(SCHEDULER_BLOCK__MAX < BITMAP_WORD_BITS,
+	      "Scheduler block flags must fit in a register");
 
 static ticks_t
 get_target_timeout(thread_t *target)
 {
+	assert(target != NULL);
+
 	return target->scheduler_schedtime + target->scheduler_active_timeslice;
 }
 
 static void
 reset_sched_params(thread_t *target)
 {
+	assert(target != NULL);
+
 	target->scheduler_active_timeslice = target->scheduler_base_timeslice;
 }
 
 static void
 set_yield_to(thread_t *target, thread_t *yield_to)
 {
+	assert(target != NULL);
+	assert(yield_to != NULL);
 	assert(target != yield_to);
 	assert(target->scheduler_yield_to == NULL);
 
@@ -66,10 +80,19 @@ set_yield_to(thread_t *target, thread_t *yield_to)
 static void
 discard_yield_to(thread_t *target)
 {
+	assert(target != NULL);
 	assert(target->scheduler_yield_to != NULL);
 
 	object_put_thread(target->scheduler_yield_to);
 	target->scheduler_yield_to = NULL;
+}
+
+static void
+end_directed_yield(thread_t *target)
+{
+	assert(target != NULL);
+
+	atomic_store_relaxed(&target->scheduler_yielding, false);
 }
 
 static bool
@@ -82,9 +105,7 @@ update_timeslice(thread_t *target, ticks_t curticks)
 
 	if (expired) {
 		reset_sched_params(target);
-		if (target->scheduler_yield_to != NULL) {
-			discard_yield_to(target);
-		}
+		end_directed_yield(target);
 	} else {
 		// Account for the time the target has used.
 		target->scheduler_active_timeslice = timeout - curticks;
@@ -94,9 +115,11 @@ update_timeslice(thread_t *target, ticks_t curticks)
 }
 
 static void
-add_to_runqueue(scheduler_t *scheduler, thread_t *target)
+add_to_runqueue(scheduler_t *scheduler, thread_t *target, bool at_tail)
+	REQUIRE_SPINLOCK(scheduler->lock)
 {
 	assert_preempt_disabled();
+	assert_spinlock_held(&scheduler->lock);
 
 	index_t i	  = SCHEDULER_MAX_PRIORITY - target->scheduler_priority;
 	list_t *list	  = &scheduler->runqueue[i];
@@ -104,7 +127,12 @@ add_to_runqueue(scheduler_t *scheduler, thread_t *target)
 
 	assert(was_empty || bitmap_isset(scheduler->prio_bitmap, i));
 
-	list_insert_at_tail(list, &target->scheduler_list_node);
+	if (at_tail) {
+		list_insert_at_tail(list, &target->scheduler_list_node);
+	} else {
+		list_insert_at_head(list, &target->scheduler_list_node);
+	}
+
 	if (was_empty) {
 		bitmap_set(scheduler->prio_bitmap, i);
 	}
@@ -112,11 +140,12 @@ add_to_runqueue(scheduler_t *scheduler, thread_t *target)
 
 static void
 remove_from_runqueue(scheduler_t *scheduler, thread_t *target)
+	REQUIRE_SPINLOCK(scheduler->lock)
 {
 	assert_preempt_disabled();
 
 	index_t	     i	  = SCHEDULER_MAX_PRIORITY - target->scheduler_priority;
-	list_t *     list = &scheduler->runqueue[i];
+	list_t      *list = &scheduler->runqueue[i];
 	list_node_t *node = &target->scheduler_list_node;
 	bool	     was_head = node == list_get_head(list);
 
@@ -130,6 +159,7 @@ remove_from_runqueue(scheduler_t *scheduler, thread_t *target)
 
 static thread_t *
 pop_runqueue_head(scheduler_t *scheduler, index_t i)
+	REQUIRE_SPINLOCK(scheduler->lock)
 {
 	assert_preempt_disabled();
 	assert(bitmap_isset(scheduler->prio_bitmap, i));
@@ -147,6 +177,21 @@ pop_runqueue_head(scheduler_t *scheduler, index_t i)
 	return head;
 }
 
+static bool
+can_be_scheduled(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
+{
+	assert_spinlock_held(&thread->scheduler_lock);
+
+	register_t block_bits = thread->scheduler_block_bits[0];
+
+	if (compiler_unexpected(
+		    sched_state_get_killed(&thread->scheduler_state))) {
+		block_bits &= non_killable_block_mask[0];
+	}
+
+	return bitmap_empty(&block_bits, SCHEDULER_NUM_BLOCK_BITS);
+}
+
 void
 scheduler_fprr_handle_boot_cold_init(void)
 {
@@ -158,6 +203,15 @@ scheduler_fprr_handle_boot_cold_init(void)
 			list_init(&scheduler->runqueue[j]);
 		}
 	}
+
+	for (scheduler_block_t block = SCHEDULER_BLOCK__MIN;
+	     block <= SCHEDULER_BLOCK__MAX; block++) {
+		scheduler_block_properties_t props =
+			trigger_scheduler_get_block_properties_event(block);
+		if (scheduler_block_properties_get_non_killable(&props)) {
+			bitmap_set(non_killable_block_mask, block);
+		}
+	}
 }
 
 error_t
@@ -166,7 +220,7 @@ scheduler_fprr_handle_object_create_thread(thread_create_t thread_create)
 	thread_t *thread = thread_create.thread;
 
 	assert(thread != NULL);
-	assert(thread->state == THREAD_STATE_INIT);
+	assert(atomic_load_relaxed(&thread->state) == THREAD_STATE_INIT);
 	assert(!sched_state_get_init(&thread->scheduler_state));
 	assert(!scheduler_is_runnable(thread));
 
@@ -174,9 +228,9 @@ scheduler_fprr_handle_object_create_thread(thread_create_t thread_create)
 	atomic_init(&thread->scheduler_active_affinity, CPU_INDEX_INVALID);
 	thread->scheduler_prev_affinity = CPU_INDEX_INVALID;
 
-	cpu_index_t cpu = thread_create.scheduler_affinity_valid
-				  ? thread_create.scheduler_affinity
-				  : CPU_INDEX_INVALID;
+	cpu_index_t cpu		   = thread_create.scheduler_affinity_valid
+					     ? thread_create.scheduler_affinity
+					     : CPU_INDEX_INVALID;
 	thread->scheduler_affinity = cpu;
 
 	priority_t prio = thread_create.scheduler_priority_valid
@@ -217,9 +271,9 @@ scheduler_fprr_handle_object_activate_thread(thread_t *thread)
 	return err;
 }
 
-#if defined(HYPERCALLS)
+#if defined(INTERFACE_VCPU)
 bool
-scheduler_fprr_handle_vcpu_activate_thread(thread_t *	       thread,
+scheduler_fprr_handle_vcpu_activate_thread(thread_t	    *thread,
 					   vcpu_option_flags_t options)
 {
 	bool ret = false, pin = false;
@@ -268,6 +322,50 @@ out:
 	scheduler_unlock(thread);
 	return ret;
 }
+
+void
+scheduler_fprr_handle_vcpu_wakeup(thread_t *thread)
+	REQUIRE_SCHEDULER_LOCK(thread)
+{
+	assert_spinlock_held(&thread->scheduler_lock);
+	assert(thread->kind == THREAD_KIND_VCPU);
+
+	bool was_yielding = atomic_exchange_explicit(
+		&thread->scheduler_yielding, false, memory_order_relaxed);
+	if (compiler_unexpected(was_yielding)) {
+		cpu_index_t affinity = thread->scheduler_affinity;
+
+		// The thread must have a valid affinity in order to perform
+		// a directed yield; see remove_thread_from_scheduler().
+		assert(cpulocal_index_valid(affinity));
+
+		scheduler_t *scheduler =
+			&CPULOCAL_BY_INDEX(scheduler, affinity);
+		bool is_active;
+
+		spinlock_acquire_nopreempt(&scheduler->lock);
+		is_active = scheduler->active_thread == thread;
+		spinlock_release_nopreempt(&scheduler->lock);
+
+		if (is_active) {
+			// The thread is actively yielding; trigger a reschedule
+			// so the cancellation of the yield is observed.
+			if (affinity != cpulocal_get_index()) {
+				ipi_one(IPI_REASON_RESCHEDULE, affinity);
+			} else {
+				scheduler_trigger();
+			}
+		}
+	}
+}
+
+bool
+scheduler_fprr_handle_vcpu_expects_wakeup(const thread_t *thread)
+{
+	assert(thread->kind == THREAD_KIND_VCPU);
+
+	return atomic_load_relaxed(&thread->scheduler_yielding);
+}
 #endif
 
 void
@@ -282,10 +380,6 @@ scheduler_fprr_handle_object_deactivate_thread(thread_t *thread)
 			atomic_store_relaxed(primary_thread_p, NULL);
 		}
 	}
-
-	if (thread->scheduler_yield_to != NULL) {
-		discard_yield_to(thread);
-	}
 }
 
 bool
@@ -295,7 +389,7 @@ scheduler_fprr_handle_ipi_reschedule(void)
 }
 
 bool
-scheduler_fppr_handle_timer_reschedule(void)
+scheduler_fprr_handle_timer_reschedule(void)
 {
 	assert_preempt_disabled();
 
@@ -304,12 +398,24 @@ scheduler_fppr_handle_timer_reschedule(void)
 	return true;
 }
 
+scheduler_block_properties_t
+scheduler_fprr_handle_scheduler_get_block_properties(scheduler_block_t block)
+{
+	assert(block == SCHEDULER_BLOCK_AFFINITY_CHANGED);
+
+	scheduler_block_properties_t props =
+		scheduler_block_properties_default();
+	scheduler_block_properties_set_non_killable(&props, true);
+
+	return props;
+}
+
 rcu_update_status_t
-scheduler_fppr_handle_affinity_change_update(rcu_entry_t *entry)
+scheduler_fprr_handle_affinity_change_update(rcu_entry_t *entry)
 {
 	rcu_update_status_t ret = rcu_update_status_default();
 
-	thread_t *  thread = thread_container_of_scheduler_rcu_entry(entry);
+	thread_t	 *thread = thread_container_of_scheduler_rcu_entry(entry);
 	cpu_index_t prev_cpu, next_cpu;
 
 	scheduler_lock(thread);
@@ -334,8 +440,9 @@ scheduler_fppr_handle_affinity_change_update(rcu_entry_t *entry)
 
 static void
 set_next_timeout(scheduler_t *scheduler, thread_t *target)
+	REQUIRE_SPINLOCK(scheduler->lock)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&scheduler->lock);
 
 	bool need_timeout = false;
 
@@ -345,7 +452,7 @@ set_next_timeout(scheduler_t *scheduler, thread_t *target)
 		// may yield to another target.
 		index_t i = SCHEDULER_MAX_PRIORITY - target->scheduler_priority;
 		need_timeout = bitmap_isset(scheduler->prio_bitmap, i) ||
-			       (target->scheduler_yield_to != NULL);
+			       atomic_load_relaxed(&target->scheduler_yielding);
 	}
 
 	if (need_timeout) {
@@ -371,9 +478,10 @@ set_next_timeout(scheduler_t *scheduler, thread_t *target)
 }
 
 static thread_t *
-get_next_target(scheduler_t *scheduler)
+get_next_target(scheduler_t *scheduler) REQUIRE_SPINLOCK(scheduler->lock)
 {
-	assert_preempt_disabled();
+	assert(scheduler != NULL);
+	assert_spinlock_held(&scheduler->lock);
 
 	thread_t *prev		    = scheduler->active_thread;
 	thread_t *target	    = prev;
@@ -408,18 +516,18 @@ get_next_target(scheduler_t *scheduler)
 	}
 
 	if ((prev != NULL) && (target != prev)) {
-		add_to_runqueue(scheduler, prev);
+		add_to_runqueue(scheduler, prev, timeslice_expired);
 	}
 
 	return target;
 }
 
 static bool
-can_yield_to(thread_t *yield_to)
+can_yield_to(thread_t *yield_to) REQUIRE_SCHEDULER_LOCK(yield_to)
 {
 	assert_preempt_disabled();
 
-	thread_t *  current  = thread_get_self();
+	thread_t	 *current  = thread_get_self();
 	cpu_index_t cpu	     = cpulocal_get_index();
 	cpu_index_t affinity = yield_to->scheduler_affinity;
 	bool	    yield    = true;
@@ -430,15 +538,15 @@ can_yield_to(thread_t *yield_to)
 		goto out;
 	}
 
-	// If yielded_from is set and yield_to isn't the current thread,
-	// then yield_to must already be selected to run on another cpu.
-	if ((yield_to->scheduler_yielded_from != NULL) &&
+	// We can't yield to a thread if it is already running and
+	// not the current thread.
+	if (sched_state_get_running(&yield_to->scheduler_state) &&
 	    (yield_to != current)) {
 		yield = false;
 		goto out;
 	}
 
-	if (!scheduler_is_runnable(yield_to)) {
+	if (!can_be_scheduled(yield_to)) {
 		yield = false;
 	}
 out:
@@ -446,22 +554,29 @@ out:
 }
 
 static thread_t *
-select_yield_target(thread_t *target)
+select_yield_target(thread_t *target, bool *can_idle) REQUIRE_PREEMPT_DISABLED
 {
+	assert(target != NULL);
+	assert(can_idle != NULL);
 	assert_preempt_disabled();
 
 	thread_t *next = target;
 
-	thread_t *yield_to = target->scheduler_yield_to;
-	if (yield_to != NULL) {
-		scheduler_lock(yield_to);
+	CPULOCAL(yielded_from) = NULL;
+
+	if (atomic_load_relaxed(&target->scheduler_yielding)) {
+		thread_t *yield_to = target->scheduler_yield_to;
+		assert(yield_to != NULL);
+
+		scheduler_lock_nopreempt(yield_to);
 		if (can_yield_to(yield_to)) {
-			yield_to->scheduler_yielded_from = target;
-			next				 = yield_to;
+			next		       = yield_to;
+			CPULOCAL(yielded_from) = target;
+			*can_idle	       = false;
 		} else {
-			discard_yield_to(target);
+			end_directed_yield(target);
 		}
-		scheduler_unlock(yield_to);
+		scheduler_unlock_nopreempt(yield_to);
 	}
 
 	return next;
@@ -477,22 +592,30 @@ scheduler_schedule(void)
 
 	while (must_schedule) {
 		scheduler_t *scheduler = &CPULOCAL(scheduler);
-		thread_t *   target;
+		thread_t	 *target;
 
-		spinlock_acquire(&scheduler->lock);
-		target = get_next_target(scheduler);
+		rcu_read_start();
+
+		spinlock_acquire_nopreempt(&scheduler->lock);
+		target	      = get_next_target(scheduler);
+		bool can_idle = bitmap_empty(scheduler->prio_bitmap,
+					     SCHEDULER_NUM_PRIORITIES);
 		set_next_timeout(scheduler, target);
-		spinlock_release(&scheduler->lock);
+		spinlock_release_nopreempt(&scheduler->lock);
 
-		target = select_yield_target(target);
+		target = select_yield_target(target, &can_idle);
+
+		trigger_scheduler_selected_thread_event(target, &can_idle);
 
 		if (target == thread_get_self()) {
+			rcu_read_finish();
 			trigger_scheduler_quiescent_event();
 			must_schedule = false;
-		} else {
-			// Get an additional reference which will be released
-			// when the thread stops running.
-			(void)object_get_thread_additional(target);
+		} else if (object_get_thread_safe(target)) {
+			// The reference obtained here will be released when the
+			// thread stops running.
+			rcu_read_finish();
+
 			if (compiler_expected(thread_switch_to(target) == OK)) {
 				switched = true;
 				must_schedule =
@@ -500,6 +623,11 @@ scheduler_schedule(void)
 			} else {
 				must_schedule = true;
 			}
+		} else {
+			// Unable to obtain a reference to the target thread;
+			// re-run the scheduler.
+			rcu_read_finish();
+			must_schedule = true;
 		}
 	}
 
@@ -521,10 +649,12 @@ scheduler_yield(void)
 	thread_t *current = thread_get_self();
 
 	preempt_disable();
-	thread_t *yielded_from = current->scheduler_yielded_from;
+	thread_t *yielded_from = CPULOCAL(yielded_from);
 	if (yielded_from != NULL) {
-		discard_yield_to(yielded_from);
+		// End the directed yield to the current thread.
+		end_directed_yield(yielded_from);
 	} else {
+		// Discard the rest of the current thread's timeslice.
 		current->scheduler_active_timeslice = 0U;
 	}
 	(void)scheduler_schedule();
@@ -540,30 +670,49 @@ scheduler_yield_to(thread_t *target)
 
 	preempt_disable();
 
-	// Pin the current thread while yielding.
-	// We don't support migration while yielding to,
-	// and this allows the yield_to pointer to be
-	// safely accessed without the thread lock.
-	scheduler_lock(current);
-	scheduler_pin(current);
-	scheduler_unlock(current);
-
-	thread_t *yielded_from = current->scheduler_yielded_from;
+	thread_t *yielded_from = CPULOCAL(yielded_from);
 	if (yielded_from == target) {
-		discard_yield_to(yielded_from);
+		// We are trying to yield back to the thread that
+		// yielded to us; end the original yield.
+		end_directed_yield(yielded_from);
 	} else if (yielded_from != NULL) {
+		// Update the yielding thread's target.
 		discard_yield_to(yielded_from);
 		set_yield_to(yielded_from, target);
 	} else {
+#if defined(INTERFACE_VCPU)
+		if ((current->kind == THREAD_KIND_VCPU) &&
+		    vcpu_pending_wakeup()) {
+			// The current thread has a pending wakeup;
+			// skip the directed yield.
+			goto out;
+		}
+#endif
+		// Initiate a new directed yield. We must pin the current
+		// thread, as allowing migration may result in the current
+		// thread running simultaneously with its yield target.
+		// Pinning the thread also makes accesses to the yield-to
+		// pointer CPU-local for the duration of the yield, making
+		// it safe to access without the thread lock.
+		scheduler_lock_nopreempt(current);
+		scheduler_pin(current);
+		scheduler_unlock_nopreempt(current);
 		set_yield_to(current, target);
+		atomic_store_relaxed(&current->scheduler_yielding, true);
 	}
 
 	(void)scheduler_schedule();
 
-	scheduler_lock(current);
-	scheduler_unpin(current);
-	scheduler_unlock(current);
+	if (yielded_from == NULL) {
+		discard_yield_to(current);
+		scheduler_lock_nopreempt(current);
+		scheduler_unpin(current);
+		scheduler_unlock_nopreempt(current);
+	}
 
+#if defined(INTERFACE_VCPU)
+out:
+#endif
 	preempt_enable();
 }
 
@@ -574,44 +723,73 @@ scheduler_lock(thread_t *thread)
 }
 
 void
+scheduler_lock_nopreempt(thread_t *thread)
+{
+	spinlock_acquire_nopreempt(&thread->scheduler_lock);
+}
+
+void
 scheduler_unlock(thread_t *thread)
 {
 	spinlock_release(&thread->scheduler_lock);
 }
 
-static bool
-add_thread_to_scheduler(thread_t *thread)
+void
+scheduler_unlock_nopreempt(thread_t *thread)
 {
-	assert_preempt_disabled();
-	assert(scheduler_is_runnable(thread));
+	spinlock_release_nopreempt(&thread->scheduler_lock);
+}
+
+static bool
+add_thread_to_scheduler(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
+{
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(!sched_state_get_running(&thread->scheduler_state));
 	assert(!sched_state_get_queued(&thread->scheduler_state));
+	assert(!sched_state_get_exited(&thread->scheduler_state));
+	assert(can_be_scheduled(thread));
 
-	bool	    need_schedule = true;
-	cpu_index_t affinity	  = thread->scheduler_affinity;
+	bool	    need_schedule;
+	cpu_index_t affinity = thread->scheduler_affinity;
 
 	if (cpulocal_index_valid(affinity)) {
 		cpu_index_t  cpu = cpulocal_get_index();
 		scheduler_t *scheduler =
 			&CPULOCAL_BY_INDEX(scheduler, affinity);
 
-		spinlock_acquire(&scheduler->lock);
+		spinlock_acquire_nopreempt(&scheduler->lock);
 
-		(void)object_get_thread_additional(thread);
-		reset_sched_params(thread);
-		sched_state_set_queued(&thread->scheduler_state, true);
-		add_to_runqueue(scheduler, thread);
-
-		if ((scheduler->active_thread != NULL) &&
-		    (thread->scheduler_priority <
-		     scheduler->active_thread->scheduler_priority)) {
-			// The unblocked thread has lower priority than the
-			// active thread; there is no need to schedule until
-			// the active thread is blocked.
-			need_schedule = false;
+		if (scheduler->active_thread == NULL) {
+			// The newly unblocked thread is the only one runnable,
+			// so a reschedule will always be needed.
+			need_schedule = true;
+		} else if (bitmap_empty(scheduler->prio_bitmap,
+					SCHEDULER_NUM_PRIORITIES)) {
+			// The scheduler's current thread was scheduled with
+			// can_idle set, so it may have gone idle without
+			// rescheduling. Force a reschedule regardless of
+			// priority, to ensure that it doesn't needlessly block
+			// a lower-priority threads.
+			need_schedule = true;
+		} else {
+			// There is already an active thread; a reschedule is
+			// needed if the newly unblocked thread has equal or
+			// higher priority
+			need_schedule =
+				thread->scheduler_priority >=
+				scheduler->active_thread->scheduler_priority;
 		}
 
-		spinlock_release(&scheduler->lock);
+		reset_sched_params(thread);
+		sched_state_set_queued(&thread->scheduler_state, true);
+
+		// Each thread has a reference to itself which remains until it
+		// exits. Since threads are not runnable after exiting, the
+		// scheduler queues can safely use this reference instead of
+		// getting an additional one.
+		add_to_runqueue(scheduler, thread, true);
+
+		spinlock_release_nopreempt(&scheduler->lock);
 
 		if (need_schedule && (cpu != affinity)) {
 			ipi_one(IPI_REASON_RESCHEDULE, affinity);
@@ -625,35 +803,56 @@ add_thread_to_scheduler(thread_t *thread)
 }
 
 static void
-remove_thread_from_scheduler(thread_t *thread)
+remove_thread_from_scheduler(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
-	cpu_index_t affinity = thread->scheduler_affinity;
+	cpu_index_t affinity	 = thread->scheduler_affinity;
+	bool	    was_yielding = atomic_exchange_explicit(
+		       &thread->scheduler_yielding, false, memory_order_relaxed);
+
 	if (cpulocal_index_valid(affinity)) {
 		assert(sched_state_get_queued(&thread->scheduler_state));
 
 		scheduler_t *scheduler =
 			&CPULOCAL_BY_INDEX(scheduler, affinity);
-		spinlock_acquire(&scheduler->lock);
+		bool was_active = false;
+
+		spinlock_acquire_nopreempt(&scheduler->lock);
 		if (scheduler->active_thread == thread) {
 			scheduler->active_thread = NULL;
+			was_active		 = true;
 		} else {
 			remove_from_runqueue(scheduler, thread);
 		}
-		spinlock_release(&scheduler->lock);
+		spinlock_release_nopreempt(&scheduler->lock);
 
 		sched_state_set_queued(&thread->scheduler_state, false);
-		object_put_thread(thread);
+
+		if (compiler_unexpected(was_active && was_yielding)) {
+			// The thread was actively yielding; trigger a
+			// reschedule to ensure the yield ends.
+			if (affinity != cpulocal_get_index()) {
+				ipi_one(IPI_REASON_RESCHEDULE, affinity);
+			} else {
+				scheduler_trigger();
+			}
+		}
+	} else {
+		// Threads with invalid affinities cannot perform directed
+		// yields; as they only run via directed yields, any call to
+		// scheduler_yield_to() will update the yielding thread instead.
+		assert(!was_yielding);
 	}
 }
 
 static bool
-resched_running_thread(thread_t *thread)
+resched_running_thread(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(sched_state_get_running(&thread->scheduler_state));
-	assert(!sched_state_get_queued(&thread->scheduler_state));
+	assert(!sched_state_get_queued(&thread->scheduler_state) ||
+	       sched_state_get_killed(&thread->scheduler_state));
 
 	bool	    need_schedule = true;
 	cpu_index_t cpu =
@@ -670,9 +869,9 @@ resched_running_thread(thread_t *thread)
 }
 
 static bool
-start_affinity_changed_events(thread_t *thread)
+start_affinity_changed_events(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(scheduler_is_blocked(thread, SCHEDULER_BLOCK_AFFINITY_CHANGED));
 
 	bool need_sync = false, need_schedule = false;
@@ -703,35 +902,32 @@ scheduler_fprr_handle_thread_context_switch_pre(thread_t *next)
 	error_t	    err = OK;
 	cpu_index_t cpu = cpulocal_get_index();
 
-	scheduler_lock(next);
+	scheduler_lock_nopreempt(next);
 	cpu_index_t affinity	 = next->scheduler_affinity;
-	thread_t *  yielded_from = next->scheduler_yielded_from;
+	thread_t	 *yielded_from = CPULOCAL(yielded_from);
 
 	// The next thread's affinity could have changed between target
 	// selection and now; it may have been blocked by or is already running
 	// on another CPU. Only set it running if it is still valid to do so.
-	bool runnable =
-		!sched_state_get_running(&next->scheduler_state) &&
-		(scheduler_is_runnable(next) || (next == idle_thread()));
+	bool runnable = !sched_state_get_running(&next->scheduler_state) &&
+			(can_be_scheduled(next) || (next == idle_thread()));
 	bool affinity_valid =
 		(affinity == cpu) ||
 		(!cpulocal_index_valid(affinity) && (yielded_from != NULL));
 
 	if (compiler_expected(runnable && affinity_valid)) {
-		assert(next->state != THREAD_STATE_INIT);
-		assert(next->state != THREAD_STATE_EXITED);
 		assert(!sched_state_get_need_requeue(&next->scheduler_state));
+		assert(!sched_state_get_exited(&next->scheduler_state));
 		sched_state_set_running(&next->scheduler_state, true);
 		CPULOCAL(running_thread) = next;
 		atomic_store_relaxed(&next->scheduler_active_affinity, cpu);
 	} else {
 		err = ERROR_DENIED;
 		if (yielded_from != NULL) {
-			discard_yield_to(yielded_from);
-			next->scheduler_yielded_from = NULL;
+			end_directed_yield(yielded_from);
 		}
 	}
-	scheduler_unlock(next);
+	scheduler_unlock_nopreempt(next);
 
 	return err;
 }
@@ -749,15 +945,14 @@ scheduler_fprr_handle_thread_context_switch_post(thread_t *prev)
 
 	bool need_schedule = false;
 
-	scheduler_lock(prev);
-	prev->scheduler_yielded_from = NULL;
+	scheduler_lock_nopreempt(prev);
 	sched_state_set_running(&prev->scheduler_state, false);
 
 	if (sched_state_get_need_requeue(&prev->scheduler_state)) {
 		// The thread may have blocked after being marked for a
 		// requeue. Ensure it is still runnable prior to adding
 		// it to a scheduler queue.
-		if (scheduler_is_runnable(prev)) {
+		if (can_be_scheduled(prev)) {
 			need_schedule = add_thread_to_scheduler(prev);
 		}
 		sched_state_set_need_requeue(&prev->scheduler_state, false);
@@ -770,7 +965,7 @@ scheduler_fprr_handle_thread_context_switch_post(thread_t *prev)
 	// Store and wake for scheduler_sync().
 	asm_event_store_and_wake(&prev->scheduler_active_affinity,
 				 CPU_INDEX_INVALID);
-	scheduler_unlock(prev);
+	scheduler_unlock_nopreempt(prev);
 
 	if (need_schedule) {
 		scheduler_trigger();
@@ -779,15 +974,17 @@ scheduler_fprr_handle_thread_context_switch_post(thread_t *prev)
 
 void
 scheduler_block(thread_t *thread, scheduler_block_t block)
+	REQUIRE_SCHEDULER_LOCK(thread)
 {
 	TRACE(DEBUG, INFO,
 	      "scheduler: block {:#x}, reason: {:d}, others: {:#x}",
 	      (uintptr_t)thread, block, thread->scheduler_block_bits[0]);
 
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(block <= SCHEDULER_BLOCK__MAX);
 	bitmap_set(thread->scheduler_block_bits, block);
-	if (sched_state_get_queued(&thread->scheduler_state)) {
+	if (sched_state_get_queued(&thread->scheduler_state) &&
+	    !can_be_scheduled(thread)) {
 		remove_thread_from_scheduler(thread);
 	}
 }
@@ -802,12 +999,13 @@ scheduler_block_init(thread_t *thread, scheduler_block_t block)
 
 bool
 scheduler_unblock(thread_t *thread, scheduler_block_t block)
+	REQUIRE_LOCK(thread->scheduler_lock)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(block <= SCHEDULER_BLOCK__MAX);
-	bool was_blocked = bitmap_isset(thread->scheduler_block_bits, block);
+	bool was_blocked = !can_be_scheduled(thread);
 	bitmap_clear(thread->scheduler_block_bits, block);
-	bool need_schedule = was_blocked && scheduler_is_runnable(thread);
+	bool need_schedule = was_blocked && can_be_scheduled(thread);
 
 	if (need_schedule) {
 		assert(!sched_state_get_queued(&thread->scheduler_state));
@@ -870,14 +1068,14 @@ scheduler_sync(thread_t *thread)
 void
 scheduler_pin(thread_t *thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	thread->scheduler_pin_count++;
 }
 
 void
 scheduler_unpin(thread_t *thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 	assert(thread->scheduler_pin_count > 0U);
 	thread->scheduler_pin_count--;
 }
@@ -885,15 +1083,14 @@ scheduler_unpin(thread_t *thread)
 cpu_index_t
 scheduler_get_affinity(thread_t *thread)
 {
-	assert_preempt_disabled();
-
+	assert_spinlock_held(&thread->scheduler_lock);
 	return thread->scheduler_affinity;
 }
 
 cpu_index_t
 scheduler_get_active_affinity(thread_t *thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
 	cpu_index_t cpu =
 		atomic_load_relaxed(&thread->scheduler_active_affinity);
@@ -904,7 +1101,7 @@ scheduler_get_active_affinity(thread_t *thread)
 error_t
 scheduler_set_affinity(thread_t *thread, cpu_index_t target_cpu)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
 	error_t	    err		  = OK;
 	bool	    need_schedule = false;
@@ -951,14 +1148,15 @@ out:
 
 static void
 update_sched_params(thread_t *thread, priority_t priority, ticks_t timeslice)
+	REQUIRE_SCHEDULER_LOCK(thread)
 {
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
 	// If the thread is blocked, or is still running and has been marked for
 	// a requeue, then it is safe to update the scheduler parameters without
 	// any queue operations. If not, it first needs to be removed from its
 	// queue before the update, then added back when it is safe to do so.
-	bool requeue = scheduler_is_runnable(thread) &&
+	bool requeue = can_be_scheduled(thread) &&
 		       !sched_state_get_need_requeue(&thread->scheduler_state);
 
 	if (requeue) {
@@ -989,7 +1187,7 @@ scheduler_set_priority(thread_t *thread, priority_t priority)
 {
 	error_t err = OK;
 
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
 	if ((priority < SCHEDULER_MIN_PRIORITY) ||
 	    (priority > SCHEDULER_MAX_PRIORITY)) {
@@ -1011,7 +1209,7 @@ scheduler_set_timeslice(thread_t *thread, nanoseconds_t timeslice)
 {
 	error_t err = OK;
 
-	assert_preempt_disabled();
+	assert_spinlock_held(&thread->scheduler_lock);
 
 	if ((timeslice > SCHEDULER_MAX_TIMESLICE) ||
 	    (timeslice < SCHEDULER_MIN_TIMESLICE)) {
@@ -1030,42 +1228,81 @@ out:
 }
 
 bool
-scheduler_current_can_idle(void)
+scheduler_will_preempt_current(thread_t *thread)
+{
+	assert_spinlock_held(&thread->scheduler_lock);
+	thread_t *current = thread_get_self();
+
+	return (thread->scheduler_priority > current->scheduler_priority) ||
+	       (current->kind == THREAD_KIND_IDLE);
+}
+
+void
+scheduler_fprr_handle_thread_killed(thread_t *thread)
+{
+	assert(thread != NULL);
+
+	bool need_schedule = false;
+
+	scheduler_lock(thread);
+
+	// Many of the block flags will be ignored once the killed
+	// flag is set, so check if the thread becomes runnable.
+	bool was_blocked = !can_be_scheduled(thread);
+	sched_state_set_killed(&thread->scheduler_state, true);
+	bool runnable = was_blocked && can_be_scheduled(thread);
+	bool running  = sched_state_get_running(&thread->scheduler_state);
+
+	if (runnable) {
+		assert(!sched_state_get_queued(&thread->scheduler_state));
+
+		if (running) {
+			sched_state_set_need_requeue(&thread->scheduler_state,
+						     true);
+			need_schedule = resched_running_thread(thread);
+		} else {
+			need_schedule = add_thread_to_scheduler(thread);
+		}
+	} else if (running) {
+		// If the thread is running remotely, we need to send
+		// an IPI to ensure it exits in a timely manner.
+		(void)resched_running_thread(thread);
+	} else {
+		// Thread is either still blocked or already
+		// scheduled to run, so there is nothing to do.
+	}
+
+	scheduler_unlock(thread);
+
+	if (need_schedule) {
+		scheduler_trigger();
+	}
+}
+
+void
+scheduler_fprr_handle_thread_exited(void)
 {
 	assert_preempt_disabled();
 
-	bool	     can_idle  = false;
-	thread_t *   current   = thread_get_self();
-	scheduler_t *scheduler = &CPULOCAL(scheduler);
+	thread_t *thread = thread_get_self();
 
-	if (compiler_unexpected(idle_is_current())) {
-		can_idle = true;
-		goto out;
+	scheduler_lock_nopreempt(thread);
+
+	assert(atomic_load_relaxed(&thread->state) == THREAD_STATE_EXITED);
+	assert(scheduler_is_blocked(thread, SCHEDULER_BLOCK_THREAD_LIFECYCLE));
+	assert(sched_state_get_running(&thread->scheduler_state));
+
+	if (sched_state_get_killed(&thread->scheduler_state)) {
+		if (sched_state_get_queued(&thread->scheduler_state)) {
+			remove_thread_from_scheduler(thread);
+		}
+		sched_state_set_killed(&thread->scheduler_state, false);
 	}
 
-	spinlock_acquire(&scheduler->lock);
-	// If current is not the active thread, we need to reschedule.
-	// Otherwise, check if there are any threads in the CPU's queues.
-	if (current == scheduler->active_thread) {
-		can_idle = bitmap_empty(scheduler->prio_bitmap,
-					SCHEDULER_NUM_PRIORITIES);
-	}
-	spinlock_release(&scheduler->lock);
+	assert(!can_be_scheduled(thread));
+	assert(!sched_state_get_queued(&thread->scheduler_state));
 
-out:
-	return can_idle;
+	sched_state_set_exited(&thread->scheduler_state, true);
+
+	scheduler_unlock_nopreempt(thread);
 }
-
-#if !defined(UNIT_TESTS)
-idle_state_t
-scheduler_fprr_handle_vcpu_idle_fastpath(void)
-{
-	idle_state_t state = IDLE_STATE_IDLE;
-
-	if (!scheduler_current_can_idle()) {
-		state = IDLE_STATE_RESCHEDULE;
-	}
-
-	return state;
-}
-#endif

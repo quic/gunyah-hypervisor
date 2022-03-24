@@ -18,24 +18,6 @@
 #include "event_handlers.h"
 
 error_t
-arm_vm_pmu_handle_object_create_thread(thread_create_t thread_create)
-{
-	thread_t *thread = thread_create.thread;
-	assert(thread != NULL);
-
-	// A PMU object is considered "active" if the VM is allowed access to
-	// PMU and has already accessed it.
-	// For now we activate it for all vCPUs and don't trap its registers.
-	if (thread->kind == THREAD_KIND_VCPU) {
-		thread->pmu.is_active = true;
-	} else {
-		thread->pmu.is_active = false;
-	}
-
-	return OK;
-}
-
-error_t
 arm_vm_pmu_handle_object_activate_thread(thread_t *thread)
 {
 	error_t ret = OK;

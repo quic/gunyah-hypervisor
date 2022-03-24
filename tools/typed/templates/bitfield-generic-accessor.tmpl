@@ -6,49 +6,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 *#
 
+#set field_type = $compound_type.gen_type_name(unqualified=True)
 #if not $is_const
-static inline
-void ${bf_type_name}_set_${field_name}(${bf_type_name}_t *bit_field, ${field_type} val) {
-    ${unit_type} *bf = (${unit_type} *)bit_field;
-    ${unit_type} tmp = 0;
-
-## FIXME: support >64-bit types
-    tmp = bf[0];
-#for $map in $field_maps:
-#set $m = (1 << $map.length) - 1
-    tmp &= (${unit_type})${hex(((2 ** $unit_size) - 1) ^ (m << map.mapped_bit))}U;
-#if not $is_bitfield
-    tmp |= ((((${unit_type})val) >> ${map.field_bit}) & (${unit_type})${hex(m)}U) << ${map.mapped_bit};
-#else
-    tmp |= ((((${unit_type})${field_type_name}_raw(val)) >> ${map.field_bit}) & (${unit_type})${hex(m)}U) << ${map.mapped_bit};
-#end if
-#end for
-    bf[0] = tmp;
-}
+void ${bf_type_name}_set_${field_name}(${bf_type_name}_t *bit_field, ${compound_type.gen_declaration('val')});
 #end if
 
 #if not $is_writeonly
-static inline
-${field_type} ${bf_type_name}_get_${field_name}(const ${bf_type_name}_t *bit_field) {
-    ${unit_type} val = 0;
-    ${unit_type} tmp;
-    const ${unit_type} *bf = (const ${unit_type} *)&bit_field->bf[0];
+${field_type} ${bf_type_name}_get_${field_name}(const ${bf_type_name}_t *bit_field);
+#end if
 
-## FIXME: support >64-bit types
-    tmp = bf[0];
-#for $map in $field_maps:
-#set $m = (1 << $map.length) - 1
-    val |= ((tmp >> ${map.mapped_bit}) & (${unit_type})${hex(m)}) << ${map.field_bit};
-#end for
-#if $field_signed
-#set l=1 << ($field_length - 1)
-    return ((${field_type})val ^ $l) - $l;
-#else
-#if not $is_bitfield
-    return (${field_type})val;
-#else
-    return ${field_type_name}_cast((${field_unit_type})val);
-#end if
-#end if
-}
+#if not $is_writeonly and not $is_const
+void ${bf_type_name}_copy_${field_name}(
+        ${bf_type_name}_t *bit_field_dst,
+        const ${bf_type_name}_t *bit_field_src);
 #end if

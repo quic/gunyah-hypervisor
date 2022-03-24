@@ -17,7 +17,8 @@ from ir import (
     PackedQualifier, ConstantExpression, ConstantReference, UnaryOperation,
     SizeofOperation, AlignofOperation, BinaryOperation, ConditionalOperation,
     UnionType, UnionDefinition, UnionExtension, StructureExtension,
-    MinofOperation, MaxofOperation, ContainedQualifier,
+    MinofOperation, MaxofOperation, ContainedQualifier, WriteonlyQualifier,
+    PureFunctionCall, LockableQualifier, GlobalDefinition,
 )
 from exceptions import DSLError
 
@@ -261,6 +262,7 @@ class start(CommonListener):
             "enumeration_extension",
             "alternative_definition",
             "constant_definition",
+            "global_definition",
             "declaration",
             "add_abi_ref",
             "add_constant_ref",
@@ -354,6 +356,17 @@ class maxof_operation(IConstantFromTypeOperation):
     def init_interfaces(self):
         super().init_interfaces()
         self.value = MaxofOperation(self.compound_type)
+
+
+class IPureFunction(CommonListener):
+    def init_interfaces(self):
+        self.action_list.take(self, 'constant_expression')
+        self.value = PureFunctionCall(self.children[0].value, self.f)
+
+
+class msb_operation(IPureFunction):
+    def f(self, x):
+        return x.bit_length() - 1
 
 
 class IBinaryOperation(CommonListener):
@@ -534,7 +547,9 @@ class qualifier_list(CommonListener):
             "atomic_qualifier",
             "packed_qualifier",
             "aligned_qualifier",
-            "contained_qualifier"
+            "contained_qualifier",
+            "writeonly_qualifier",
+            "lockable_qualifier",
         ]
         self.action_list.take_all(self, al)
         self.actions = [Action(self.set_qualifiers, "qualifier_list")]
@@ -587,6 +602,30 @@ class contained_qualifier(CommonListener):
 
     def add_qualifier(self, obj):
         obj.qualifiers.add(self.qualifier)
+
+
+class writeonly_qualifier(CommonListener):
+    def init_interfaces(self):
+        self.qualifier = WriteonlyQualifier(self)
+        self.actions = [Action(self.add_qualifier, "writeonly_qualifier")]
+
+    def add_qualifier(self, obj):
+        obj.qualifiers.add(self.qualifier)
+
+
+class lockable_qualifier(CommonListener):
+    def init_interfaces(self):
+        self.qualifier = LockableQualifier(self)
+        self.actions = [
+            Action(self.add_qualifier, "lockable_qualifier"),
+            Action(self.set_name, "describe_lockable_type"),
+        ]
+
+    def add_qualifier(self, obj):
+        obj.qualifiers.add(self.qualifier)
+
+    def set_name(self, obj):
+        self.qualifier.resource_name = ' '.join((obj.type_name, obj.category))
 
 
 class array_size(CommonListener):
@@ -645,7 +684,7 @@ class pointer(IABISpecific, CommonListener):
         declaration.complex_type = True
 
     def mark_has_pointer(self, pointer):
-        pointer.has_pointer = True
+        pass
 
 
 class declaration(CommonListener):
@@ -748,21 +787,24 @@ class bitfield_width(CommonListener):
 class bitfield_bit_range(CommonListener):
     def init_interfaces(self):
         self.actions = [
-            Action(self.get_bits, "bitfield_bit_range"),
+            Action(self.add_range, "bitfield_bit_range"),
         ]
-        self.bit = int(self.children[0].value)
         assert(len(self.children) <= 2)
-        if len(self.children) == 1:
-            self.width = 1
-        else:
-            msb = self.bit
-            self.bit = int(self.children[1].value)
-            self.width = msb - self.bit + 1
-            if self.width < 1:
-                raise DSLError("invalid bitifield specfier", self.children[1])
 
-    def get_bits(self, specifier):
-        specifier.add_bit_range(self.bit, self.width)
+    def add_range(self, specifier):
+        specifier.add_bit_range(self)
+
+    def get_bits(self):
+        bit = int(self.children[0].value)
+        if len(self.children) == 1:
+            width = 1
+        else:
+            msb = bit
+            bit = int(self.children[1].value)
+            width = msb - bit + 1
+            if width < 1:
+                raise DSLError("invalid bitifield specfier", self.children[1])
+        return (bit, width)
 
 
 class bitfield_auto(CommonListener):
@@ -775,6 +817,21 @@ class bitfield_auto(CommonListener):
 
     def set_bitfield_auto(self, specifier):
         specifier.set_type_auto(self.width)
+
+
+class bitfield_bit_span(CommonListener):
+    def init_interfaces(self):
+        self.width = None
+        self.actions = [
+            Action(self.add_range, "bitfield_bit_span"),
+        ]
+        self.action_list.take(self, "bitfield_width")
+
+    def add_range(self, specifier):
+        specifier.add_bit_range(self)
+
+    def get_bits(self):
+        return (int(self.children[-1].value), int(self.width))
 
 
 class bitfield_others(CommonListener):
@@ -804,7 +861,8 @@ class bitfield_specifier(CommonListener):
         ]
         self.bitfield_specifier = BitFieldSpecifier()
 
-        al = ["bitfield_bit_range", "bitfield_auto", "bitfield_others"]
+        al = ["bitfield_bit_range", "bitfield_auto", "bitfield_bit_span",
+              "bitfield_others"]
         self.action_list.take_all(self.bitfield_specifier, al)
 
     def set_specifier(self, declaration):
@@ -851,7 +909,7 @@ class bitfield_shift(CommonListener):
         ]
 
     def set_bitfield_shift(self, declaration):
-        return int(self.children[0].value)
+        return self.children[0].value
 
 
 class bitfield_default(CommonListener):
@@ -877,22 +935,26 @@ class bitfield_declaration(CommonListener):
 
         al = ["bitfield_member", "bitfield_specifier", "bitfield_default",
               "direct_type", "primitive_type", "bitfield_type",
-              "enumeration_type", "alternative_type"]
+              "enumeration_type", "alternative_type", "structure_type",
+              "union_type", "pointer"]
 
         self.action_list.take_all(self.declaration, al)
-
-        if self.action_list.has("pointer_has_pointer"):
-            raise DSLError("cannot declare a pointer member in bitfield",
-                           self.declaration.member_name)
 
         if self.action_list.has("object_type_has_object"):
             raise DSLError("cannot declare an object type member in bitfield",
                            self.declaration.member_name)
 
-        self.actions = [Action(self.set_declaration, "bitfield_declaration")]
-
         if shift:
+            if self.action_list.has("pointer_has_pointer"):
+                raise DSLError(
+                    "cannot specify shift for pointer member in bitfield",
+                    self.declaration.member_name)
             self.declaration.bitfield_specifier.set_type_shift(shift)
+
+        rl = ["pointer_has_pointer"]
+        self.action_list.remove_all(rl)
+
+        self.actions = [Action(self.set_declaration, "bitfield_declaration")]
 
     def set_declaration(self, definition):
         definition.declarations.append(self.declaration)
@@ -922,6 +984,35 @@ class constant_definition(CommonListener):
               "primitive_type", "bitfield_type", "structure_type",
               "union_type", "object_type", "enumeration_type",
               "alternative_type", "public"]
+        self.action_list.take_all(self.definition, al)
+
+        rl = ["pointer_has_pointer", "object_type_set_complex"]
+        self.action_list.remove_all(rl)
+
+        self.actions = [
+            Action(self.set_definition, self.__class__.__name__),
+            Action(self.set_type_ref, 'add_type_ref'),
+        ]
+
+    def set_definition(self, obj):
+        obj.definitions.append(self.definition)
+
+    def set_type_ref(self, obj):
+        if self.definition.type_ref is not None:
+            obj.type_refs.append(self.definition.type_ref)
+
+
+class global_definition(CommonListener):
+    def init_interfaces(self):
+        self.name = self.children[0]
+
+        d = GlobalDefinition(self.name)
+        self.definition = d
+
+        al = ["direct_type", "array", "pointer", "alias",
+              "primitive_type", "bitfield_type", "structure_type",
+              "union_type", "object_type", "enumeration_type",
+              "alternative_type"]
         self.action_list.take_all(self.definition, al)
 
         rl = ["pointer_has_pointer", "object_type_set_complex"]
@@ -979,6 +1070,7 @@ class alternative_definition(ITypeDefinition):
 
 class bitfield_const_decl(CommonListener):
     def init_interfaces(self):
+        super().init_interfaces()
         self.actions = [Action(self.set_const, "bitfield_const_decl")]
 
     def set_const(self, obj):
@@ -986,6 +1078,15 @@ class bitfield_const_decl(CommonListener):
             # TODO: proper logger warnings
             print("Warning: redundant bitfield const")
         obj.const = True
+
+
+class bitfield_set_ops_decl(CommonListener):
+    def init_interfaces(self):
+        super().init_interfaces()
+        self.actions = [Action(self.set_has_set_ops, "bitfield_set_ops_decl")]
+
+    def set_has_set_ops(self, obj):
+        obj.has_set_ops = True
 
 
 class bitfield_definition(ITypeDefinition):
@@ -999,18 +1100,11 @@ class bitfield_definition(ITypeDefinition):
         self.size = -1
         self.const = False
 
-        al = ["bitfield_size", "bitfield_const_decl"]
-        self.action_list.take_all(self, al)
-
         d = BitFieldDefinition(self.name)
-        d.type_name = self.name
-        d.length = self.size
-        d.const = self.const
         self.definition = d
-
-        self.action_list.take(d, "public")
-
-        self.action_list.take(d, "bitfield_declaration", single=False)
+        self.action_list.take_all(d, [
+            'bitfield_declaration', 'bitfield_size', 'bitfield_const_decl',
+            'bitfield_set_ops_decl', 'public'])
         d.update_unit_info()
 
 
@@ -1024,6 +1118,7 @@ class structure_definition(IABISpecific, ITypeDefinition):
         self.action_list.take(d, "declaration", single=False)
         self.action_list.take(d, "qualifier_list")
         self.action_list.take(d, "public")
+        self.action_list.take(d, "describe_lockable_type")
 
 
 class union_definition(ITypeDefinition):
@@ -1062,6 +1157,7 @@ class object_definition(IABISpecific, ITypeDefinition):
         self.action_list.take(d, "declaration", single=False)
         self.action_list.take(d, "qualifier_list")
         self.action_list.take(d, "public")
+        self.action_list.take(d, "describe_lockable_type")
 
         rl = ["object_type_has_object"]
         self.action_list.remove_all(rl)
@@ -1078,11 +1174,10 @@ class module_name(CommonListener):
 
 class bitfield_size(CommonListener):
     def init_interfaces(self):
-        self.size = int(self.children[0].value)
         self.actions = [Action(self.set_size, "bitfield_size")]
 
     def set_size(self, obj):
-        obj.size = self.size
+        obj.length = int(self.children[0].value)
 
 
 class ITypeExtension(CommonListener):

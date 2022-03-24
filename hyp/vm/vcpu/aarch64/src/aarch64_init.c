@@ -17,15 +17,35 @@
 #include <events/thread.h>
 #include <events/vcpu.h>
 
+#include <asm/barrier.h>
 #include <asm/sysregs.h>
 
 #include "event_handlers.h"
 
 void
+vcpu_handle_boot_runtime_init(void)
+{
+	// Disable floating-point traps
+#if defined(ARCH_ARM_8_1_VHE)
+	CPTR_EL2_E2H1_t cptr =
+		register_CPTR_EL2_E2H1_read_ordered(&asm_ordering);
+	CPTR_EL2_E2H1_set_FPEN(&cptr, 3);
+	register_CPTR_EL2_E2H1_write_ordered(cptr, &asm_ordering);
+#else
+	CPTR_EL2_E2H0_t cptr =
+		register_CPTR_EL2_E2H0_read_ordered(&asm_ordering);
+	CPTR_EL2_E2H0_set_TFP(&cptr, 0);
+	register_CPTR_EL2_E2H0_write_ordered(cptr, &asm_ordering);
+#endif
+}
+
+void
 vcpu_handle_boot_cpu_warm_init(void)
 {
+#if defined(ARCH_ARM_8_1_VHE)
 	CONTEXTIDR_EL2_t ctxidr = CONTEXTIDR_EL2_default();
 	register_CONTEXTIDR_EL2_write(ctxidr);
+#endif
 
 #if !SCHEDULER_CAN_MIGRATE
 	// Expose the real MIDR to VMs; no need to context-switch it.
@@ -51,15 +71,12 @@ arch_vcpu_el1_registers_init(thread_t *vcpu)
 static void
 arch_vcpu_el2_registers_init(vcpu_el2_registers_t *el2_regs)
 {
+#if defined(ARCH_ARM_8_1_VHE)
 	CPTR_EL2_E2H1_init(&el2_regs->cptr_el2);
-
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
-#if defined(ARCH_ARM_SVE)
-	CPTR_EL2_E2H1_set_ZEN(&el2_regs->cptr_el2, 2);
-#endif
 	CPTR_EL2_E2H1_set_FPEN(&el2_regs->cptr_el2, 3);
 #else
-	// Non-VHE, the default value of CPTR_EL2 is good enough
+	CPTR_EL2_E2H0_init(&el2_regs->cptr_el2);
+	CPTR_EL2_E2H0_set_TFP(&el2_regs->cptr_el2, 0);
 #endif
 
 	HCR_EL2_init(&el2_regs->hcr_el2);
@@ -107,51 +124,48 @@ arch_vcpu_el2_registers_init(vcpu_el2_registers_t *el2_regs)
 	// attributes.
 	HCR_EL2_set_MIOCNCE(&el2_regs->hcr_el2, true);
 
-#if ARCH_AARCH64_USE_VHE
+#if defined(ARCH_ARM_8_1_VHE)
 	HCR_EL2_set_E2H(&el2_regs->hcr_el2, true);
-	HCR_EL2_set_TGE(&el2_regs->hcr_el2, false);
-#else
-#if (ARCH_ARM_VER >= 81) || defined(ARCH_ARM_8_1_VHE)
-	HCR_EL2_set_E2H(&el2_regs->hcr_el2, false);
 #endif
 	HCR_EL2_set_TGE(&el2_regs->hcr_el2, false);
-#error non-E2H mode not implemented
-#endif
-#if (ARCH_ARM_VER >= 81)
+
+#if defined(ARCH_ARM_8_1_LOR)
 	// FIXME: we could temporarily set TLOR to false if we encounter Linux
 	// using these registers
 	HCR_EL2_set_TLOR(&el2_regs->hcr_el2, true);
 #endif
 
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_PAUTH)
-	HCR_EL2_set_APK(&el2_regs->hcr_el2, false);
-	HCR_EL2_set_API(&el2_regs->hcr_el2, false);
+#if defined(ARCH_ARM_8_3_PAUTH)
+	HCR_EL2_set_APK(&el2_regs->hcr_el2, true);
+	HCR_EL2_set_API(&el2_regs->hcr_el2, true);
 #endif
 
-#if (ARCH_ARM_VER >= 83) || defined(ARCH_ARM_8_3_NV)
+#if defined(ARCH_ARM_8_3_NV)
 	HCR_EL2_set_AT(&el2_regs->hcr_el2, true);
 #endif
 
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_NV)
+#if defined(ARCH_ARM_8_4_NV)
 	HCR_EL2_set_NV(&el2_regs->hcr_el2, false);
 	HCR_EL2_set_NV1(&el2_regs->hcr_el2, false);
 	HCR_EL2_set_NV2(&el2_regs->hcr_el2, false);
 #endif
 
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_S2FWB)
+#if defined(ARCH_ARM_8_4_S2FWB)
 	HCR_EL2_set_FWB(&el2_regs->hcr_el2, false);
 #endif
 
-#if (ARCH_ARM_VER >= 84) || defined(ARCH_ARM_8_4_RAS)
+#if defined(ARCH_ARM_8_4_RAS)
 	HCR_EL2_set_FIEN(&el2_regs->hcr_el2, false);
 #endif
 
 	MDCR_EL2_init(&el2_regs->mdcr_el2);
-	// Enable all debug traps by default
+	// Enable all debug register traps by default
 	MDCR_EL2_set_TDA(&el2_regs->mdcr_el2, true);
-	MDCR_EL2_set_TDE(&el2_regs->mdcr_el2, true);
 	MDCR_EL2_set_TDOSA(&el2_regs->mdcr_el2, true);
 	MDCR_EL2_set_TDRA(&el2_regs->mdcr_el2, true);
+	// Don't trap debug exceptions. The only ones not controlled by the
+	// registers trapped above are BRK / BKPT which are never cross-VM
+	MDCR_EL2_set_TDE(&el2_regs->mdcr_el2, false);
 #if defined(ARCH_ARM_PMU_V3)
 	// Enable PMU access traps by default
 	MDCR_EL2_set_TPM(&el2_regs->mdcr_el2, true);
@@ -159,18 +173,12 @@ arch_vcpu_el2_registers_init(vcpu_el2_registers_t *el2_regs)
 #endif
 #if defined(ARCH_ARM_SPE)
 	// Enable SPE traps by default
-	MDCR_EL2_set_TPM(&el2_regs->mdcr_el2, true);
+	MDCR_EL2_set_TPMS(&el2_regs->mdcr_el2, true);
 #endif
 #if defined(ARCH_ARM_8_4_TRACE)
 	// Enable trace traps by default
 	MDCR_EL2_set_TTRF(&el2_regs->mdcr_el2, true);
 #endif
-
-	// FIXME: We temporarily override the defaults above to disable the traps
-	// which are not yet supported in the hypervisor.
-	HCR_EL2_set_TIDCP(&el2_regs->hcr_el2, true);
-	HCR_EL2_set_TWE(&el2_regs->hcr_el2, false);
-	// ---------------------------------------------------------------
 
 	// FIXME: HACR_EL2 - per CPU type
 }
@@ -253,7 +261,7 @@ noreturn void
 vcpu_exception_return(uintptr_t unused_param);
 
 static noreturn void
-vcpu_thread_start(uintptr_t unused_param)
+vcpu_thread_start(uintptr_t unused_param) EXCLUDE_PREEMPT_DISABLED
 {
 	(void)unused_param;
 	trigger_vcpu_started_event();
@@ -315,8 +323,9 @@ vcpu_poweroff(void)
 
 	scheduler_lock(current);
 
-	error_t ret = trigger_vcpu_poweroff_event(false);
+	error_t ret = trigger_vcpu_poweroff_event(current, false);
 	if (ret != OK) {
+		scheduler_unlock(current);
 		return ret;
 	}
 
@@ -344,7 +353,7 @@ vcpu_suspend(void)
 	// vcpu_wakeup_self(), but we want that function to be fast.
 	preempt_disable();
 
-	scheduler_lock(current);
+	scheduler_lock_nopreempt(current);
 	if (vcpu_pending_wakeup()) {
 		ret = ERROR_BUSY;
 	} else {
@@ -353,18 +362,14 @@ vcpu_suspend(void)
 	if (ret == OK) {
 		scheduler_block(current, SCHEDULER_BLOCK_VCPU_SUSPEND);
 	}
-	scheduler_unlock(current);
+	scheduler_unlock_nopreempt(current);
 
 	if (ret == OK) {
-		trigger_vcpu_suspended_event();
-
 		scheduler_yield();
 
-		scheduler_lock(current);
+		scheduler_lock_nopreempt(current);
 		trigger_vcpu_resume_event();
-		scheduler_unlock(current);
-
-		trigger_vcpu_resumed_event();
+		scheduler_unlock_nopreempt(current);
 	}
 
 	preempt_enable();

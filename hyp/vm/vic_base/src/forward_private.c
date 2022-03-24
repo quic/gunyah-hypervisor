@@ -14,10 +14,13 @@
 #include <compiler.h>
 #include <cpulocal.h>
 #include <irq.h>
+#include <list.h>
 #include <log.h>
+#include <object.h>
 #include <partition.h>
 #include <platform_irq.h>
 #include <rcu.h>
+#include <scheduler.h>
 #include <spinlock.h>
 #include <trace.h>
 #include <util.h>
@@ -30,35 +33,67 @@
 #include "gicv3.h"
 #include "vic_base.h"
 
-#define fwd_private_from_virq_source(p)                                        \
-	(assert(p != NULL),                                                    \
-	 assert(p->trigger == VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE),          \
-	 vic_forward_private_container_of_source(p))
+static vic_private_irq_info_t *
+private_irq_info_from_virq_source(virq_source_t *source)
+{
+	assert(source != NULL);
+	assert(source->trigger == VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE);
 
-static vic_t *
-vic_unbind_hwirq_helper(hwirq_t *hwirq)
+	return vic_private_irq_info_container_of_source(source);
+}
+
+static error_t
+vic_bind_private_hwirq_helper(vic_forward_private_t *fp, thread_t *vcpu)
+{
+	error_t	    err;
+	cpu_index_t cpu;
+
+	assert(vcpu->forward_private_active);
+
+	if (!vcpu_option_flags_get_pinned(&vcpu->vcpu_options)) {
+		err = ERROR_DENIED;
+		goto out;
+	}
+
+	scheduler_lock(vcpu);
+	cpu = vcpu->scheduler_affinity;
+	scheduler_unlock(vcpu);
+
+	assert(cpulocal_index_valid(cpu));
+
+	vic_private_irq_info_t *irq_info = &fp->irq_info[cpu];
+
+	err = vic_bind_private_forward_private(&irq_info->source, fp->vic, vcpu,
+					       fp->virq, irq_info->irq, cpu);
+
+out:
+	return err;
+}
+
+static void
+vic_unbind_private_hwirq_helper(hwirq_t *hwirq)
 {
 	assert(hwirq->action == HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE);
 
-	vic_t *vic = NULL;
+	vic_forward_private_t *fp = atomic_exchange_explicit(
+		&hwirq->vic_base_forward_private, NULL, memory_order_consume);
+	if (fp != NULL) {
+		vic_t *vic = fp->vic;
+		assert(vic != NULL);
 
-	// Remove the VIRQ binding.
-	for (cpu_index_t i = 0; i < PLATFORM_MAX_CORES; ++i) {
-		vic_forward_private_t *fp = &hwirq->vic_base_forward_private[i];
+		spinlock_acquire(&vic->forward_private_lock);
 
-		vic_t *cur_vic = atomic_load_relaxed(&fp->source.vic);
-		if (cur_vic != NULL) {
-			vic = cur_vic;
-		} else {
-			continue;
+		for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
+			vic_unbind(&fp->irq_info[i].source);
 		}
 
-		vic_unbind(&fp->source);
+		list_delete_node(&vic->forward_private_list, &fp->list_node);
+
+		spinlock_release(&vic->forward_private_lock);
+
+		rcu_enqueue(&fp->rcu_entry,
+			    RCU_UPDATE_CLASS_VIC_BASE_FREE_FORWARD_PRIVATE);
 	}
-
-	rcu_sync();
-
-	return vic;
 }
 
 error_t
@@ -68,62 +103,65 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 
 	assert(hwirq->action == HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE);
 
-	// allocate for private forward
 	struct partition *partition = vic->header.partition;
 	assert(partition != NULL);
 
-	size_t size = sizeof(hwirq->vic_base_forward_private[0]) * GIC_PPI_NUM;
+	size_t		  size	  = sizeof(vic_forward_private_t);
 	void_ptr_result_t alloc_r = partition_alloc(
-		partition, size, alignof(hwirq->vic_base_forward_private[0]));
+		partition, size, alignof(vic_forward_private_t));
 	if (alloc_r.e != OK) {
 		err = ERROR_NOMEM;
 		goto out;
 	}
 
-	memset(alloc_r.r, 0, size);
-	hwirq->vic_base_forward_private = (vic_forward_private_t *)alloc_r.r;
+	vic_forward_private_t *fp = (vic_forward_private_t *)alloc_r.r;
+	memset(fp, 0, size);
+	fp->vic	 = object_get_vic_additional(vic);
+	fp->virq = virq;
 
-	count_t total_vcpu_cnt = vic->gicr_count;
-	while (total_vcpu_cnt > 0) {
-		index_t idx = total_vcpu_cnt - 1;
+	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
+		fp->irq_info[i].cpu = i;
+		fp->irq_info[i].irq = hwirq->irq;
+	}
+
+	// We must acquire this lock before setting the fp pointer in the
+	// hwirq object. This prevents a race with a concurrent unbind on the
+	// same hwirq, which might otherwise be able to clear the fp pointer and
+	// run its vic_unbind() calls too early, before the bind calls below,
+	// leading to the fp structure being freed while the sources in it are
+	// still bound.
+	spinlock_acquire(&vic->forward_private_lock);
+
+	vic_forward_private_t *expected = NULL;
+	if (!atomic_compare_exchange_strong_explicit(
+		    &hwirq->vic_base_forward_private, &expected, fp,
+		    memory_order_release, memory_order_relaxed)) {
+		spinlock_release(&vic->forward_private_lock);
+		partition_free(partition, fp, size);
+		err = ERROR_DENIED;
+		goto out;
+	}
+
+	list_insert_at_tail(&vic->forward_private_list, &fp->list_node);
+
+	// Bind for VCPUs that are attached to the VIC and active.
+	for (cpu_index_t i = 0U; (err == OK) && (i < PLATFORM_MAX_CORES); i++) {
 		rcu_read_start();
 
-		thread_t *vcpu = atomic_load_consume(&vic->gicr_vcpus[idx]);
-		if (vcpu == NULL) {
-			rcu_read_finish();
-			err = ERROR_OBJECT_CONFIG;
-			goto err_vcpu;
+		thread_t *vcpu = atomic_load_consume(&vic->gicr_vcpus[i]);
+		if ((vcpu != NULL) && vcpu->forward_private_active) {
+			err = vic_bind_private_hwirq_helper(fp, vcpu);
 		}
-
-		cpu_index_t pcpu = vcpu->scheduler_affinity;
-		assert(pcpu < PLATFORM_MAX_CORES);
-
-		vic_forward_private_t *forward_private =
-			&hwirq->vic_base_forward_private[pcpu];
-
-		err = vic_bind_private_forward_private(
-			forward_private, vic, vcpu, virq, hwirq->irq, pcpu);
-		if (err != OK) {
-			rcu_read_finish();
-			goto err_bind;
-		}
-
-		forward_private->cpu = pcpu;
-		atomic_store_relaxed(&forward_private->hw_active, false);
-		forward_private->pirq = hwirq->irq;
 
 		rcu_read_finish();
-
-		total_vcpu_cnt--;
 	}
 
-err_bind:
-err_vcpu:
+	spinlock_release(&vic->forward_private_lock);
+
 	if (err != OK) {
-		(void)vic_unbind_hwirq_helper(hwirq);
-		partition_free(partition, hwirq->vic_base_forward_private,
-			       size);
+		vic_unbind_private_hwirq_helper(hwirq);
 	}
+
 out:
 	return err;
 }
@@ -131,28 +169,53 @@ out:
 error_t
 vic_unbind_hwirq_forward_private(hwirq_t *hwirq)
 {
-	error_t ret = OK;
+	vic_unbind_private_hwirq_helper(hwirq);
 
-	assert(hwirq->action == HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE);
+	return OK;
+}
 
-	vic_t *vic = vic_unbind_hwirq_helper(hwirq);
-	if (vic == NULL) {
-		// if non of the vcpu is bound, something wrong
-		ret = OK;
-		goto out;
+bool
+vic_handle_vcpu_activate_thread_forward_private(thread_t *thread)
+{
+	bool   ret = true;
+	vic_t *vic = thread->vgic_vic;
+
+	if (vic != NULL) {
+		spinlock_acquire(&vic->forward_private_lock);
+
+		thread->forward_private_active = true;
+
+		vic_forward_private_t *fp;
+
+		list_foreach_container (fp, &vic->forward_private_list,
+					vic_forward_private, list_node) {
+			if (vic_bind_private_hwirq_helper(fp, thread) != OK) {
+				ret = false;
+				break;
+			}
+		}
+
+		spinlock_release(&vic->forward_private_lock);
 	}
 
-	// free for private forward
-	struct partition *partition = vic->header.partition;
-	if (partition == NULL) {
-		ret = ERROR_DENIED;
-		goto out;
-	}
-
-	size_t size = sizeof(hwirq->vic_base_forward_private[0]) * GIC_PPI_NUM;
-	partition_free(partition, hwirq->vic_base_forward_private, size);
-out:
 	return ret;
+}
+
+error_t
+vic_handle_object_create_vic_forward_private(vic_create_t vic_create)
+{
+	vic_t *vic = vic_create.vic;
+
+	spinlock_init(&vic->forward_private_lock);
+	list_init(&vic->forward_private_list);
+
+	return OK;
+}
+
+void
+vic_handle_object_deactivate_hwirq_forward_private(hwirq_t *hwirq)
+{
+	vic_unbind_private_hwirq_helper(hwirq);
 }
 
 bool
@@ -160,22 +223,28 @@ vic_handle_irq_received_forward_private(hwirq_t *hwirq)
 {
 	assert(hwirq != NULL);
 	assert(hwirq->action == HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE);
-	assert(hwirq->vic_base_forward_private != NULL);
 
 	bool_result_t is_edge_r;
-	bool	      deactivate = false;
-	_Atomic bool *hw_active	 = NULL;
-
-	cpu_index_t source_pcpu = cpulocal_get_index();
+	bool	      deactivate;
+	_Atomic bool *hw_active;
+	cpu_index_t   cpu = cpulocal_get_index();
 
 	rcu_read_start();
 
-	vic_forward_private_t *fwd_private_percpu =
-		hwirq->vic_base_forward_private;
-	hw_active = &fwd_private_percpu[source_pcpu].hw_active;
-	atomic_store_release(hw_active, true);
+	vic_forward_private_t *fp =
+		atomic_load_consume(&hwirq->vic_base_forward_private);
+	if (fp == NULL) {
+		irq_disable_local(hwirq);
+		deactivate = true;
+		goto out;
+	}
 
-	virq_source_t *source = &fwd_private_percpu[source_pcpu].source;
+	vic_private_irq_info_t *irq_info = &fp->irq_info[cpu];
+
+	hw_active = &irq_info->hw_active;
+	atomic_store_relaxed(hw_active, true);
+
+	virq_source_t *source = &irq_info->source;
 	is_edge_r	      = virq_assert(source, false);
 
 	if (compiler_unexpected(is_edge_r.e != OK)) {
@@ -204,6 +273,8 @@ vic_handle_irq_received_forward_private(hwirq_t *hwirq)
 		// handler.
 		deactivate = false;
 	}
+
+out:
 	rcu_read_finish();
 
 	return deactivate;
@@ -213,18 +284,17 @@ bool
 vic_handle_virq_check_pending_forward_private(virq_source_t *source,
 					      bool	     reasserted)
 {
-	vic_forward_private_t *fwd_private_percpu =
-		fwd_private_from_virq_source(source);
+	vic_private_irq_info_t *irq_info =
+		private_irq_info_from_virq_source(source);
 
 	if (!reasserted &&
-	    atomic_fetch_and_explicit(&fwd_private_percpu->hw_active, false,
+	    atomic_fetch_and_explicit(&irq_info->hw_active, false,
 				      memory_order_relaxed)) {
-		if (compiler_expected(cpulocal_get_index() ==
-				      fwd_private_percpu->cpu)) {
-			platform_irq_deactivate(fwd_private_percpu->pirq);
+		if (compiler_expected(cpulocal_get_index() == irq_info->cpu)) {
+			platform_irq_deactivate(irq_info->irq);
 		} else {
-			platform_irq_deactivate_percpu(fwd_private_percpu->pirq,
-						       fwd_private_percpu->cpu);
+			platform_irq_deactivate_percpu(irq_info->irq,
+						       irq_info->cpu);
 		}
 	}
 
@@ -234,17 +304,16 @@ vic_handle_virq_check_pending_forward_private(virq_source_t *source,
 bool
 vic_handle_virq_set_enabled_forward_private(virq_source_t *source, bool enabled)
 {
-	vic_forward_private_t *fwd_private_percpu =
-		fwd_private_from_virq_source(source);
-	assert(fwd_private_percpu->source.is_private);
-	assert(platform_irq_is_percpu(fwd_private_percpu->pirq));
+	vic_private_irq_info_t *irq_info =
+		private_irq_info_from_virq_source(source);
+
+	assert(source->is_private);
+	assert(platform_irq_is_percpu(irq_info->irq));
 
 	if (enabled) {
-		platform_irq_enable_percpu(fwd_private_percpu->pirq,
-					   fwd_private_percpu->cpu);
+		platform_irq_enable_percpu(irq_info->irq, irq_info->cpu);
 	} else {
-		platform_irq_disable_percpu(fwd_private_percpu->pirq,
-					    fwd_private_percpu->cpu);
+		platform_irq_disable_percpu(irq_info->irq, irq_info->cpu);
 	}
 
 	return true;
@@ -254,14 +323,32 @@ irq_trigger_result_t
 vic_handle_virq_set_mode_forward_private(virq_source_t *source,
 					 irq_trigger_t	mode)
 {
-	vic_forward_private_t *fwd_private_percpu =
-		fwd_private_from_virq_source(source);
+	vic_private_irq_info_t *irq_info =
+		private_irq_info_from_virq_source(source);
 
 	assert(source->is_private);
-	assert(platform_irq_is_percpu(fwd_private_percpu->pirq));
+	assert(platform_irq_is_percpu(irq_info->irq));
 
-	return gicv3_irq_set_trigger_percpu(fwd_private_percpu->pirq, mode,
-					    fwd_private_percpu->cpu);
+	return gicv3_irq_set_trigger_percpu(irq_info->irq, mode, irq_info->cpu);
 }
 
+rcu_update_status_t
+vic_handle_free_forward_private(rcu_entry_t *entry)
+{
+	rcu_update_status_t ret = rcu_update_status_default();
+
+	assert(entry != NULL);
+
+	vic_forward_private_t *fp =
+		vic_forward_private_container_of_rcu_entry(entry);
+	vic_t *vic = fp->vic;
+
+	partition_t *partition = vic->header.partition;
+	assert(partition != NULL);
+	partition_free(partition, fp, sizeof(vic_forward_private_t));
+
+	object_put_vic(vic);
+
+	return ret;
+}
 #endif

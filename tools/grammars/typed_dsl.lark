@@ -33,12 +33,14 @@ _unary_expr : _primary_expr
         | alignof_operation
         | maxof_operation
         | minof_operation
+        | msb_operation
 UNARY_OPERATOR : "~" | "!"
 unary_operation : UNARY_OPERATOR _unary_expr | SIGN_OPERATOR _unary_expr
 sizeof_operation : "sizeof" "(" _type ")"
 alignof_operation : "_Alignof" "(" _type ")"
 maxof_operation : "maxof" "(" _type ")"
 minof_operation : "minof" "(" _type ")"
+msb_operation : "msb" "(" constant_expression ")"
 
 _mult_expr : _unary_expr | mult_operation
 MULT_OPERATOR : "*" | "/" | "%"
@@ -121,6 +123,7 @@ _type_definition : bitfield_definition
                 | union_definition
                 | alternative_definition
                 | constant_definition
+                | global_definition
                 | enumeration_definition
 
 public : "public"
@@ -130,10 +133,16 @@ alternative_definition : IDENTIFIER public? "newtype" _type ";"
 // Constants aka 'C' defines
 constant_definition : IDENTIFIER public? "constant" direct_type? "=" constant_expression ";"
 
+// Global variables (never public; declaration only)
+global_definition : IDENTIFIER "global" direct_type ";"
+
 bitfield_size : constant_expression
+_bitfield_size : "<" bitfield_size ">"
 bitfield_const_decl : "const"
-_bitfield_params : "<" bitfield_size ("," (bitfield_const_decl))?  ">"
-bitfield_definition : IDENTIFIER public? "bitfield" _bitfield_params? "{" bitfield_declaration* "}" ";"
+bitfield_set_ops_decl : "set_ops"
+_bitfield_param : bitfield_const_decl | bitfield_set_ops_decl
+_bitfield_params : "(" _bitfield_param ("," _bitfield_param)* ")"
+bitfield_definition : IDENTIFIER public? "bitfield" _bitfield_size? _bitfield_params? "{" bitfield_declaration* "}" ";"
 
 // NOTE: restrict object declaration only in object when handling AST
 object_definition : IDENTIFIER public? "object" _qualifiers? "{" declaration* "}" ";"
@@ -190,10 +199,12 @@ primitive_type : PRIMITIVE_TYPE
 
 bitfield_specifier: bitfield_others | bitfield_auto | _bitfield_bit_list
 bitfield_bit_range: _bitfield_bit [":" _bitfield_bit]
-_bitfield_bit_list: bitfield_bit_range ("," bitfield_bit_range)*
+bitfield_bit_span: bitfield_width ":" _bitfield_bit
+_bitfield_bit_range: bitfield_bit_range | bitfield_bit_span
+_bitfield_bit_list: _bitfield_bit_range ("," _bitfield_bit_range)*
 _bitfield_bit: bracketed_constant_expression
 bitfield_width: "<" constant_expression ">"
-bitfield_auto: "auto" bitfield_width?
+bitfield_auto: AUTO bitfield_width?
 bitfield_others: "others"
 bitfield_delete: "delete" IDENTIFIER
 bitfield_default: "=" constant_expression
@@ -203,13 +214,17 @@ UNKNOWN : "unknown"
 bitfield_unknown : UNKNOWN bitfield_default?
 bitfield_const: bracketed_constant_expression
 
-_qualifier : basic_qualifier | aligned_qualifier | atomic_qualifier | packed_qualifier | contained_qualifier
-BASIC_QUALIFIER : "const" | "restrict" |  "volatile" | "writeonly"
+_qualifier : basic_qualifier | aligned_qualifier | atomic_qualifier
+          | packed_qualifier | contained_qualifier | writeonly_qualifier
+          | lockable_qualifier
+BASIC_QUALIFIER : "const" | "restrict" |  "volatile"
 basic_qualifier : BASIC_QUALIFIER
 aligned_qualifier : "aligned" "(" constant_expression ")"
 atomic_qualifier : "atomic"
 packed_qualifier : "packed"
 contained_qualifier : "contained"
+writeonly_qualifier : "writeonly"
+lockable_qualifier : "lockable"
 
 BIT : "bit"
 BITS : "bits"

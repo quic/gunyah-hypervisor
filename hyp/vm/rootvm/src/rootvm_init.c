@@ -26,6 +26,7 @@
 #include <util.h>
 #include <vcpu.h>
 
+#include <events/object.h>
 #include <events/rootvm.h>
 
 #include <asm/cache.h>
@@ -49,7 +50,6 @@ rootvm_init(void)
 	thread_create_t params = {
 		.scheduler_affinity	  = cpulocal_get_index(),
 		.scheduler_affinity_valid = true,
-		.kind			  = THREAD_KIND_VCPU,
 		.scheduler_priority	  = SCHEDULER_MAX_PRIORITY - 2U,
 		.scheduler_priority_valid = true,
 	};
@@ -80,6 +80,8 @@ rootvm_init(void)
 	if (object_activate_cspace(root_cspace) != OK) {
 		goto cspace_fail;
 	}
+
+	trigger_object_get_defaults_thread_event(&params);
 
 	// Allocate and setup the root thread
 	thread_ptr_result_t thd_ret =
@@ -115,7 +117,7 @@ rootvm_init(void)
 	}
 
 	void_ptr_result_t alloc_ret;
-	boot_env_data_t * env_data;
+	boot_env_data_t	*env_data;
 	size_t		  env_data_size = sizeof(*env_data);
 
 	alloc_ret = partition_alloc(root_partition, env_data_size,
@@ -135,7 +137,7 @@ rootvm_init(void)
 	// Create caps for the root partition and thread
 	obj_ptr.partition = root_partition;
 	capid_ret	  = cspace_create_master_cap(root_cspace, obj_ptr,
-					     OBJECT_TYPE_PARTITION);
+						     OBJECT_TYPE_PARTITION);
 	if (capid_ret.e != OK) {
 		panic("Error creating root partition cap");
 	}

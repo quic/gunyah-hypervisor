@@ -6,11 +6,11 @@ ticks_t
 platform_timer_get_timeout(void);
 
 void
-platform_timer_cancel_timeout(void);
+platform_timer_cancel_timeout(void) REQUIRE_PREEMPT_DISABLED;
 
 // Must be called with preempt_disabled
 void
-platform_timer_set_timeout(ticks_t timeout);
+platform_timer_set_timeout(ticks_t timeout) REQUIRE_PREEMPT_DISABLED;
 
 uint32_t
 platform_timer_get_frequency(void);

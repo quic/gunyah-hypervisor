@@ -5,13 +5,21 @@
 module ipi
 
 subscribe platform_ipi
+	require_preempt_disabled
 
 subscribe idle_yield
 	// Run late, as this handler may sleep
 	priority -100
+	require_preempt_disabled
 
 subscribe power_cpu_suspend()
+	require_preempt_disabled
 
 subscribe thread_exit_to_user
+	require_preempt_disabled
 
 subscribe optional preempt_interrupt
+
+// This handler IPIs all cores to stop, it has high priority
+subscribe scheduler_stop()
+	priority 1000

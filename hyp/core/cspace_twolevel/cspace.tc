@@ -27,6 +27,7 @@ extend cap_rights_cspace bitfield {
 	1	cap_delete	bool;	// right to delete a cap
 	2	cap_copy	bool;	// right to copy a cap from cspace
 	3	attach		bool;	// right to attach a thread to cspace
+	4	cap_revoke	bool;	// right to revoke caps from cspace
 };
 
 define cap_state enumeration(explicit) {

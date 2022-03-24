@@ -40,12 +40,19 @@ str_equal(const unsigned char *s1, const unsigned char *s2, size_t n)
 }
 
 bool
-elf_valid(void *elf_file)
+elf_valid(void *elf_file, size_t max_size)
 {
-	index_t i;
-	bool	ret = false;
+	index_t	  i;
+	bool	  ret	   = false;
+	uintptr_t area_end = (uintptr_t)elf_file + max_size;
 
 	Elf_Ehdr *ehdr = (Elf_Ehdr *)(uintptr_t)elf_file;
+
+	if ((area_end < (uintptr_t)elf_file) ||
+	    util_add_overflows((uintptr_t)ehdr, sizeof(ehdr)) ||
+	    (((uintptr_t)ehdr + sizeof(ehdr)) > area_end)) {
+		goto out;
+	}
 
 	if (!str_equal(ehdr->e_ident, elf_ident, EI_MAG_SIZE)) {
 		goto out;
@@ -68,7 +75,7 @@ elf_valid(void *elf_file)
 	if (ehdr->e_type != ET_DYN) {
 		goto out;
 	}
-#if defined(ARCH_ARM) && (ARCH_ARM_VER >= 80)
+#if defined(ARCH_ARM)
 	if (ehdr->e_machine != EM_AARCH64) {
 		goto out;
 	}
@@ -80,6 +87,10 @@ elf_valid(void *elf_file)
 	Elf_Half  phnum = ehdr->e_phnum;
 
 	if (ehdr->e_phentsize != sizeof(Elf_Phdr)) {
+		goto out;
+	}
+	if (util_add_overflows((uintptr_t)phdr, sizeof(phdr) * phnum) ||
+	    ((((uintptr_t)phdr + (sizeof(phdr) * phnum)) > area_end))) {
 		goto out;
 	}
 

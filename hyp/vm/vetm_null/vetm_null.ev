@@ -4,4 +4,4 @@
 
 module vetm_null
 
-subscribe vdevice_access
+subscribe vdevice_access_fixed_addr

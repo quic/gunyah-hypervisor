@@ -1,5 +1,6 @@
 " Vim syntax file
 " Language:	Gunyah Type Files
+" Maintainer:	Carl van Schaik <quic_cvanscha@quicinc.com>
 " Extensions:   *.tc
 "
 " © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
@@ -18,7 +19,7 @@ syn match Bits contained '<[0-9]\+>'
 syn match TypeName contained /[_A-Za-z0-9]\+/
 
 syn keyword tcBaseType contained sint8 sint16 sint32 sint64 bool uint8 uint16 uint32 uint64 char sintptr uintptr sregister uregister size
-syn keyword tcQual contained pointer array atomic aligned
+syn keyword tcQual contained pointer array atomic aligned lockable
 syn keyword tcBitmap contained unknown
 
 syn match tcContained contained "\%#=1\<contained\>"

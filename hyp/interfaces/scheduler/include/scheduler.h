@@ -57,7 +57,11 @@ scheduler_yield_to(thread_t *target);
 // A caller must not attempt to acquire scheduling locks for multiple threads
 // concurrently.
 void
-scheduler_lock(thread_t *thread);
+scheduler_lock(thread_t *thread) ACQUIRE_SCHEDULER_LOCK(thread);
+
+// Lock a thread's scheduler state, when preemption is known to be disabled.
+void
+scheduler_lock_nopreempt(thread_t *thread) ACQUIRE_SCHEDULER_LOCK_NP(thread);
 
 // Unlock a thread's scheduler state.
 //
@@ -65,7 +69,11 @@ scheduler_lock(thread_t *thread);
 // scheduler_lock(). Calls to this function must exactly balance calls to
 // scheduler_lock().
 void
-scheduler_unlock(thread_t *thread);
+scheduler_unlock(thread_t *thread) RELEASE_SCHEDULER_LOCK(thread);
+
+// Unlock a thread's scheduler state, without enabling preemption.
+void
+scheduler_unlock_nopreempt(thread_t *thread) RELEASE_SCHEDULER_LOCK_NP(thread);
 
 // Block a thread for a specified reason.
 //
@@ -90,7 +98,8 @@ scheduler_unlock(thread_t *thread);
 // will not immediately interrupt that thread. Call scheduler_sync(thread) if
 // it is necessary to wait until the target thread is not running.
 void
-scheduler_block(thread_t *thread, scheduler_block_t block);
+scheduler_block(thread_t *thread, scheduler_block_t block)
+	REQUIRE_SCHEDULER_LOCK(thread);
 
 // Block a thread for a specified reason during creation.
 //
@@ -115,7 +124,8 @@ scheduler_block_init(thread_t *thread, scheduler_block_t block);
 //
 // Returns true if a scheduler run is needed as a consequence of this call.
 bool
-scheduler_unblock(thread_t *thread, scheduler_block_t block);
+scheduler_unblock(thread_t *thread, scheduler_block_t block)
+	REQUIRE_SCHEDULER_LOCK(thread);
 
 // Return true if a thread is blocked for a specified reason.
 //
@@ -172,7 +182,7 @@ scheduler_sync(thread_t *thread);
 //
 // This function is a no-op for schedulers that do not support migration.
 void
-scheduler_pin(thread_t *thread);
+scheduler_pin(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
 // Unpin a thread from its current physical CPU.
 //
@@ -182,7 +192,7 @@ scheduler_pin(thread_t *thread);
 //
 // This function is a no-op for schedulers that do not support migration.
 void
-scheduler_unpin(thread_t *thread);
+scheduler_unpin(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
 // Get the primary VCPU for a specific physical CPU.
 //
@@ -209,7 +219,7 @@ scheduler_get_primary_vcpu(cpu_index_t cpu);
 // cpulocal_get_index(); for threads that may be running remotely
 // scheduler_get_active_affinity() should be used instead.
 cpu_index_t
-scheduler_get_affinity(thread_t *thread);
+scheduler_get_affinity(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
 // Returns the active affinity of a thread.
 //
@@ -222,7 +232,7 @@ scheduler_get_affinity(thread_t *thread);
 // changed. If the thread is not currently running, this function will return
 // the same result as scheduler_get_affinity().
 cpu_index_t
-scheduler_get_active_affinity(thread_t *thread);
+scheduler_get_active_affinity(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
 // Set the affinity of a thread.
 //
@@ -234,21 +244,24 @@ scheduler_get_active_affinity(thread_t *thread);
 // called for threads that have not yet been activated. Threads that are pinned
 // to a CPU cannot have their affinity changed.
 error_t
-scheduler_set_affinity(thread_t *thread, cpu_index_t target_cpu);
+scheduler_set_affinity(thread_t *thread, cpu_index_t target_cpu)
+	REQUIRE_SCHEDULER_LOCK(thread);
 
 error_t
-scheduler_set_priority(thread_t *thread, priority_t priority);
+scheduler_set_priority(thread_t *thread, priority_t priority)
+	REQUIRE_SCHEDULER_LOCK(thread);
 
 error_t
-scheduler_set_timeslice(thread_t *thread, nanoseconds_t timeslice);
+scheduler_set_timeslice(thread_t *thread, nanoseconds_t timeslice)
+	REQUIRE_SCHEDULER_LOCK(thread);
 
-// Returns true if the currently running thread can idle.
+// Returns true if the specified thread has sufficient priority to immediately
+// preempt the currently running thread.
 //
-// This function return should return true if there are no other threads
-// runnable on the current CPU, and a reschedule doesn't need to occur (due to
-// migration or some other reason). This can be used as a hint that the current
-// thread can perform an idle task.
+// This function assumes that the specified thread is able to run on the calling
+// CPU, regardless of the current block flags, affinity, timeslice, etc.
 //
-// This must be called with preemption disabled.
+// The scheduler lock for the specified thread must be held, and it is assumed
+// not to be the current thread.
 bool
-scheduler_current_can_idle(void);
+scheduler_will_preempt_current(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);

@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <hyptypes.h>
+#include <string.h>
 
 #include <hypconstants.h>
 #include <hypregisters.h>
@@ -19,7 +20,11 @@
 #include <pgtable.h>
 #include <platform_cpu.h>
 #include <platform_ipi.h>
+#include <platform_irq.h>
 #include <preempt.h>
+#include <scheduler.h>
+#include <spinlock.h>
+#include <thread.h>
 #include <trace.h>
 #include <util.h>
 
@@ -29,6 +34,7 @@
 
 #include "event_handlers.h"
 #include "gicv3.h"
+#include "gicv3_config.h"
 
 #if defined(VERBOSE) && VERBOSE
 #define GICV3_DEBUG 1
@@ -39,17 +45,18 @@
 #define GICD_ENABLE_GET_N(x) ((x) >> 5)
 #define GIC_ENABLE_BIT(x)    (uint32_t)(1UL << ((x)&31UL))
 
-// All interrupts will be set to the default priority.
-//
-// Interrupts with priority zero are presumed to be reserved by EL3.
-#define GIC_PRIORITY_DEFAULT 0xA0U
-
 static gicd_t *gicd;
 static gicr_t *mapped_gicrs[PLATFORM_MAX_CORES];
+static paddr_t phys_gicrs[PLATFORM_MAX_CORES];
+
+// Several of the IRQ configuration registers can only be updated using writes
+// that affect more than one IRQ at a time, notably GICD_ICFGR and GICD_ICLAR.
+// This lock is used to make the read-modify-write sequences atomic.
+static spinlock_t bitmap_update_lock;
 
 typedef struct gicr_cpu {
 	ICC_SGIR_EL1_t icc_sgi1r;
-	gicr_t *       gicr;
+	gicr_t	       *gicr;
 } gicr_cpu_t;
 CPULOCAL_DECLARE_STATIC(gicr_cpu_t, gicr_cpu);
 
@@ -89,13 +96,15 @@ gicr_wait_for_write(gicr_t *gicr)
 	atomic_device_fence(memory_order_acquire);
 }
 
-static count_t gicv3_irq_max_cache;
+static count_t gicv3_spi_max_cache;
+#if GICV3_EXT_IRQS
+static count_t gicv3_spi_ext_max_cache;
+static count_t gicv3_ppi_ext_max_cache;
+#endif
 
 static void
 gicr_set_percpu(cpu_index_t cpu)
 {
-	gicr_t *gicr = mapped_gicrs[0];
-
 	psci_mpidr_t mpidr = platform_cpu_index_to_mpidr(cpu);
 	uint8_t	     aff0  = psci_mpidr_get_Aff0(&mpidr);
 	uint8_t	     aff1  = psci_mpidr_get_Aff1(&mpidr);
@@ -104,10 +113,14 @@ gicr_set_percpu(cpu_index_t cpu)
 
 	size_t gicr_stride = 1U << GICR_STRIDE_SHIFT; // 64k for v3, 128k for v4
 	GICR_TYPER_t gicr_typer;
+	gicr_t      *gicr = NULL;
 
 	// Search for the redistributor that matches this affinity value. We
 	// assume that the stride that separates all redistributors is the same.
-	do {
+	for (cpu_index_t i = 0U; cpulocal_index_valid(i); i++) {
+		gicr = mapped_gicrs[i];
+		assert(gicr != NULL);
+
 		gicr_typer = atomic_load_relaxed(&gicr->rd.typer);
 
 		if ((GICR_TYPER_get_Aff0(&gicr_typer) == aff0) &&
@@ -118,10 +131,12 @@ gicr_set_percpu(cpu_index_t cpu)
 		} else {
 			gicr = (gicr_t *)((paddr_t)gicr + gicr_stride);
 		}
+		if (GICR_TYPER_get_Last(&gicr_typer)) {
+			break;
+		}
+	}
 
-	} while (!GICR_TYPER_get_Last(&gicr_typer));
-
-	if ((GICR_TYPER_get_Aff0(&gicr_typer) != aff0) ||
+	if ((gicr == NULL) || (GICR_TYPER_get_Aff0(&gicr_typer) != aff0) ||
 	    (GICR_TYPER_get_Aff1(&gicr_typer) != aff1) ||
 	    (GICR_TYPER_get_Aff2(&gicr_typer) != aff2) ||
 	    (GICR_TYPER_get_Aff3(&gicr_typer) != aff3)) {
@@ -134,7 +149,19 @@ gicr_set_percpu(cpu_index_t cpu)
 count_t
 gicv3_irq_max(void)
 {
-	return gicv3_irq_max_cache;
+	count_t result = gicv3_spi_max_cache;
+
+#if GICV3_EXT_IRQS
+	if (gicv3_spi_ext_max_cache != 0U) {
+		result = gicv3_spi_ext_max_cache;
+	} else if (gicv3_ppi_ext_max_cache != 0U) {
+		result = gicv3_ppi_ext_max_cache;
+	} else {
+		// No extended IRQs implemented
+	}
+#endif
+
+	return result;
 }
 
 gicv3_irq_type_t
@@ -148,22 +175,21 @@ gicv3_get_irq_type(irq_t irq)
 		   (irq < (GIC_PPI_BASE + GIC_PPI_NUM))) {
 		type = GICV3_IRQ_TYPE_PPI;
 	} else if ((irq >= GIC_SPI_BASE) &&
-		   (irq < (GIC_SPI_BASE + GIC_SPI_NUM))) {
+		   (irq < (GIC_SPI_BASE + GIC_SPI_NUM)) &&
+		   (irq <= gicv3_spi_max_cache)) {
 		type = GICV3_IRQ_TYPE_SPI;
 	} else if ((irq >= GIC_SPECIAL_INTIDS_BASE) &&
 		   (irq < (GIC_SPECIAL_INTIDS_BASE + GIC_SPECIAL_INTIDS_NUM))) {
 		type = GICV3_IRQ_TYPE_SPECIAL;
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	} else if ((irq >= GIC_PPI_EXT_BASE) &&
-		   (irq < (GIC_PPI_EXT_BASE + GIC_PPI_EXT_NUM))) {
+		   (irq < (GIC_PPI_EXT_BASE + GIC_PPI_EXT_NUM)) &&
+		   (irq <= gicv3_ppi_ext_max_cache)) {
 		type = GICV3_IRQ_TYPE_PPI_EXT;
 	} else if ((irq >= GIC_SPI_EXT_BASE) &&
-		   (irq < (GIC_SPI_EXT_BASE + GIC_SPI_EXT_NUM))) {
+		   (irq < (GIC_SPI_EXT_BASE + GIC_SPI_EXT_NUM)) &&
+		   (irq <= gicv3_spi_ext_max_cache)) {
 		type = GICV3_IRQ_TYPE_SPI_EXT;
-#endif
-#if GICv3_HAS_LPI
-	} else if (irq >= GIC_LPI_BASE) {
-		type = GICV3_IRQ_TYPE_LPI;
 #endif
 	} else {
 		type = GICV3_IRQ_TYPE_RESERVED;
@@ -180,17 +206,14 @@ gicv3_irq_is_percpu(irq_t irq)
 	switch (gicv3_get_irq_type(irq)) {
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 		ret = true;
 		break;
 	case GICV3_IRQ_TYPE_SPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
-#endif
-#if GICv3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
@@ -205,66 +228,39 @@ gicv3_irq_is_percpu(irq_t irq)
 static bool
 is_irq_reserved(irq_t irq)
 {
-	bool	ret	  = false;
-	uint8_t ipriority = 0U;
+	uint8_t ipriority;
 
 	assert(irq <= gicv3_irq_max());
-	gicr_t *     gicr	= CPULOCAL(gicr_cpu).gicr;
-	GICD_TYPER_t gicd_typer = atomic_load_relaxed(&gicd->typer);
+	gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
 
-	count_t it_lines = GICD_TYPER_get_ITLinesNumber(&gicd_typer) + 1U;
-	count_t max_spi_num =
-		util_min((it_lines * 32U) - 1U, GIC_SPI_BASE + GIC_SPI_NUM - 1);
-
-#if GICv3_EXT_IRQS
-	count_t	     max_spi_ext_num, max_ppi_ext_num;
-	GICR_TYPER_t gicr_typer = atomic_load_relaxed(&gicr->rd.typer);
-
-	if (GICD_TYPER_get_ESPI(&gicd_typer)) {
-		max_spi_ext_num =
-			((GICD_TYPER_get_ESPI_range(&gicd_typer) + 1U) * 32U) +
-			GIC_SPI_EXT_BASE - 1U;
-	} else {
-		max_spi_ext_num = GIC_SPI_EXT_BASE - 1;
-	}
-
-	if (GICR_TYPER_get_PPInum(&gicr_typer) == GICR_TYPER_PPINUM_MAX_1087) {
-		max_ppi_ext_num = 1087U;
-	} else if (GICR_TYPER_get_PPInum(&gicr_typer) ==
-		   GICR_TYPER_PPINUM_MAX_1119) {
-		max_ppi_ext_num = 1119U;
-	} else {
-		// No extended PPIs
-		max_ppi_ext_num = 0U;
-	}
-#endif
-
-	if (irq < GIC_SPI_BASE) {
+	switch (gicv3_get_irq_type(irq)) {
+	case GICV3_IRQ_TYPE_SGI:
+	case GICV3_IRQ_TYPE_PPI:
 		ipriority = atomic_load_relaxed(&gicr->sgi.ipriorityr[irq]);
-	} else if (irq <= max_spi_num) {
+		break;
+	case GICV3_IRQ_TYPE_SPI:
 		ipriority = atomic_load_relaxed(&gicd->ipriorityr[irq]);
-#if GICv3_EXT_IRQS
-	} else if ((GICR_TYPER_get_PPInum(&gicr_typer) != 0) &&
-		   (irq >= GIC_PPI_EXT_BASE) && (irq <= max_ppi_ext_num)) {
-		// Extended PPI
+		break;
+#if GICV3_EXT_IRQS
+	case GICV3_IRQ_TYPE_PPI_EXT:
 		ipriority = atomic_load_relaxed(
 			&gicr->sgi.ipriorityr_e[irq - GIC_PPI_EXT_BASE]);
-	} else if (GICD_TYPER_get_ESPI(&gicd_typer) &&
-		   (irq >= GIC_SPI_EXT_BASE) && (irq <= max_spi_ext_num)) {
-		// Extended SPI
+		break;
+	case GICV3_IRQ_TYPE_SPI_EXT:
 		ipriority = atomic_load_relaxed(
 			&gicd->ipriorityr_e[irq - GIC_SPI_EXT_BASE]);
+		break;
 #endif
-	} else {
-		// No action required as irq is not handled.
+	case GICV3_IRQ_TYPE_SPECIAL:
+	case GICV3_IRQ_TYPE_RESERVED:
+	default:
+		// Always reserved.
+		ipriority = 0U;
+		break;
 	}
 
 	// All interrupts with priority zero are reserved.
-	if (ipriority == 0U) {
-		ret = true;
-	}
-
-	return ret;
+	return (ipriority == 0U);
 }
 
 error_t
@@ -295,11 +291,12 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	paddr_t gicd_base   = PLATFORM_GICD_BASE;
 	size_t	gicd_size   = 0x10000U; // GICD is always 64K
 	paddr_t gicr_base   = PLATFORM_GICR_BASE;
-	size_t	gicr_stride = 1U << GICR_STRIDE_SHIFT;
+	size_t	gicr_stride = (size_t)1U << GICR_STRIDE_SHIFT;
 	size_t	gicr_size   = PLATFORM_MAX_CORES << GICR_STRIDE_SHIFT;
+	size_t gits_size = 0U;
 
 	virt_range_result_t range = hyp_aspace_allocate(
-		util_balign_up(gicd_size, gicr_size) + gicr_size);
+		util_balign_up(gicd_size, gicr_size) + gicr_size + gits_size);
 	if (range.e != OK) {
 		panic("gicv3: Address allocation failed.");
 	}
@@ -318,10 +315,11 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	}
 
 	// Map the redistributors and calculate their addresses
+	phys_gicrs[0] = gicr_base;
 	mapped_gicrs[0] =
 		(gicr_t *)(range.r.base + util_balign_up(gicd_size, gicr_size));
 	ret = pgtable_hyp_map(hyp_partition, (uintptr_t)mapped_gicrs[0],
-			      gicr_size, gicr_base,
+			      gicr_size, phys_gicrs[0],
 			      PGTABLE_HYP_MEMTYPE_NOSPEC_NOCOMBINE,
 			      PGTABLE_ACCESS_RW,
 			      VMSA_SHAREABILITY_NON_SHAREABLE);
@@ -329,64 +327,89 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 		panic("gicv3: Mapping of redistributors failed.");
 	}
 
-	for (cpu_index_t i = 1; cpulocal_index_valid(i); i++) {
-		mapped_gicrs[i] =
-			(gicr_t *)((paddr_t)mapped_gicrs[i - 1] + gicr_stride);
-	}
-
 	pgtable_hyp_commit();
+
+	for (cpu_index_t i = 1; cpulocal_index_valid(i); i++) {
+		mapped_gicrs[i] = (gicr_t *)((uintptr_t)mapped_gicrs[i - 1U] +
+					     gicr_stride);
+		phys_gicrs[i]	= phys_gicrs[i - 1U] + gicr_stride;
+
+		// Ensure that DPG1NS is set, so the GICD does not try to route
+		// 1-of-N interrupts to this GICR before we have set it up (when
+		// the CPU first powers on), assuming that TZ has enabled E1NWF.
+		// It is implementation defined whether this affects CPUs that
+		// are sleeping, but it does work for GIC-600 and GIC-700.
+		GICR_CTLR_t gicr_ctlr =
+			atomic_load_relaxed(&mapped_gicrs[i]->rd.ctlr);
+		GICR_CTLR_set_DPG1NS(&gicr_ctlr, true);
+		atomic_store_relaxed(&mapped_gicrs[i]->rd.ctlr, gicr_ctlr);
+	}
 
 	// Disable the distributor
 	atomic_store_relaxed(&gicd->ctlr,
 			     (GICD_CTLR_t){ .ns = GICD_CTLR_NS_default() });
 	GICD_CTLR_NS_t ctlr = gicd_wait_for_write();
 
+#if GICV3_HAS_SECURITY_DISABLED
 	// If security disabled set all interrupts to group 1
 	GICD_CTLR_t ctlr_ds = atomic_load_relaxed(&(gicd->ctlr));
-	if (GICD_CTLR_DS_get_DS(&ctlr_ds.ds)) {
-		for (index_t i = 0; i < util_array_size(gicd->igroupr); i++) {
-			atomic_store_relaxed(&gicd->igroupr[i], 0xffffffff);
-		}
+	assert(GICD_CTLR_DS_get_DS(&ctlr_ds.ds));
+
+	for (index_t i = 0; i < util_array_size(gicd->igroupr); i++) {
+		atomic_store_relaxed(&gicd->igroupr[i], 0xffffffff);
 	}
+#if GICV3_EXT_IRQS
+	for (index_t i = 0; i < util_array_size(gicd->igroupr_e); i++) {
+		atomic_store_relaxed(&gicd->igroupr_e[i], 0xffffffff);
+	}
+#endif
+#endif
 
 	// Calculate the number of supported IRQs
 	GICD_TYPER_t typer = atomic_load_relaxed(&gicd->typer);
 
-#if GICv3_EXT_IRQS
+	count_t lines	    = GICD_TYPER_get_ITLinesNumber(&typer);
+	gicv3_spi_max_cache = util_min(GIC_SPI_BASE + GIC_SPI_NUM - 1U,
+				       (32U * (lines + 1U)) - 1U);
+
+#if GICV3_EXT_IRQS || GICV3_HAS_ITS
+	// Pick an arbitrary GICR to probe extended PPI and common LPI affinity
+	// (we assume that these are the same across all GICRs)
+	gicr_t      *gicr	= mapped_gicrs[0];
+	GICR_TYPER_t gicr_typer = atomic_load_relaxed(&gicr->rd.typer);
+#endif
+
+#if GICV3_EXT_IRQS
 	bool espi = GICD_TYPER_get_ESPI(&typer);
 
 	if (espi) {
 		count_t espi_range = GICD_TYPER_get_ESPI_range(&typer);
-		gicv3_irq_max_cache =
+		gicv3_spi_ext_max_cache =
 			GIC_SPI_EXT_BASE - 1U + (32U * (espi_range + 1U));
 	} else {
-		gicr_t *     gicr	= mapped_gicrs[0];
-		GICR_TYPER_t gicr_typer = atomic_load_relaxed(&gicr->rd.typer);
-
-		GICR_TYPER_PPInum_t eppi = GICR_TYPER_get_PPInum(&gicr_typer);
-
-		switch (eppi) {
-		case GICR_TYPER_PPINUM_MAX_1087:
-			gicv3_irq_max_cache = 1087U;
-			break;
-		case GICR_TYPER_PPINUM_MAX_1119:
-			gicv3_irq_max_cache = 1119U;
-			break;
-		case GICR_TYPER_PPINUM_MAX_31:
-		default:
-			assert(eppi == GICR_TYPER_PPINUM_MAX_31);
-			count_t lines = GICD_TYPER_get_ITLinesNumber(&typer);
-			gicv3_irq_max_cache =
-				util_min(GIC_SPI_BASE + GIC_SPI_NUM - 1U,
-					 (32U * (lines + 1U)) - 1U);
-			break;
-		}
+		gicv3_spi_ext_max_cache = 0U;
 	}
-#else
-	count_t lines	    = GICD_TYPER_get_ITLinesNumber(&typer);
-	gicv3_irq_max_cache = util_min(GIC_SPI_BASE + GIC_SPI_NUM - 1U,
-				       (32U * (lines + 1U)) - 1U);
+
+	GICR_TYPER_PPInum_t eppi = GICR_TYPER_get_PPInum(&gicr_typer);
+
+	switch (eppi) {
+	case GICR_TYPER_PPINUM_MAX_1087:
+		gicv3_ppi_ext_max_cache = 1087U;
+		break;
+	case GICR_TYPER_PPINUM_MAX_1119:
+		gicv3_ppi_ext_max_cache = 1119U;
+		break;
+	case GICR_TYPER_PPINUM_MAX_31:
+	default:
+		gicv3_ppi_ext_max_cache = 0U;
+		break;
+	}
 #endif
+
+#if GICV3_HAS_1N
+	assert(!GICD_TYPER_get_No1N(&typer));
+#endif
+
 	// Enable non-secure state affinity routing
 	GICD_CTLR_NS_set_ARE_NS(&ctlr, true);
 
@@ -399,7 +422,7 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 				     GIC_PRIORITY_DEFAULT);
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	// Configure all extended SPIs to the default priority
 	for (irq_t i = 0; i < GIC_SPI_EXT_NUM; i++) {
 		atomic_store_relaxed(&gicd->ipriorityr_e[i],
@@ -407,6 +430,7 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	}
 #endif
 
+	// Route all SPIs to the boot CPU by default.
 	psci_mpidr_t   mpidr   = platform_cpu_index_to_mpidr(cpu);
 	uint8_t	       aff0    = psci_mpidr_get_Aff0(&mpidr);
 	uint8_t	       aff1    = psci_mpidr_get_Aff1(&mpidr);
@@ -422,7 +446,7 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	for (irq_t i = 0; i < GIC_SPI_NUM; i++) {
 		atomic_store_relaxed(&gicd->irouter[i], irouter);
 	}
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	for (irq_t i = 0; i < GIC_SPI_EXT_NUM; i++) {
 		atomic_store_relaxed(&gicd->irouter_e[i], irouter);
 	}
@@ -439,7 +463,7 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 		atomic_store_relaxed(&gicd->icenabler[i], 0xffffffff);
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	for (index_t i = 0; i < util_array_size(gicd->icenabler_e); i++) {
 		atomic_store_relaxed(&gicd->icenabler_e[i], 0xffffffff);
 	}
@@ -470,6 +494,20 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
 		gicr_set_percpu(i);
 	}
+
+#if GICV3_HAS_GICD_ICLAR
+	// The physical GIC implements IRQ classes for 1-of-N IRQs. The virtual
+	// GIC will expose these to VMs through an implementation-defined
+	// register of its own (GICD_SETCLASSR).
+	GICD_IIDR_t iidr = atomic_load_relaxed(&gicd->iidr);
+	// Implementer must be ARM (JEP106 code: [0x4] 0x3b)
+	assert(GICD_IIDR_get_Implementer(&iidr) == 0x43bU);
+	// Product ID must be 2 (GIC-600) or 4 (GIC-700)
+	assert((GICD_IIDR_get_ProductID(&iidr) == 2U) ||
+	       (GICD_IIDR_get_ProductID(&iidr) == 4U));
+#endif
+
+	spinlock_init(&bitmap_update_lock);
 }
 
 // In the boot_cpu_cold we search for the redistributor that corresponds to the
@@ -489,32 +527,53 @@ gicv3_handle_boot_cpu_cold_init(cpu_index_t cpu)
 				     GIC_PRIORITY_DEFAULT);
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	for (irq_t i = 0; i < GIC_PPI_EXT_NUM; i++) {
 		atomic_store_relaxed(&gicr->sgi.ipriorityr_e[i],
 				     GIC_PRIORITY_DEFAULT);
 	}
 #endif
 
+#if GICV3_HAS_SECURITY_DISABLED
 	// If security disabled set all interrupts to group 1
 	GICD_CTLR_t ctlr_ds = atomic_load_relaxed(&(gicd->ctlr));
-	if (GICD_CTLR_DS_get_DS(&ctlr_ds.ds)) {
-		atomic_store_relaxed(&gicr->sgi.igroupr0, 0xffffffff);
-	}
+	assert(GICD_CTLR_DS_get_DS(&ctlr_ds.ds));
 
-	// Wake gicr
+	atomic_store_relaxed(&gicr->sgi.igroupr0, 0xffffffff);
+#if GICV3_EXT_IRQS
+	atomic_store_relaxed(&gicr->sgi.igroupr_e, 0xffffffff);
+#endif
+
 	GICR_WAKER_t waker = GICR_WAKER_default();
 	GICR_WAKER_set_ProcessorSleep(&waker, false);
-	atomic_store_release(&gicr->rd.waker, waker);
+	atomic_store_relaxed(&gicr->rd.waker, waker);
+
+	// Wait for gicr to be on
+	GICR_WAKER_t waker_read;
+	do {
+		waker_read = atomic_load_acquire(&gicr->rd.waker);
+	} while (GICR_WAKER_get_ChildrenAsleep(&waker_read) != 0U);
+#endif
 
 	// Disable all local IRQs
 	atomic_store_relaxed(&gicr->sgi.icenabler0, 0xffffffff);
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	for (index_t i = 0; i < util_array_size(gicr->sgi.icenabler_e); i++) {
 		atomic_store_relaxed(&gicr->sgi.icenabler_e, 0xffffffff);
 	}
 #endif
 	gicr_wait_for_write(gicr);
+
+	GICR_CTLR_t ctlr = atomic_load_relaxed(&gicr->rd.ctlr);
+
+	// If LPIs have already been enabled, we can't set the base registers
+	// if we have LPI support, and we (possibly) can't disable them if we
+	// don't support them.
+	assert(!GICR_CTLR_get_Enable_LPIs(&ctlr));
+
+	// Enable 1-of-N targeting to this CPU
+	GICR_CTLR_set_DPG1NS(&ctlr, false);
+	atomic_store_relaxed(&gicr->rd.ctlr, ctlr);
 
 #if PLATFORM_IPI_LINES > ENUM_IPI_REASON_MAX_VALUE
 	// Enable the SGIs used by IPIs
@@ -555,8 +614,8 @@ gicv3_handle_boot_cpu_warm_init(void)
 	register_ICC_CTLR_EL1_write_ordered(icc_ctrl, &gic_init_order);
 
 	// Enable group 1 interrupts
-	ICC_IGRPEN1_EL1_t icc_grpen1 = ICC_IGRPEN1_EL1_default();
-	ICC_IGRPEN1_EL1_set_Enable(&icc_grpen1, true);
+	ICC_IGRPEN_EL1_t icc_grpen1 = ICC_IGRPEN_EL1_default();
+	ICC_IGRPEN_EL1_set_Enable(&icc_grpen1, true);
 	register_ICC_IGRPEN1_EL1_write_ordered(icc_grpen1, &gic_init_order);
 	asm_context_sync_ordered(&gic_init_order);
 
@@ -568,7 +627,7 @@ gicv3_handle_boot_cpu_warm_init(void)
 		atomic_load_relaxed(&gicr->sgi.isenabler0),
 		atomic_load_relaxed(&gicr->sgi.isactiver0),
 		atomic_load_relaxed(&gicr->sgi.igroupr0),
-		ICC_HPPIR1_EL1_raw(register_ICC_HPPIR1_EL1_read()));
+		ICC_HPPIR_EL1_raw(register_ICC_HPPIR1_EL1_read()));
 #endif
 }
 
@@ -576,36 +635,40 @@ error_t
 gicv3_handle_power_cpu_suspend(void)
 {
 	// Disable group 1 interrupts
-	ICC_IGRPEN1_EL1_t icc_grpen1 = ICC_IGRPEN1_EL1_default();
-	ICC_IGRPEN1_EL1_set_Enable(&icc_grpen1, false);
+	ICC_IGRPEN_EL1_t icc_grpen1 = ICC_IGRPEN_EL1_default();
+	ICC_IGRPEN_EL1_set_Enable(&icc_grpen1, false);
 	register_ICC_IGRPEN1_EL1_write_ordered(icc_grpen1, &asm_ordering);
 
+#if GICV3_DEBUG || GICV3_HAS_SECURITY_DISABLED
 	gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
+#endif
 #if GICV3_DEBUG
 	TRACE_LOCAL(DEBUG, INFO,
 		    "gicv3 cpu suspend, en {:#x} act {:#x} grp {:#x} hpp {:#x}",
 		    atomic_load_relaxed(&gicr->sgi.isenabler0),
 		    atomic_load_relaxed(&gicr->sgi.isactiver0),
 		    atomic_load_relaxed(&gicr->sgi.igroupr0),
-		    ICC_HPPIR1_EL1_raw(register_ICC_HPPIR1_EL1_read()));
+		    ICC_HPPIR_EL1_raw(register_ICC_HPPIR1_EL1_read()));
 #endif
 
-	// Set ProcessorSleep, so that the redistributor hands over ownership of
-	// any pending interrupts before it powers off
+#if GICV3_HAS_SECURITY_DISABLED
+	// Ensure that the IGRPEN1_EL1 write has completed
+	__asm__ volatile("isb; dsb sy;" ::: "memory");
+
+	// Set ProcessorSleep, so that the redistributor hands over ownership
+	// of any pending interrupts before it powers off
 	GICR_WAKER_t waker = GICR_WAKER_default();
 	GICR_WAKER_set_ProcessorSleep(&waker, true);
-	atomic_store_release(&gicr->rd.waker, waker);
+	atomic_store_relaxed(&gicr->rd.waker, waker);
+#endif
 
+#if GICV3_HAS_SECURITY_DISABLED
 	// Wait for gicr to be off
-	// Order the write we're waiting for before the loads in the poll
-	atomic_device_fence(memory_order_seq_cst);
-
-	GICR_WAKER_t waker_read = atomic_load_relaxed(&gicr->rd.waker);
-
-	while (GICR_WAKER_get_ChildrenAsleep(&waker_read) == 0U) {
-		asm_yield();
-		waker_read = atomic_load_relaxed(&gicr->rd.waker);
-	}
+	GICR_WAKER_t waker_read;
+	do {
+		waker_read = atomic_load_acquire(&gicr->rd.waker);
+	} while (GICR_WAKER_get_ChildrenAsleep(&waker_read) == 0U);
+#endif
 
 	return OK;
 }
@@ -616,25 +679,35 @@ gicv3_handle_power_cpu_resume(void)
 	struct asm_ordering_dummy gic_enable_order;
 
 	// Enable group 1 interrupts
-	ICC_IGRPEN1_EL1_t icc_grpen1 = ICC_IGRPEN1_EL1_default();
-	ICC_IGRPEN1_EL1_set_Enable(&icc_grpen1, true);
+	ICC_IGRPEN_EL1_t icc_grpen1 = ICC_IGRPEN_EL1_default();
+	ICC_IGRPEN_EL1_set_Enable(&icc_grpen1, true);
 	register_ICC_IGRPEN1_EL1_write_ordered(icc_grpen1, &gic_enable_order);
 	asm_context_sync_ordered(&gic_enable_order);
 
+#if GICV3_DEBUG || GICV3_HAS_SECURITY_DISABLED
 	gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
+#endif
 #if GICV3_DEBUG
 	TRACE_LOCAL(DEBUG, INFO,
 		    "gicv3 cpu resume, en {:#x} act {:#x} grp {:#x} hpp {:#x}",
 		    atomic_load_relaxed(&gicr->sgi.isenabler0),
 		    atomic_load_relaxed(&gicr->sgi.isactiver0),
 		    atomic_load_relaxed(&gicr->sgi.igroupr0),
-		    ICC_HPPIR1_EL1_raw(register_ICC_HPPIR1_EL1_read()));
+		    ICC_HPPIR_EL1_raw(register_ICC_HPPIR1_EL1_read()));
 #endif
 
+#if GICV3_HAS_SECURITY_DISABLED
 	// Clear ProcessorSleep, so that it can start handling interrupts.
 	GICR_WAKER_t waker = GICR_WAKER_default();
 	GICR_WAKER_set_ProcessorSleep(&waker, false);
-	atomic_store_release(&gicr->rd.waker, waker);
+	atomic_store_relaxed(&gicr->rd.waker, waker);
+
+	// Wait for gicr to be on
+	GICR_WAKER_t waker_read;
+	do {
+		waker_read = atomic_load_acquire(&gicr->rd.waker);
+	} while (GICR_WAKER_get_ChildrenAsleep(&waker_read) != 0U);
+#endif
 }
 
 void
@@ -650,7 +723,7 @@ gicv3_irq_enable(irq_t irq)
 				     GIC_ENABLE_BIT(irq));
 		break;
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
 		// Extended SPI
 		atomic_store_release(&gicd->isenabler_e[GICD_ENABLE_GET_N(
@@ -660,7 +733,7 @@ gicv3_irq_enable(irq_t irq)
 #endif
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
@@ -675,7 +748,7 @@ gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu)
 {
 	assert(irq <= gicv3_irq_max());
 
-	gicr_t *	 gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
+	gicr_t	       *gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
 	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
 
 	switch (irq_type) {
@@ -686,7 +759,7 @@ gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu)
 		break;
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		atomic_store_release(&gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
@@ -696,7 +769,7 @@ gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu)
 	}
 #endif
 	case GICV3_IRQ_TYPE_SPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
@@ -727,7 +800,7 @@ gicv3_irq_disable(irq_t irq)
 		gicd_wait_for_write();
 		break;
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT: {
 		// Extended SPI
 		atomic_store_relaxed(&gicd->icenabler_e[GICD_ENABLE_GET_N(
@@ -739,7 +812,7 @@ gicv3_irq_disable(irq_t irq)
 #endif
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
@@ -765,7 +838,7 @@ gicv3_irq_cancel_nowait(irq_t irq)
 		// guarantee of timely completion.
 		break;
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT: {
 		// Extended SPI
 		atomic_store_relaxed(&gicd->icpendr_e[GICD_ENABLE_GET_N(
@@ -777,7 +850,7 @@ gicv3_irq_cancel_nowait(irq_t irq)
 #endif
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
@@ -792,7 +865,7 @@ gicv3_irq_disable_percpu_nowait(irq_t irq, cpu_index_t cpu)
 {
 	assert(irq <= gicv3_irq_max());
 
-	gicr_t *	 gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
+	gicr_t	       *gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
 	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
 
 	switch (irq_type) {
@@ -802,7 +875,7 @@ gicv3_irq_disable_percpu_nowait(irq_t irq, cpu_index_t cpu)
 				     GIC_ENABLE_BIT(irq));
 		break;
 	}
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		atomic_store_relaxed(&gicr->sgi.icenabler_e[GICD_ENABLE_GET_N(
@@ -812,7 +885,7 @@ gicv3_irq_disable_percpu_nowait(irq_t irq, cpu_index_t cpu)
 	}
 #endif
 	case GICV3_IRQ_TYPE_SPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
@@ -821,11 +894,12 @@ gicv3_irq_disable_percpu_nowait(irq_t irq, cpu_index_t cpu)
 		panic("Incorrect IRQ type");
 	}
 }
+
 void
 gicv3_irq_disable_percpu(irq_t irq, cpu_index_t cpu)
 {
 	gicv3_irq_disable_percpu_nowait(irq, cpu);
-	gicr_wait_for_write(CPULOCAL(gicr_cpu).gicr);
+	gicr_wait_for_write(CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr);
 }
 
 void
@@ -847,7 +921,7 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 {
 	irq_trigger_result_t ret;
 
-	gicr_t *	 gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
+	gicr_t	       *gicr	  = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
 	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
 
 	// We do not support this behavior for now
@@ -855,6 +929,8 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		ret = irq_trigger_result_error(ERROR_ARGUMENT_INVALID);
 		goto end_function;
 	}
+
+	spinlock_acquire(&bitmap_update_lock);
 
 	switch (irq_type) {
 	case GICV3_IRQ_TYPE_PPI: {
@@ -867,7 +943,7 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		}
 
 		register_t icfg =
-			(register_t)atomic_load_relaxed(&gicr->sgi.icfgr1);
+			(register_t)atomic_load_relaxed(&gicr->sgi.icfgr[1]);
 
 		if ((trigger == IRQ_TRIGGER_LEVEL_HIGH) ||
 		    (trigger == IRQ_TRIGGER_LEVEL_LOW)) {
@@ -876,14 +952,14 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 			bitmap_set(&icfg, ((irq % 16U) * 2U) + 1U);
 		}
 
-		atomic_store_relaxed(&gicr->sgi.icfgr1, (uint32_t)icfg);
+		atomic_store_relaxed(&gicr->sgi.icfgr[1], (uint32_t)icfg);
 
 		if (enabled) {
 			gicv3_irq_enable_percpu(irq, cpu);
 		}
 
 		// Read back the value in case it could not be changed
-		icfg = atomic_load_relaxed(&gicr->sgi.icfgr1);
+		icfg = atomic_load_relaxed(&gicr->sgi.icfgr[1]);
 		ret  = irq_trigger_result_ok(
 			 bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
 				 ? IRQ_TRIGGER_EDGE_RISING
@@ -892,7 +968,7 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		break;
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		uint32_t isenabler_e = atomic_load_relaxed(
@@ -937,11 +1013,8 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_SPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
-#endif
-#if GICv3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
@@ -950,6 +1023,8 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		ret = irq_trigger_result_error(ERROR_UNIMPLEMENTED);
 		break;
 	}
+
+	spinlock_release(&bitmap_update_lock);
 
 end_function:
 	return ret;
@@ -962,13 +1037,9 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 
 	assert(irq <= gicv3_irq_max());
 
-	// We do not support this behavior for now
-	if (trigger == IRQ_TRIGGER_MESSAGE) {
-		ret = irq_trigger_result_error(ERROR_ARGUMENT_INVALID);
-		goto end_function;
-	}
-
 	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
+
+	spinlock_acquire(&bitmap_update_lock);
 
 	switch (irq_type) {
 	case GICV3_IRQ_TYPE_SGI:
@@ -988,7 +1059,7 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		}
 
 		register_t icfg =
-			(register_t)atomic_load_relaxed(&gicr->sgi.icfgr1);
+			(register_t)atomic_load_relaxed(&gicr->sgi.icfgr[1]);
 
 		if ((trigger == IRQ_TRIGGER_LEVEL_HIGH) ||
 		    (trigger == IRQ_TRIGGER_LEVEL_LOW)) {
@@ -997,14 +1068,14 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 			bitmap_set(&icfg, ((irq % 16U) * 2U) + 1U);
 		}
 
-		atomic_store_relaxed(&gicr->sgi.icfgr1, (uint32_t)icfg);
+		atomic_store_relaxed(&gicr->sgi.icfgr[1], (uint32_t)icfg);
 
 		if (enabled) {
 			gicv3_irq_enable(irq);
 		}
 
 		// Read back the value in case it could not be changed
-		icfg = atomic_load_relaxed(&gicr->sgi.icfgr1);
+		icfg = atomic_load_relaxed(&gicr->sgi.icfgr[1]);
 		ret  = irq_trigger_result_ok(
 			 bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
 				 ? IRQ_TRIGGER_EDGE_RISING
@@ -1049,7 +1120,7 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		break;
 	}
 
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
@@ -1137,9 +1208,6 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		break;
 	}
 #endif
-#if GICv3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
-#endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
 	default:
@@ -1148,7 +1216,8 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		break;
 	}
 
-end_function:
+	spinlock_release(&bitmap_update_lock);
+
 	return ret;
 }
 
@@ -1162,7 +1231,7 @@ gicv3_spi_set_route(irq_t irq, GICD_IROUTER_t route)
 		atomic_store_relaxed(&gicd->irouter[irq - GIC_SPI_BASE], route);
 		ret = OK;
 		break;
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
 		atomic_store_relaxed(&gicd->irouter_e[irq - GIC_SPI_EXT_BASE],
 				     route);
@@ -1171,11 +1240,8 @@ gicv3_spi_set_route(irq_t irq, GICD_IROUTER_t route)
 #endif
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT:
-#endif
-#if GICv3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
@@ -1187,15 +1253,94 @@ gicv3_spi_set_route(irq_t irq, GICD_IROUTER_t route)
 	return ret;
 }
 
+#if GICV3_HAS_GICD_ICLAR
+error_t
+gicv3_spi_set_classes(irq_t irq, bool class0, bool class1)
+{
+	error_t ret;
+
+	spinlock_acquire(&bitmap_update_lock);
+
+	switch (gicv3_get_irq_type(irq)) {
+	case GICV3_IRQ_TYPE_SPI: {
+		register_t iclar =
+			(register_t)atomic_load_relaxed(&gicd->iclar[irq / 16]);
+
+		if (class0) {
+			bitmap_clear(&iclar, (irq % 16U) * 2U);
+		} else {
+			bitmap_set(&iclar, (irq % 16U) * 2U);
+		}
+
+		if (class1) {
+			bitmap_clear(&iclar, ((irq % 16U) * 2U) + 1U);
+		} else {
+			bitmap_set(&iclar, ((irq % 16U) * 2U) + 1U);
+		}
+
+		// This must be a store-release to ensure that it takes effect
+		// after any preceding write to GICD_IROUTER<irq>, since these
+		// bits are RAZ/WI until GICD_IROUTER<irq>.IRM is set.
+		atomic_store_release(&gicd->iclar[irq / 16], (uint32_t)iclar);
+
+		ret = OK;
+		break;
+	}
+#if GICV3_EXT_IRQS
+	case GICV3_IRQ_TYPE_SPI_EXT: {
+		register_t iclar = (register_t)atomic_load_relaxed(
+			&gicd->iclar_e[(irq - GIC_SPI_EXT_BASE) / 16]);
+
+		if (class0) {
+			bitmap_clear(&iclar, (irq % 16U) * 2U);
+		} else {
+			bitmap_set(&iclar, (irq % 16U) * 2U);
+		}
+
+		if (class1) {
+			bitmap_clear(&iclar, ((irq % 16U) * 2U) + 1U);
+		} else {
+			bitmap_set(&iclar, ((irq % 16U) * 2U) + 1U);
+		}
+
+		// This must be a store-release to ensure that it takes effect
+		// after any preceding write to GICD_IROUTER<irq>E, since these
+		// bits are RAZ/WI until GICD_IROUTER<irq>E.IRM is set.
+		atomic_store_release(
+			&gicd->iclar_e[(irq - GIC_SPI_EXT_BASE) / 16],
+			(uint32_t)iclar);
+
+		ret = OK;
+		break;
+	}
+#endif
+	case GICV3_IRQ_TYPE_SGI:
+	case GICV3_IRQ_TYPE_PPI:
+#if GICV3_EXT_IRQS
+	case GICV3_IRQ_TYPE_PPI_EXT:
+#endif
+	case GICV3_IRQ_TYPE_SPECIAL:
+	case GICV3_IRQ_TYPE_RESERVED:
+	default:
+		ret = ERROR_ARGUMENT_INVALID;
+		break;
+	}
+
+	spinlock_release(&bitmap_update_lock);
+
+	return ret;
+}
+#endif
+
 irq_result_t
 gicv3_irq_acknowledge(void)
 {
 	irq_result_t ret = { 0 };
 
-	ICC_IAR1_EL1_t iar =
+	ICC_IAR_EL1_t iar =
 		register_ICC_IAR1_EL1_read_volatile_ordered(&asm_ordering);
 
-	uint32_t intid = ICC_IAR1_EL1_get_INTID(&iar);
+	uint32_t intid = ICC_IAR_EL1_get_INTID(&iar);
 
 	// 1023 is returned if there is no pending interrupt with sufficient
 	// priority for it to be signaled to the PE, or if the highest priority
@@ -1233,9 +1378,9 @@ gicv3_irq_priority_drop(irq_t irq)
 {
 	assert(irq <= gicv3_irq_max());
 
-	ICC_EOIR1_EL1_t eoir = ICC_EOIR1_EL1_default();
+	ICC_EOIR_EL1_t eoir = ICC_EOIR_EL1_default();
 
-	ICC_EOIR1_EL1_set_INTID(&eoir, irq);
+	ICC_EOIR_EL1_set_INTID(&eoir, irq);
 
 	// No need for a barrier here: nothing we do to handle this IRQ
 	// before the priority drop will affect whether we get a different
@@ -1249,14 +1394,16 @@ gicv3_irq_deactivate(irq_t irq)
 {
 	assert(irq <= gicv3_irq_max());
 
-	ICC_DIR_EL1_t dir = ICC_DIR_EL1_default();
+	{
+		ICC_DIR_EL1_t dir = ICC_DIR_EL1_default();
 
-	ICC_DIR_EL1_set_INTID(&dir, irq);
+		ICC_DIR_EL1_set_INTID(&dir, irq);
 
-	// Ensure interrupt handling is complete
-	__asm__ volatile("dsb sy; isb" ::: "memory");
+		// Ensure interrupt handling is complete
+		__asm__ volatile("dsb sy; isb" ::: "memory");
 
-	register_ICC_DIR_EL1_write_ordered(dir, &asm_ordering);
+		register_ICC_DIR_EL1_write_ordered(dir, &asm_ordering);
+	}
 }
 
 void
@@ -1276,7 +1423,7 @@ gicv3_irq_deactivate_percpu(irq_t irq, cpu_index_t cpu)
 				     GIC_ENABLE_BIT(irq));
 		break;
 	}
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		atomic_store_relaxed(&gicr->sgi.icactiver_e[GICD_ENABLE_GET_N(
@@ -1286,11 +1433,8 @@ gicv3_irq_deactivate_percpu(irq_t irq, cpu_index_t cpu)
 	}
 #endif
 	case GICV3_IRQ_TYPE_SPI:
-#if GICv3_EXT_IRQS
+#if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT:
-#endif
-#if GICv3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
@@ -1371,3 +1515,45 @@ platform_ipi_one(cpu_index_t cpu)
 	register_ICC_SGI1R_EL1_write_ordered(sgir, &asm_ordering);
 }
 #endif
+
+#if defined(INTERFACE_VCPU) && INTERFACE_VCPU && GICV3_HAS_1N
+
+void
+gicv3_handle_vcpu_poweron(thread_t *vcpu)
+{
+	if (vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
+		cpu_index_t cpu = scheduler_get_affinity(vcpu);
+
+		// Enable 1-of-N targeting to the VCPU's physical CPU.
+		//
+		// No locking, because we assume that the hlos_vm flag is only
+		// set on one VCPU per physical CPU. Also we are assuming here
+		// that DPGs are implemented.
+		gicr_t     *gicr      = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
+		GICR_CTLR_t gicr_ctlr = atomic_load_relaxed(&gicr->rd.ctlr);
+		GICR_CTLR_set_DPG1NS(&gicr_ctlr, false);
+		atomic_store_relaxed(&gicr->rd.ctlr, gicr_ctlr);
+	}
+}
+
+error_t
+gicv3_handle_vcpu_poweroff(thread_t *vcpu)
+{
+	if (vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
+		cpu_index_t cpu = scheduler_get_affinity(vcpu);
+
+		// Disable 1-of-N targeting to the VCPU's physical CPU.
+		//
+		// No locking, because we assume that the hlos_vm flag is only
+		// set on one VCPU per physical CPU. Also we are assuming here
+		// that DPGs are implemented.
+		gicr_t     *gicr      = CPULOCAL_BY_INDEX(gicr_cpu, cpu).gicr;
+		GICR_CTLR_t gicr_ctlr = atomic_load_relaxed(&gicr->rd.ctlr);
+		GICR_CTLR_set_DPG1NS(&gicr_ctlr, true);
+		atomic_store_relaxed(&gicr->rd.ctlr, gicr_ctlr);
+	}
+
+	return OK;
+}
+
+#endif // INTERFACE_VCPU && GICV3_HAS_1N

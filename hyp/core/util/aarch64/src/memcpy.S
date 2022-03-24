@@ -4,7 +4,14 @@
 
 #include <asm/asm_defs.inc>
 #include <asm/cpu.h>
+#include <asm/panic.inc>
 
+#if defined(ARCH_ARM_8_5_BTI)
+// Two instructions per jump
+#define JUMP_SHIFT	3
+#else
+#define JUMP_SHIFT	2
+#endif
 
 // memcpy of no more than 31 bytes
 function memcpy_below32
@@ -209,32 +216,45 @@ local memcpy_below128:
 	// offsets into an ldp sequence and then an stp sequence to copy the
 	// right number of them. Since there are only 7, we have two extra
 	// temporary registers: x3 and x4.
+	bic	x4, x2, (1 << 4) - 1
 	adr	x3, 1f
-	lsr	x4, x2, 4
-	add	x0, x0, x4, lsl 4
-	sub	x3, x3, x4, lsl 2
-	add	x1, x1, x4, lsl 4
-	sub	x2, x2, x4, lsl 4
+	add	x0, x0, x4
+	sub	x3, x3, x4, lsr #(4 - JUMP_SHIFT)
+	add	x1, x1, x4
+	sub	x2, x2, x4
 	br	x3
-	ldp	x5, x6, [x1, -0x70]
-	ldp	x7, x8, [x1, -0x60]
-	ldp	x9, x10, [x1, -0x50]
-	ldp	x11, x12, [x1, -0x40]
-	ldp	x13, x14, [x1, -0x30]
-	ldp	x15, x16, [x1, -0x20]
-	ldp	x17, x18, [x1, -0x10]
+
+0:
+	BRANCH_TARGET(j, ldp	x5, x6, [x1, -0x70])
+	BRANCH_TARGET(j, ldp	x7, x8, [x1, -0x60])
+	BRANCH_TARGET(j, ldp	x9, x10, [x1, -0x50])
+	BRANCH_TARGET(j, ldp	x11, x12, [x1, -0x40])
+	BRANCH_TARGET(j, ldp	x13, x14, [x1, -0x30])
+	BRANCH_TARGET(j, ldp	x15, x16, [x1, -0x20])
+	BRANCH_TARGET(j, ldp	x17, x18, [x1, -0x10])
 1:
+.if	(. - 0b) != (7 * (1 << JUMP_SHIFT))
+.error "Jump table error"
+.endif
+	BRANCH_TARGET(j,)
+
 	adr	x3, 1f
-	sub	x3, x3, x4, lsl 2
+	sub	x3, x3, x4, lsr #(4 - JUMP_SHIFT)
 	br	x3
-	stp	x5, x6, [x0, -0x70]
-	stp	x7, x8, [x0, -0x60]
-	stp	x9, x10, [x0, -0x50]
-	stp	x11, x12, [x0, -0x40]
-	stp	x13, x14, [x0, -0x30]
-	stp	x15, x16, [x0, -0x20]
-	stp	x17, x18, [x0, -0x10]
+
+0:
+	BRANCH_TARGET(j, stp	x5, x6, [x0, -0x70])
+	BRANCH_TARGET(j, stp	x7, x8, [x0, -0x60])
+	BRANCH_TARGET(j, stp	x9, x10, [x0, -0x50])
+	BRANCH_TARGET(j, stp	x11, x12, [x0, -0x40])
+	BRANCH_TARGET(j, stp	x13, x14, [x0, -0x30])
+	BRANCH_TARGET(j, stp	x15, x16, [x0, -0x20])
+	BRANCH_TARGET(j, stp	x17, x18, [x0, -0x10])
 1:
+.if	(. - 0b) != (7 * (1 << JUMP_SHIFT))
+.error "Jump table error"
+.endif
+	BRANCH_TARGET(j,)
 	// There must be less than 16 bytes left now.
 	cbnz	x2, LOCAL(memcpy_below16)
 local return:

@@ -10,6 +10,7 @@
 #include <boot.h>
 #include <compiler.h>
 #include <log.h>
+#include <prng.h>
 #include <thread_init.h>
 #include <trace.h>
 #include <util.h>
@@ -29,9 +30,23 @@ const char hypervisor_version[] = XSTR(HYP_CONF_STR) "-" XSTR(HYP_GIT_VERSION)
 	;
 const char hypervisor_build_date[] = HYP_BUILD_DATE;
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+extern uintptr_t	 __stack_chk_guard;
+uintptr_t __stack_chk_guard __attribute__((used, visibility("hidden")));
+#pragma clang diagnostic pop
+
 noreturn void
-boot_cold_init(cpu_index_t cpu)
+boot_cold_init(cpu_index_t cpu) LOCK_IMPL
 {
+	// Set the stack canary, either globally, or for the init thread if the
+	// canary is thread-local. Note that we can't do this in an event
+	// handler because that might trigger a stack check failure if the event
+	// handler is not inlined (e.g. in debug builds).
+	uint64_result_t guard_r = prng_get64();
+	assert(guard_r.e == OK);
+	__stack_chk_guard = (uintptr_t)guard_r.r;
+
 	// We can't trace yet because the CPU index in the thread is possibly
 	// wrong (if cpu is nonzero), but the cpulocal handler for
 	// boot_cpu_cold_init will do it for us.
@@ -85,7 +100,7 @@ boot_handle_idle_start(void)
 }
 
 noreturn void
-boot_secondary_init(cpu_index_t cpu)
+boot_secondary_init(cpu_index_t cpu) LOCK_IMPL
 {
 	// We can't trace yet because the CPU index in the thread is invalid,
 	// but the cpulocal handler for boot_cpu_cold_init setup it up for us.
@@ -93,24 +108,21 @@ boot_secondary_init(cpu_index_t cpu)
 
 	trigger_boot_cpu_early_init_event();
 	trigger_boot_cpu_cold_init_event(cpu);
-	TRACE_LOCAL(DEBUG, INFO, "boot_cpu_warm_init");
 	trigger_boot_cpu_warm_init_event();
-	TRACE_LOCAL(DEBUG, INFO, "boot_cpu_start");
 	trigger_boot_cpu_start_event();
-	TRACE_LOCAL(DEBUG, INFO, "entering idle");
+	TRACE_LOCAL(DEBUG, INFO, "cpu cold boot complete");
 	thread_boot_set_idle();
 }
 
 // Warm (second or later) power-on of any CPU.
 noreturn void
-boot_warm_init(void)
+boot_warm_init(void) LOCK_IMPL
 {
 	trigger_boot_cpu_early_init_event();
-	TRACE_LOCAL(DEBUG, INFO, "boot_cpu_warm_init");
+	TRACE_LOCAL(DEBUG, INFO, "cpu warm boot start");
 	trigger_boot_cpu_warm_init_event();
-	TRACE_LOCAL(DEBUG, INFO, "boot_cpu_start");
 	trigger_boot_cpu_start_event();
-	TRACE_LOCAL(DEBUG, INFO, "entering idle");
+	TRACE_LOCAL(DEBUG, INFO, "cpu warm boot complete");
 	thread_boot_set_idle();
 }
 

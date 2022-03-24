@@ -4,8 +4,6 @@
 
 module abort
 
-// This handler IPIs all cores to stop, it has high priority
-subscribe abort_kernel()
-	priority 1000
-
 subscribe ipi_received[IPI_REASON_ABORT_STOP]()
+
+subscribe scheduler_stop()

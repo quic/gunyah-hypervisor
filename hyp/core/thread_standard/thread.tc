@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 extend thread object {
-	context	structure arch_context;
+	context		structure arch_context;
+	stack_mem	uintptr;
 };
 
 extend scheduler_block enumeration {

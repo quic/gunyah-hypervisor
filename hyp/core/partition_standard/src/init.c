@@ -49,13 +49,17 @@ partition_standard_handle_boot_cold_init(void)
 	hyp_partition.header.type = OBJECT_TYPE_PARTITION;
 	atomic_store_release(&hyp_partition.header.state, OBJECT_STATE_ACTIVE);
 
-	// Calculate the virt to phys offset for the hypervisor memory, which
-	// was determined by KASLR in the boot assembly before the MMU was
-	// enabled.
-	hyp_partition.virt_offset = (size_t)(virt_start - phys_start);
+	// Add hypervisor memory as a mapped range.
+	hyp_partition.mapped_ranges[0].virt = virt_start;
+	hyp_partition.mapped_ranges[0].phys = phys_start;
+	hyp_partition.mapped_ranges[0].size =
+		(size_t)(phys_last - phys_start + 1U);
 
 	// Allocate management structures for the hypervisor allocator.
 	allocator_init(&hyp_partition.allocator);
+
+	// Configure partition to be priviledged
+	partition_option_flags_set_privileged(&hyp_partition.options, true);
 
 	// Get remaining boot memory and assign it to hypervisor allocator.
 	size_t		  hyp_alloc_size;
@@ -101,6 +105,8 @@ partition_standard_handle_boot_hypervisor_start(void)
 		panic("Error allocating root partition");
 	}
 	root_partition = (partition_t *)part_ret.r;
+
+	partition_option_flags_set_privileged(&root_partition->options, true);
 
 	if (object_activate_partition(root_partition) != OK) {
 		panic("Error activating root partition");

@@ -8,6 +8,7 @@
 #include <hypregisters.h>
 
 #include <irq.h>
+#include <object.h>
 #include <panic.h>
 #include <preempt.h>
 
@@ -31,22 +32,22 @@ static hwirq_t *hyp_timer_hwirq;
 static void
 platform_timer_enable_and_unmask()
 {
-	CNTHP_CTL_EL2_t cnthp_ctl;
+	CNT_CTL_t cnthp_ctl;
 
-	CNTHP_CTL_EL2_init(&cnthp_ctl);
-	CNTHP_CTL_EL2_set_ENABLE(&cnthp_ctl, true);
-	CNTHP_CTL_EL2_set_IMASK(&cnthp_ctl, false);
+	CNT_CTL_init(&cnthp_ctl);
+	CNT_CTL_set_ENABLE(&cnthp_ctl, true);
+	CNT_CTL_set_IMASK(&cnthp_ctl, false);
 	register_CNTHP_CTL_EL2_write_ordered(cnthp_ctl, &asm_ordering);
 }
 
 void
 platform_timer_cancel_timeout()
 {
-	CNTHP_CTL_EL2_t cnthp_ctl;
+	CNT_CTL_t cnthp_ctl;
 
-	CNTHP_CTL_EL2_init(&cnthp_ctl);
-	CNTHP_CTL_EL2_set_ENABLE(&cnthp_ctl, false);
-	CNTHP_CTL_EL2_set_IMASK(&cnthp_ctl, true);
+	CNT_CTL_init(&cnthp_ctl);
+	CNT_CTL_set_ENABLE(&cnthp_ctl, false);
+	CNT_CTL_set_IMASK(&cnthp_ctl, true);
 	register_CNTHP_CTL_EL2_write_ordered(cnthp_ctl, &asm_ordering);
 	__asm__ volatile("isb" : "+m"(asm_ordering));
 }
@@ -73,10 +74,10 @@ platform_timer_get_current_ticks()
 uint64_t
 platform_timer_get_timeout()
 {
-	CNTHP_CVAL_EL2_t cnthp_cval =
+	CNT_CVAL_t cnthp_cval =
 		register_CNTHP_CVAL_EL2_read_volatile_ordered(&asm_ordering);
 
-	return CNTHP_CVAL_EL2_get_CompareValue(&cnthp_cval);
+	return CNT_CVAL_get_CompareValue(&cnthp_cval);
 }
 
 void
@@ -84,7 +85,7 @@ platform_timer_set_timeout(ticks_t timeout)
 {
 	assert_preempt_disabled();
 
-	register_CNTHP_CVAL_EL2_write_ordered(CNTHP_CVAL_EL2_cast(timeout),
+	register_CNTHP_CVAL_EL2_write_ordered(CNT_CVAL_cast(timeout),
 					      &asm_ordering);
 	platform_timer_enable_and_unmask();
 	__asm__ volatile("isb" : "+m"(asm_ordering));
@@ -137,6 +138,10 @@ platform_timer_handle_boot_hypervisor_start()
 
 	if (ret.e != OK) {
 		panic("Failed to create Hyp Timer IRQ");
+	}
+
+	if (object_activate_hwirq(ret.r) != OK) {
+		panic("Failed to activate Hyp Timer IRQ");
 	}
 
 	hyp_timer_hwirq = ret.r;

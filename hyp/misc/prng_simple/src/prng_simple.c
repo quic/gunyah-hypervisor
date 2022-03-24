@@ -79,12 +79,13 @@ typedef struct {
 static bool prng_initialized = false;
 
 static spinlock_t   prng_lock;
-static prng_data_t *prng_data;
+static prng_data_t *prng_data PTR_PROTECTED_BY(prng_lock);
 
 void
 prng_simple_handle_boot_runtime_first_init(void)
 {
 	spinlock_init(&prng_lock);
+	spinlock_acquire_nopreempt(&prng_lock);
 
 	void_ptr_result_t ret;
 
@@ -131,6 +132,7 @@ prng_simple_handle_boot_runtime_first_init(void)
 	CACHE_CLEAN_INVALIDATE_OBJECT(hypervisor_prng_nonce);
 
 	prng_initialized = true;
+	spinlock_release_nopreempt(&prng_lock);
 }
 
 void
@@ -146,7 +148,7 @@ prng_simple_handle_boot_hypervisor_start(void)
 }
 
 static bool
-add_platform_entropy(void)
+add_platform_entropy(void) REQUIRE_SPINLOCK(prng_lock)
 {
 	error_t ret;
 	bool	success;
@@ -182,7 +184,7 @@ add_platform_entropy(void)
 }
 
 static void
-prng_update(void)
+prng_update(void) REQUIRE_SPINLOCK(prng_lock)
 {
 	uint32_t counter = 1U;
 	count_t	 i;

@@ -12,6 +12,7 @@
 #include <trace.h>
 
 #include <events/abort.h>
+#include <events/scheduler.h>
 
 #include <asm/event.h>
 
@@ -21,7 +22,12 @@ panic(const char *str)
 	void *from  = __builtin_return_address(0);
 	void *frame = __builtin_frame_address(0);
 
-	preempt_disable();
+	// Stop all cores and disable preemption
+	trigger_scheduler_stop_event();
+
+#if defined(ARCH_ARM_8_3_PAUTH)
+	__asm__("xpaci %0;" : "+r"(from));
+#endif
 
 	TRACE_AND_LOG(ERROR, PANIC, "Panic: {:s} from PC {:#x}, FP {:#x}",
 		      (register_t)(uintptr_t)str, (register_t)(uintptr_t)from,

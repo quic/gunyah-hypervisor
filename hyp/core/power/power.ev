@@ -11,6 +11,7 @@ subscribe boot_cpu_cold_init
 
 subscribe boot_cpu_warm_init
 	priority 100
+	require_preempt_disabled
 
 subscribe power_cpu_resume()
 	priority first

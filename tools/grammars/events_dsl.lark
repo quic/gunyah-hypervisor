@@ -55,8 +55,8 @@ _type_decl: (IDENTIFIER POINTER?)+
 	| _type_decl LPAREN POINTER RPAREN LPAREN _arg_type_list? RPAREN
 _arg_type_list: _arg_type_list COMMA _type_decl | _type_decl
 
-subscribe : "subscribe" optional? symbol selector? _subscriber? priority? _END_DECL
-subscribe_public : "subscribe" optional? symbol selector? _subscriber_public priority? _END_DECL
+subscribe : "subscribe" optional? symbol selector? _subscriber? _subscribe_opts _END_DECL
+subscribe_public : "subscribe" optional? symbol selector? _subscriber_public _subscribe_opts _END_DECL
 
 optional : "optional"
 selector : "[" _selector_list "]"
@@ -76,9 +76,16 @@ _expected_arg_list : symbol ("," _NL_INDENT? symbol)*
 %import common.SIGNED_NUMBER -> NUMBER
 _PRIORITY : _CONT_DECL "priority"
 priority : _PRIORITY (NUMBER | /min|max|first|last|default/)
+_lock_name: IDENTIFIER | LPAREN (IDENTIFIER (ARROW | STOP))* IDENTIFIER RPAREN
+lock_name : _lock_name
+LOCK_OPT_KIND : _CONT_DECL /(acquire|release|require|exclude)_(lock|read)/
+_lock_opt_kind : LOCK_OPT_KIND
+lock_opt : _lock_opt_kind lock_name
+_subscribe_opts : priority? lock_opt*
 
 IDENTIFIER : /[a-zA-Z_][a-zA-Z0-9_]*/
 POINTER : "*"
+ARROW : "->"
 constexpr : _constexpr
 _constexpr : IDENTIFIER _args? | SIGNED_INT | SIGNED_FLOAT | UNSIGNED_INT
 LPAREN : "("

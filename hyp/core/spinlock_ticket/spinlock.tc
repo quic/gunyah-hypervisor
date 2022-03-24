@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define spinlock structure {
+define spinlock structure(lockable) {
 	now_serving uint16(atomic);
 	next_ticket uint16(atomic);
 };

@@ -7,7 +7,12 @@
 
 #include <hypregisters.h>
 
+#include <compiler.h>
+#include <log.h>
+#include <platform_security.h>
 #include <thread.h>
+#include <trace.h>
+#include <vcpu.h>
 
 #include <asm/barrier.h>
 
@@ -37,9 +42,6 @@ vdebug_handle_object_create_thread(thread_create_t thread_create)
 	assert(thread != NULL);
 
 	if (thread_create.kind == THREAD_KIND_VCPU) {
-		// Currently we allow debug access for all VCPUs by default
-		thread->vdebug_allowed = true;
-
 		// All VCPUs have debug initially disabled
 		thread->vdebug_enabled = false;
 	}
@@ -47,23 +49,23 @@ vdebug_handle_object_create_thread(thread_create_t thread_create)
 	return OK;
 }
 
-error_t
-vdebug_handle_object_activate_thread(thread_t *thread)
+bool
+vdebug_handle_vcpu_activate_thread(thread_t	    *thread,
+				   vcpu_option_flags_t options)
 {
 	assert(thread != NULL);
+	assert(thread->kind == THREAD_KIND_VCPU);
 
-	if (thread->kind == THREAD_KIND_VCPU) {
-		// Debug traps should all be enabled by default
-		assert(MDCR_EL2_get_TDOSA(&thread->vcpu_regs_el2.mdcr_el2));
-		assert(MDCR_EL2_get_TDA(&thread->vcpu_regs_el2.mdcr_el2));
-		assert(MDCR_EL2_get_TDE(&thread->vcpu_regs_el2.mdcr_el2));
+	// Debug traps should all be enabled by default
+	assert(MDCR_EL2_get_TDOSA(&thread->vcpu_regs_el2.mdcr_el2));
+	assert(MDCR_EL2_get_TDA(&thread->vcpu_regs_el2.mdcr_el2));
 
-		// Trap debug exceptions if debug is not allowed on this VCPU
-		MDCR_EL2_set_TDE(&thread->vcpu_regs_el2.mdcr_el2,
-				 !thread->vdebug_allowed);
-	}
+	// TODO: Currently we allow debug access for all VCPUs by
+	// default and ignore any vcpu config.
+	(void)options;
+	vcpu_option_flags_set_debug_allowed(&thread->vcpu_options, true);
 
-	return OK;
+	return true;
 }
 
 void
@@ -72,8 +74,23 @@ vdebug_handle_thread_save_state(void)
 	thread_t *current = thread_get_self();
 
 	if (current->vdebug_enabled) {
-		current->vdebug_enabled = debug_save_common(
-			&current->vdebug_state, &vdebug_asm_order);
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+		DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+#else
+		DBGCLAIM_EL1_t dbgclaim = register_DBGCLAIMCLR_EL1_read_ordered(
+			&vdebug_asm_order);
+#endif
+		// Context-switch the debug registers only if
+		// - The device security state disallows debugging, or
+		// - The device security state allows debugging and the
+		//   external debugger has not claimed the debug module.
+		if (platform_security_state_debug_disabled() ||
+		    !DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
+			current->vdebug_enabled = debug_save_common(
+				&current->vdebug_state, &vdebug_asm_order);
+		} else {
+			current->vdebug_enabled = false;
+		}
 
 		// If debug is no longer in use, ensure register accesses will
 		// be trapped when we next switch back to this VCPU, so we can
@@ -105,22 +122,49 @@ vdebug_handle_thread_load_state()
 	thread_t *current = thread_get_self();
 
 	if (current->vdebug_enabled) {
-		debug_load_common(&current->vdebug_state, &vdebug_asm_order);
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+		DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+#else
+		DBGCLAIM_EL1_t dbgclaim = register_DBGCLAIMCLR_EL1_read_ordered(
+			&vdebug_asm_order);
+#endif
+		// Context-switch the debug registers only if
+		// - The device security state disallows debugging, or
+		// - The device security state allows debugging and the
+		//   external debugger has not claimed the debug module.
+		if (platform_security_state_debug_disabled() ||
+		    !DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
+			debug_load_common(&current->vdebug_state,
+					  &vdebug_asm_order);
+		}
 	}
 }
 
-vcpu_trap_result_t
-vdebug_handle_vcpu_trap_sysreg(ESR_EL2_ISS_MSR_MRS_t iss)
+// Common vcpu debug access handling.
+//
+// When this returns VCPU_TRAP_RESULT_EMULATED, the caller must emulate the
+// instruction, which may include RAZ/WI.
+static vcpu_trap_result_t
+vdebug_handle_vcpu_debug_trap(void)
 {
-	thread_t *	   current = thread_get_self();
 	vcpu_trap_result_t ret;
+	thread_t		 *current = thread_get_self();
 
-	if (ESR_EL2_ISS_MSR_MRS_get_Op0(&iss) != 2U) {
-		// Not a debug register access.
-		ret = VCPU_TRAP_RESULT_UNHANDLED;
-	} else if (!current->vdebug_allowed) {
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+	DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+#else
+	DBGCLAIM_EL1_t dbgclaim =
+		register_DBGCLAIMCLR_EL1_read_ordered(&vdebug_asm_order);
+#endif
+
+	if (!vcpu_option_flags_get_debug_allowed(&current->vcpu_options)) {
 		// This VCPU isn't allowed to access debug. Fault immediately.
 		ret = VCPU_TRAP_RESULT_FAULT;
+	} else if (!platform_security_state_debug_disabled() &&
+		   DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
+		// The device security state allows debugging and the external
+		// debugger has claimed the debug module.
+		ret = VCPU_TRAP_RESULT_EMULATED;
 	} else if (!current->vdebug_enabled) {
 		// Lazily enable debug register access and restore context.
 		current->vdebug_enabled = true;
@@ -131,9 +175,86 @@ vdebug_handle_vcpu_trap_sysreg(ESR_EL2_ISS_MSR_MRS_t iss)
 		register_MDCR_EL2_write(current->vcpu_regs_el2.mdcr_el2);
 		ret = VCPU_TRAP_RESULT_RETRY;
 	} else {
-		// Probably an attempted OS lock; fall back to default RAZ/WI.
-		ret = VCPU_TRAP_RESULT_UNHANDLED;
+		// Possibly attempted OS lock or MDCR_EL2.TDCC is set?
+		ret = VCPU_TRAP_RESULT_EMULATED;
 	}
 
 	return ret;
 }
+
+vcpu_trap_result_t
+vdebug_handle_vcpu_trap_sysreg(ESR_EL2_ISS_MSR_MRS_t iss)
+{
+	vcpu_trap_result_t ret;
+
+	if (compiler_expected(ESR_EL2_ISS_MSR_MRS_get_Op0(&iss) != 2U)) {
+		// Not a debug register access.
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+	} else {
+		ret = vdebug_handle_vcpu_debug_trap();
+
+		if (ret == VCPU_TRAP_RESULT_EMULATED) {
+			// Use default debug handler implementing RAZ/WI.
+			ret = VCPU_TRAP_RESULT_UNHANDLED;
+		}
+	}
+
+	return ret;
+}
+
+#if ARCH_AARCH64_32BIT_EL0
+vcpu_trap_result_t
+vdebug_handle_vcpu_trap_ldcstc_guest(ESR_EL2_ISS_LDC_STC_t iss)
+{
+	vcpu_trap_result_t ret = vdebug_handle_vcpu_debug_trap();
+
+	if (ret == VCPU_TRAP_RESULT_EMULATED) {
+		// Its complicated to emulate a load/store, just warn for now.
+		(void)iss;
+
+		TRACE_AND_LOG(ERROR, WARN,
+			      "Warning, trapped AArch32 LDC/STC 0 ignored");
+	}
+
+	return ret;
+}
+
+vcpu_trap_result_t
+vdebug_handle_vcpu_trap_mcrmrc14_guest(ESR_EL2_ISS_MCR_MRC_t iss)
+{
+	vcpu_trap_result_t ret;
+
+	if (ESR_EL2_ISS_MCR_MRC_get_Opc1(&iss) != 0) {
+		// Not a debug register
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+	} else {
+		ret = vdebug_handle_vcpu_debug_trap();
+	}
+
+	if (ret == VCPU_TRAP_RESULT_EMULATED) {
+		thread_t *current = thread_get_self();
+
+		if (ESR_EL2_ISS_MCR_MRC_get_Direction(&iss) == 1) {
+			if ((ESR_EL2_ISS_MCR_MRC_get_CV(&iss) == 0) ||
+			    (ESR_EL2_ISS_MCR_MRC_get_COND(&iss) != 0xe)) {
+				// TODO: Need to read COND/ITState/condition
+				// flags to determined whether to emulate or
+				// ignore.
+				TRACE_AND_LOG(
+					ERROR, WARN,
+					"Warning, trapped conditional AArch32 debug register");
+				ret = VCPU_TRAP_RESULT_UNHANDLED;
+			} else {
+				// Debug registers read RAZ by default
+				vcpu_gpr_write(current,
+					       ESR_EL2_ISS_MCR_MRC_get_Rt(&iss),
+					       0U);
+			}
+		} else {
+			// Write Ignored
+		}
+	}
+
+	return ret;
+}
+#endif

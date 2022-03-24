@@ -32,5 +32,9 @@ ${sep}${p.type}${space}${p.name}#slurp
 #if not $sep
 void#slurp
 #end if
-);
+)#slurp
+#for l in $h.lock_opts
+ ${l.action.upper()}_${l.kind.upper()}(${l.lock})#slurp
+#end for
+;
 #end for

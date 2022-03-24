@@ -6,9 +6,11 @@ module arm_pmu
 
 subscribe boot_cpu_cold_init
 	handler platform_pmu_handle_boot_cpu_cold_init()
+	require_preempt_disabled
 
 subscribe boot_hypervisor_start
 	handler platform_pmu_handle_boot_hypervisor_start
+	require_preempt_disabled
 
 subscribe irq_received[HWIRQ_ACTION_PMU]
 	handler platform_pmu_handle_irq_received()

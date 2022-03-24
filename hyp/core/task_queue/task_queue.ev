@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module task_queue
+
+subscribe boot_cpu_cold_init(cpu_index)
+
+subscribe ipi_received[IPI_REASON_TASK_QUEUE]()
+	require_preempt_disabled

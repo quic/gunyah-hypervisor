@@ -59,7 +59,9 @@ function aarch64_init_generate_seed, local
 	ret
 function_end aarch64_init_generate_seed
 
-// FIXME: - Move much of this hard coding to generated from types
+#define LOWER_ATTRS VMSA_PAGE_ENTRY_LOWER_ATTRS_SHIFT
+#define UPPER_ATTRS VMSA_PAGE_ENTRY_UPPER_ATTRS_SHIFT
+
 #define VSMAv8_LEVEL_BITS 9
 #define VSMAv8_ADDRESS_BITS_LEVEL0                                             \
 	(VSMAv8_ADDRESS_BITS_LEVEL1 + VSMAv8_LEVEL_BITS)
@@ -74,25 +76,29 @@ function_end aarch64_init_generate_seed
 #define VSMAv8_TABLE_TYPE 3
 #define VSMAv8_BLOCK_TYPE 1
 
-#define VSMAv8_TABLE_IGNORED_SHIFT 2
+#define VSMAv8_TABLE_REFCOUNT_SHIFT VMSA_TABLE_ENTRY_REFCOUNT_SHIFT
 
-#define VSMAv8_AP_SHIFT 6
-#define VSMAv8_AP_RW_EL0_NONE 0
-#define VSMAv8_AP_RW_EL0_RW 1
-#define VSMAv8_AP_RO_EL0_NONE 2
-#define VSMAv8_AP_RO_EL0_RO 3
+#define VSMAv8_AP_SHIFT (LOWER_ATTRS + VMSA_STG1_LOWER_ATTRS_AP_SHIFT)
+#define VSMAv8_AP_RW_EL0_NONE ENUM_VMSA_STG1_AP_EL0_NONE_UPPER_READ_WRITE
+#define VSMAv8_AP_RW_EL0_RW ENUM_VMSA_STG1_AP_ALL_READ_WRITE
+#define VSMAv8_AP_RO_EL0_NONE ENUM_VMSA_STG1_AP_EL0_NONE_UPPER_READ_ONLY
+#define VSMAv8_AP_RO_EL0_RO ENUM_VMSA_STG1_AP_ALL_READ_ONLY
 
-#define VSMAv8_SH_SHIFT 8
-#define VSMAv8_SH_NON_SHAREABLE 0
-#define VSMAv8_SH_OUTER 2
-#define VSMAv8_SH_INNER 3
+#define VSMAv8_SH_SHIFT (LOWER_ATTRS + VMSA_STG1_LOWER_ATTRS_SH_SHIFT)
+#define VSMAv8_SH_NON_SHAREABLE ENUM_VMSA_SHAREABILITY_NON_SHAREABLE
+#define VSMAv8_SH_OUTER ENUM_VMSA_SHAREABILITY_OUTER_SHAREABLE
+#define VSMAv8_SH_INNER ENUM_VMSA_SHAREABILITY_INNER_SHAREABLE
 
-#define VSMAv8_ATTRIDX_SHIFT 2
-#define VSMAv8_AF_SHIFT 10
-#define VSMAv8_NG_SHIFT 11
+#define VSMAv8_ATTRIDX_SHIFT (LOWER_ATTRS + VMSA_STG1_LOWER_ATTRS_ATTR_IDX_SHIFT)
+#define VSMAv8_AF_SHIFT (LOWER_ATTRS + VMSA_STG1_LOWER_ATTRS_AF_SHIFT)
+#define VSMAv8_NG_SHIFT (LOWER_ATTRS + VMSA_STG1_LOWER_ATTRS_NG_SHIFT)
 
-#define VSMAv8_UXN_SHIFT 54
-#define VSMAv8_PXN_SHIFT 53
+#define VSMAv8_UXN_SHIFT (UPPER_ATTRS + VMSA_STG1_UPPER_ATTRS_UXN_SHIFT)
+#define VSMAv8_PXN_SHIFT (UPPER_ATTRS + VMSA_STG1_UPPER_ATTRS_PXN_SHIFT)
+
+#if defined(ARCH_ARM_8_5_BTI)
+#define VSMAv8_GP_SHIFT (UPPER_ATTRS + VMSA_STG1_UPPER_ATTRS_GP_SHIFT)
+#endif
 
 #define MAIR_DEFAULTS	0x0004080cbb4fff44
 // 63:56 - Attr7 - 0x00 - Device-nGnRnE
@@ -122,23 +128,27 @@ function_end aarch64_init_generate_seed
 	(1 << VSMAv8_PXN_SHIFT)
 // (DBM << 51) | (CONTIG << 52) | (PXN << 53) | (UXN << 54)
 
+#if defined(ARCH_ARM_8_5_BTI)
+#define GUARDED_PAGE (1 << VSMAv8_GP_SHIFT)
+#endif
+
 // FIXME: move these to type system
-#define TCR_RGN_NORMAL_NC 0
-#define TCR_RGN_NORMAL_WB_RA_WA 1
-#define TCR_RGN_NORMAL_WT_RA_NWA 2
-#define TCR_RGN_NORMAL_WB_RA_NWA 3
-#define TCR_SH_NONE 0
-#define TCR_SH_OUTER 2
-#define TCR_SH_INNER 3
-#define TCR_TG0_4KB 0
-#define TCR_TG1_4KB 2
-#define TCR_IPS_32BIT 0
-#define TCR_IPS_36BIT 1
-#define TCR_IPS_40BIT 2
-#define TCR_IPS_42BIT 3
-#define TCR_IPS_44BIT 4
-#define TCR_IPS_48BIT 5
-#define TCR_IPS_52BIT 6
+#define TCR_RGN_NORMAL_NC ENUM_TCR_RGN_NORMAL_NONCACHEABLE
+#define TCR_RGN_NORMAL_WB_RA_WA ENUM_TCR_RGN_NORMAL_WRITEBACK_RA_WA
+#define TCR_RGN_NORMAL_WT_RA_NWA ENUM_TCR_RGN_NORMAL_WRITETHROUGH_RA
+#define TCR_RGN_NORMAL_WB_RA_NWA ENUM_TCR_RGN_NORMAL_WRITEBACK_RA
+#define TCR_SH_NONE ENUM_TCR_SH_NON_SHAREABLE
+#define TCR_SH_OUTER ENUM_TCR_SH_OUTER_SHAREABLE
+#define TCR_SH_INNER ENUM_TCR_SH_INNER_SHAREABLE
+#define TCR_TG0_4KB ENUM_TCR_TG0_GRANULE_SIZE_4KB
+#define TCR_TG1_4KB ENUM_TCR_TG1_GRANULE_SIZE_4KB
+#define TCR_IPS_32BIT ENUM_TCR_PS_SIZE_32BITS
+#define TCR_IPS_36BIT ENUM_TCR_PS_SIZE_36BITS
+#define TCR_IPS_40BIT ENUM_TCR_PS_SIZE_40BITS
+#define TCR_IPS_42BIT ENUM_TCR_PS_SIZE_42BITS
+#define TCR_IPS_44BIT ENUM_TCR_PS_SIZE_44BITS
+#define TCR_IPS_48BIT ENUM_TCR_PS_SIZE_48BITS
+#define TCR_IPS_52BIT ENUM_TCR_PS_SIZE_52BITS
 
 #define TCR_EL2_HYP ( \
 	TCR_EL2_E2H1_EPD0_MASK | \
@@ -210,21 +220,13 @@ local mm_calc_virt_base:
 
 	// - ensure that the hypervisor image doesn't wrap
 	adr	x10, image_virt_start
-	and	x9, x10, MASK_2MiB
 	bic	x10, x10, MASK_2MiB
-	add	x9, x9, x14
-	// Assume the hypervisor image is 1GB for this check.
-	adrl	x11, image_virt_start
-	mov	x13, 1 << 30
-	add	x11, x11, x13
-	//adrl	x11, image_virt_last
-	bic	x11, x11, MASK_2MiB
+	adrl	x11, image_virt_end
 	sub	x10, x11, x10
-	add	x10, x10, x14
-	cmp	x10, x9
-	bhi	1f
+	adds	x10, x10, x14
+	bcc	1f
 
-	// -- virt address wraps, try again
+	// -- virt address range either wraps, or ends at -1; try again
 	lsr	x0, x0, 18
 	movk	x0, 0x5555, lsl 48
 	b	LOCAL(mm_calc_virt_base)
@@ -304,15 +306,19 @@ function aarch64_init_address_space
 	// -- construct Level-1 table entry
 	// Set initial entry count in the level below. Assume there's two entries.
 	// Update with the actual count of entries used.
-	mov	x9, (VSMAv8_TABLE_TYPE | (2 << VSMAv8_TABLE_IGNORED_SHIFT))
+	mov	x9, (VSMAv8_TABLE_TYPE | (2 << VSMAv8_TABLE_REFCOUNT_SHIFT))
 	orr	x9, x9, x13
 	str	x9, [x10]
 	// -- construct Level-2 2MB block entry - for hypervisor code
-	adr	x12, LOCAL(mm_calc_virt_base)	// calculate the hypervisor text physical base
+	adr	x12, image_virt_start		// calculate the hypervisor text physical base
 	bic	x12, x12, MASK_2MiB		//
 	orr	x9, x12, VSMAv8_BLOCK_TYPE
 	movz	x10, LOWER_ATTRIBUTES_HYP_R
+#if defined(ARCH_ARM_8_5_BTI)
+	movk	x10, ((UPPER_ATTRIBUTES_HYP_X | GUARDED_PAGE)  >> 48), LSL 48
+#else
 	movk	x10, (UPPER_ATTRIBUTES_HYP_X >> 48), LSL 48
+#endif
 	orr	x9, x9, x10
 	str	x9, [x11]
 
@@ -336,7 +342,7 @@ function aarch64_init_address_space
 	ubfx	x10, x14, VSMAv8_ADDRESS_BITS_LEVEL1, HYP_ASPACE_HIGH_BITS-VSMAv8_ADDRESS_BITS_LEVEL1
 	add	x10, x12, x10, lsl VSMAv8_ENTRY_BITS	// x10 points to Level-1 table entry
 	ldr	x11, [x10]
-	sub	x11, x11, (1 << VSMAv8_TABLE_IGNORED_SHIFT)
+	sub	x11, x11, (1 << VSMAv8_TABLE_REFCOUNT_SHIFT)
 	str	x11, [x10]
 
 	// -- calculate 2MB hyp table entries
@@ -345,7 +351,7 @@ function aarch64_init_address_space
 	ubfx	x11, x15, VSMAv8_ADDRESS_BITS_LEVEL2, VSMAv8_LEVEL_BITS
 	add	x11, x13, x11, lsl VSMAv8_ENTRY_BITS	// x11 points to Level-2 table entry
 	// -- construct Level-1 table entry
-	mov	x12, (VSMAv8_TABLE_TYPE | (1 << VSMAv8_TABLE_IGNORED_SHIFT))
+	mov	x12, (VSMAv8_TABLE_TYPE | (1 << VSMAv8_TABLE_REFCOUNT_SHIFT))
 	orr	x12, x12, x13
 	str	x12, [x10]
 

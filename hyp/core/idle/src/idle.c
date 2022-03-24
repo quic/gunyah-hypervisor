@@ -9,6 +9,7 @@
 #include <bitmap.h>
 #include <compiler.h>
 #include <cpulocal.h>
+#include <hyp_aspace.h>
 #include <idle.h>
 #include <object.h>
 #include <panic.h>
@@ -27,6 +28,8 @@
 #include "idle_arch.h"
 
 CPULOCAL_DECLARE_STATIC(thread_t *, idle_thread);
+
+static uintptr_t idle_stack_base;
 
 static thread_t *
 idle_thread_create(cpu_index_t i)
@@ -87,6 +90,19 @@ idle_thread_init_boot(thread_t *thread, cpu_index_t i)
 void
 idle_thread_init(void)
 {
+	// Allocate some address space for the idle stacks.
+	size_t aspace_size = THREAD_STACK_MAP_ALIGN * (PLATFORM_MAX_CORES + 1U);
+
+	virt_range_result_t stack_range = hyp_aspace_allocate(aspace_size);
+	if (stack_range.e != OK) {
+		panic("Unable to allocate address space for idle stacks");
+	}
+
+	// Start the idle stack range at the next alignment boundary to
+	// ensure we have guard pages before the first mapped stack.
+	idle_stack_base =
+		util_balign_up(stack_range.r.base + 1U, THREAD_STACK_MAP_ALIGN);
+
 	const cpu_index_t cpu = cpulocal_get_index();
 
 	for (cpu_index_t i = 0; cpulocal_index_valid(i); i++) {
@@ -99,6 +115,13 @@ idle_thread_init(void)
 		} else {
 			idle_thread = idle_thread_create(i);
 		}
+
+		// Each idle thread needs a single extra reference to prevent it
+		// being deleted when it first starts. This is because it will
+		// be switching from itself in thread_boot_set_idle(), so when
+		// it releases the reference to the previous thread in
+		// thread_arch_main(), it will in fact be releasing itself.
+		object_get_thread_additional(idle_thread);
 
 		CPULOCAL_BY_INDEX(idle_thread, i) = idle_thread;
 		if (object_activate_thread(idle_thread) != OK) {
@@ -179,6 +202,17 @@ idle_handle_thread_get_entry_fn(thread_kind_t kind)
 	return idle_loop;
 }
 
+uintptr_t
+idle_handle_thread_get_stack_base(thread_kind_t kind, thread_t *thread)
+{
+	assert(kind == THREAD_KIND_IDLE);
+	assert(thread != NULL);
+
+	cpu_index_t cpu = thread->scheduler_affinity;
+
+	return idle_stack_base + (cpu * THREAD_STACK_MAP_ALIGN);
+}
+
 thread_t *
 idle_thread(void)
 {
@@ -221,22 +255,3 @@ idle_yield(void)
 
 	return must_schedule;
 }
-
-#if !defined(UNIT_TESTS)
-idle_state_t
-idle_handle_vcpu_idle_fastpath(void)
-{
-	thread_t *   current	= thread_get_self();
-	idle_state_t idle_state = IDLE_STATE_WAKEUP;
-
-	while (!current->vcpu_interrupted) {
-		// Idle until an IRQ or other wakeup event occurs
-		if (idle_yield()) {
-			idle_state = IDLE_STATE_RESCHEDULE;
-			break;
-		}
-	}
-
-	return idle_state;
-}
-#endif

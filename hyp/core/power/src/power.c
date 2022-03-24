@@ -16,9 +16,10 @@
 
 CPULOCAL_DECLARE(cpu_power_state_t, cpu_power_state);
 
-static spinlock_t	      power_system_lock;
-static register_t	      power_system_online_cpus;
-static platform_power_state_t power_system_suspend_state;
+static spinlock_t power_system_lock;
+static register_t power_system_online_cpus PROTECTED_BY(power_system_lock);
+static platform_power_state_t
+	power_system_suspend_state PROTECTED_BY(power_system_lock);
 
 void
 power_handle_boot_cold_init(cpu_index_t boot_cpu)

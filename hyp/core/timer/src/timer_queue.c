@@ -34,6 +34,14 @@ timer_handle_boot_cpu_cold_init(cpu_index_t cpu_index)
 	spinlock_init(&tq->lock);
 }
 
+#if !defined(UNITTESTS) || !UNITTESTS
+void
+timer_handle_rootvm_init(boot_env_data_t *env_data)
+{
+	env_data->timer_freq = timer_get_timer_frequency();
+}
+#endif
+
 uint32_t
 timer_get_timer_frequency()
 {
@@ -99,13 +107,13 @@ timer_is_queued(timer_t *timer)
 		goto out;
 	}
 
-	spinlock_acquire(&tq->lock);
+	spinlock_acquire_nopreempt(&tq->lock);
 	if (timer->queued) {
 		queued = true;
 	} else {
 		timer->timer_queue = NULL;
 	}
-	spinlock_release(&tq->lock);
+	spinlock_release_nopreempt(&tq->lock);
 out:
 	spinlock_release(&timer->lock);
 	return queued;
@@ -125,7 +133,7 @@ timer_queue_get_next_timeout(void)
 }
 
 static void
-timer_update_timeout(timer_queue_t *tq)
+timer_update_timeout(timer_queue_t *tq) REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 
@@ -139,7 +147,7 @@ timer_update_timeout(timer_queue_t *tq)
 }
 
 static void
-timer_enqueue_internal(timer_t *timer, ticks_t timeout)
+timer_enqueue_internal(timer_t *timer, ticks_t timeout) REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 
@@ -169,6 +177,7 @@ timer_enqueue_internal(timer_t *timer, ticks_t timeout)
 
 static void
 timer_dequeue_internal(timer_t *timer, bool timer_locked)
+	REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 
@@ -201,7 +210,7 @@ timer_dequeue_internal(timer_t *timer, bool timer_locked)
 }
 
 static void
-timer_update_internal(timer_t *timer, ticks_t timeout)
+timer_update_internal(timer_t *timer, ticks_t timeout) REQUIRE_PREEMPT_DISABLED
 {
 	assert_preempt_disabled();
 
@@ -247,26 +256,22 @@ timer_enqueue(timer_t *timer, ticks_t timeout)
 	preempt_disable();
 	timer_queue_t *tq = &CPULOCAL(timer_queue);
 
-	spinlock_acquire(&timer->lock);
+	spinlock_acquire_nopreempt(&timer->lock);
 	if (timer->timer_queue != NULL) {
-		spinlock_acquire(&timer->timer_queue->lock);
+		spinlock_acquire_nopreempt(&timer->timer_queue->lock);
 		if (compiler_unexpected(timer->queued)) {
 			panic("Request to enqueue a queued timer");
 		}
-		if (timer->timer_queue != tq) {
-			spinlock_release(&timer->timer_queue->lock);
-			spinlock_acquire(&tq->lock);
-		}
+		spinlock_release_nopreempt(&timer->timer_queue->lock);
 		timer->timer_queue = NULL;
-	} else {
-		spinlock_acquire(&tq->lock);
 	}
 
+	spinlock_acquire_nopreempt(&tq->lock);
 	timer_enqueue_internal(timer, timeout);
 	timer_update_timeout(tq);
 
-	spinlock_release(&tq->lock);
-	spinlock_release(&timer->lock);
+	spinlock_release_nopreempt(&tq->lock);
+	spinlock_release_nopreempt(&timer->lock);
 	preempt_enable();
 }
 
@@ -275,7 +280,6 @@ timer_dequeue(timer_t *timer)
 {
 	assert(timer != NULL);
 
-	preempt_disable();
 	spinlock_acquire(&timer->lock);
 
 	timer_queue_t *tq = timer->timer_queue;
@@ -283,17 +287,16 @@ timer_dequeue(timer_t *timer)
 		goto out;
 	}
 
-	spinlock_acquire(&tq->lock);
+	spinlock_acquire_nopreempt(&tq->lock);
 	if (timer->queued) {
 		timer_dequeue_internal(timer, true);
 		timer_update_timeout(tq);
 	} else {
 		timer->timer_queue = NULL;
 	}
-	spinlock_release(&tq->lock);
+	spinlock_release_nopreempt(&tq->lock);
 out:
 	spinlock_release(&timer->lock);
-	preempt_enable();
 }
 
 void
@@ -301,25 +304,24 @@ timer_update(timer_t *timer, ticks_t timeout)
 {
 	assert(timer != NULL);
 
-	preempt_disable();
 	spinlock_acquire(&timer->lock);
 
 	timer_queue_t *tq = timer->timer_queue;
 
 	// If timer is queued on another CPU, it needs to be dequeued.
 	if ((tq != NULL) && (tq != &CPULOCAL(timer_queue))) {
-		spinlock_acquire(&tq->lock);
+		spinlock_acquire_nopreempt(&tq->lock);
 		if (timer->queued) {
 			timer_dequeue_internal(timer, true);
 		} else {
 			timer->timer_queue = NULL;
 		}
-		spinlock_release(&tq->lock);
+		spinlock_release_nopreempt(&tq->lock);
 	}
 
 	tq = &CPULOCAL(timer_queue);
 
-	spinlock_acquire(&tq->lock);
+	spinlock_acquire_nopreempt(&tq->lock);
 	if (timer->timer_queue != NULL) {
 		if (timer->queued) {
 			timer_update_internal(timer, timeout);
@@ -333,32 +335,31 @@ timer_update(timer_t *timer, ticks_t timeout)
 
 	timer_update_timeout(tq);
 
-	spinlock_release(&tq->lock);
+	spinlock_release_nopreempt(&tq->lock);
 	spinlock_release(&timer->lock);
-	preempt_enable();
 }
 
 static void
-timer_dequeue_expired(void)
+timer_dequeue_expired(void) REQUIRE_PREEMPT_DISABLED
 {
 	ticks_t	       current_ticks = timer_get_current_timer_ticks();
 	timer_queue_t *tq	     = &CPULOCAL(timer_queue);
 
 	assert_preempt_disabled();
 
-	spinlock_acquire(&tq->lock);
+	spinlock_acquire_nopreempt(&tq->lock);
 
 	while (tq->timeout <= current_ticks) {
 		list_node_t *head = list_get_head(&tq->list);
 		timer_t *timer = timer_container_of_timer_queue_list_node(head);
 		timer_dequeue_internal(timer, false);
-		spinlock_release(&tq->lock);
+		spinlock_release_nopreempt(&tq->lock);
 		(void)trigger_timer_action_event(timer->action, timer);
-		spinlock_acquire(&tq->lock);
+		spinlock_acquire_nopreempt(&tq->lock);
 	}
 
 	timer_update_timeout(tq);
-	spinlock_release(&tq->lock);
+	spinlock_release_nopreempt(&tq->lock);
 }
 
 void
@@ -373,9 +374,18 @@ timer_handle_power_cpu_suspend(void)
 	// TODO: Delay or reject attempted suspend if timeout is due to expire
 	// sooner than the CPU can reach the requested power state.
 
+#if defined(MODULE_CORE_TIMER_LP) && MODULE_CORE_TIMER_LP
+	// The timer_lp module will enqueue the timeout on the global low power
+	// timer, so we can cancel the core-local timer to avoid redundant
+	// interrupts if the suspend finishes without entering a state that
+	// stops the timer.
+	platform_timer_cancel_timeout();
+#endif
+
 	return OK;
 }
 
+// Also handles power_cpu_resume
 void
 timer_handle_power_cpu_online(void)
 {

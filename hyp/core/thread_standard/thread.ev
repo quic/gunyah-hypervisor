@@ -27,3 +27,6 @@ subscribe thread_context_switch_pre()
 
 subscribe boot_hypervisor_start
 	priority -20
+
+subscribe thread_exit_to_user()
+	priority last

@@ -5,10 +5,13 @@
 module arm_vm_timer
 
 subscribe boot_hypervisor_start
+	require_preempt_disabled
 
 subscribe boot_cpu_cold_init()
+	require_preempt_disabled
 
 subscribe boot_cpu_warm_init
+	require_preempt_disabled
 
 subscribe thread_save_state()
 
@@ -23,11 +26,19 @@ subscribe object_activate_thread
 
 subscribe object_deactivate_thread
 
-subscribe timer_action[TIMER_ACTION_VIRTUAL_TIMER](timer)
+subscribe timer_action[TIMER_ACTION_VIRTUAL_TIMER]
+	handler arm_vm_timer_handle_timer_action(action_type, timer)
 
-subscribe virq_check_pending[VIRQ_TRIGGER_TIMER](source)
+subscribe timer_action[TIMER_ACTION_PHYSICAL_TIMER]
+	handler arm_vm_timer_handle_timer_action(action_type, timer)
 
-subscribe irq_received[HWIRQ_ACTION_VM_TIMER]()
+subscribe virq_check_pending[VIRQ_TRIGGER_VIRTUAL_TIMER]
+	handler arm_vm_timer_handle_virq_check_pending(trigger, source)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_PHYSICAL_TIMER]
+	handler arm_vm_timer_handle_virq_check_pending(trigger, source)
+
+subscribe irq_received[HWIRQ_ACTION_VM_TIMER](irq)
 
 subscribe vcpu_poweroff()
 

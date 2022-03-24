@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define vcpu_general_registers structure {
+define vcpu_gpr structure {
 	x		array(31) type register_t;
 	pc		bitfield ELR_EL2;
 	spsr_el2	bitfield SPSR_EL2_A64;
@@ -23,7 +23,7 @@ define vcpu_el1_registers structure {
 	elr_el1		bitfield ELR_EL1;
 	esr_el1		bitfield ESR_EL1;
 	far_el1		bitfield FAR_EL1;
-	par_el1		bitfield PAR_EL1_RAW;
+	par_el1		union PAR_EL1;
 	mair_el1	bitfield MAIR_EL1;
 	sp_el0		bitfield SP_EL0;
 	sp_el1		bitfield SP_EL1;
@@ -50,16 +50,23 @@ define vcpu_el1_registers structure {
 };
 
 define vcpu_el2_registers structure {
+#if defined(ARCH_ARM_8_1_VHE)
 	cptr_el2	bitfield CPTR_EL2_E2H1;
+#else
+	cptr_el2	bitfield CPTR_EL2_E2H0;
+#endif
 	hcr_el2		bitfield HCR_EL2;
 	mdcr_el2	bitfield MDCR_EL2;
 };
 
 extend vcpu object {
-	gpr structure vcpu_general_registers;
-	fpr structure vcpu_vfp_registers;
-	el1 structure vcpu_el1_registers;
-	el2 structure vcpu_el2_registers;
+	gpr	structure vcpu_gpr;
+#if defined(ARCH_ARM_8_3_PAUTH)
+	pauth	structure aarch64_pauth_keys;
+#endif
+	fpr	structure vcpu_vfp_registers;
+	el1	structure vcpu_el1_registers;
+	el2	structure vcpu_el2_registers;
 
 	mpidr_el1	bitfield MPIDR_EL1;
 #if SCHEDULER_CAN_MIGRATE
@@ -70,6 +77,7 @@ extend vcpu object {
 #if !defined(PREEMPT_NULL)
 extend thread object module vcpu {
 	interrupted bool;
+	can_idle bool;
 };
 #endif
 
@@ -78,9 +86,14 @@ extend thread object module vcpu {
 // hypercall. Then in their thread_activate handlers they need to check the
 // values of these flags and act on them.
 define vcpu_option_flags public bitfield<64> {
-	0		pinned		bool = 0;
-	62:1		res0_0		uint64 = 0;
-	63		hlos_vm		bool = 0;
+	0		pinned			bool = 0;
+	1		ras_error_handler	bool = 0;
+	2		amu_counting_disabled	bool = 0;
+	3		sve_allowed		bool = 0;
+	// 4		reserved: debug_allowed
+	// 5		reserved: trace_allowed
+	63		hlos_vm			bool = 0;
+	others		unknown = 0;
 };
 
 extend thread object module vcpu {

@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface task_queue
+
+selector_event task_queue_execute
+	selector task_queue_class: task_queue_class_t
+	param entry: task_queue_entry_t *
+	return: error_t = ERROR_UNIMPLEMENTED

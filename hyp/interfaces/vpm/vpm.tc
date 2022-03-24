@@ -10,7 +10,7 @@ extend hyp_api_flags0 bitfield {
 #endif
 
 define vpm_state enumeration(explicit) {
-	no_state = 0;		// Invalid / non existant
+	no_state = 0;		// Invalid / non existent
 	running = 1;		// VPM is active
 	cpus_suspended = 2;	// VPM is suspended after a CPU_SUSPEND call
 	system_suspended = 3;	// VPM is suspended after a SYSTEM_SUSPEND call

@@ -48,6 +48,7 @@ abis['aarch64'] = abi_aarch64(0x6000)
 
 # Dictionary with all hypercalls defined
 hypcall_dict = dict()
+vendor_hypcall_list = []
 
 
 class Variable:
@@ -75,7 +76,7 @@ class Variable:
 
 
 class Hypercall:
-    def __init__(self, name, num, abi):
+    def __init__(self, name, num, properties, abi):
         self.name = name
         self.num = num
         self.used_regs = set()
@@ -85,6 +86,7 @@ class Hypercall:
         self.output_count = 0
         self.clobbers = set()
         self.abi = abis[abi]
+        self.properties = properties
 
         self.hvc_num = "0x{:x}".format(self.abi.hypcall_base + num)
 
@@ -111,7 +113,10 @@ class Hypercall:
         self.output_count += 1
 
     def finalise(self):
-        hypcall_dict[self.num] = self
+        if 'vendor_hyp_call' in self.properties:
+            vendor_hypcall_list.append(self)
+        else:
+            hypcall_dict[self.num] = self
 
         self.inputs = tuple(self.inputs)
         self.outputs = tuple(self.outputs)

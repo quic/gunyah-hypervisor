@@ -98,3 +98,14 @@ define partition_create_vpm_group hypercall {
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
+
+#if defined(INTERFACE_VIRTIO_MMIO)
+define partition_create_virtio_mmio hypercall {
+	call_num	0x48;
+	src_partition	input type cap_id_t;
+	cspace		input type cap_id_t;
+	_res0		input uregister;
+	error		output enumeration error;
+	new_cap		output type cap_id_t;
+};
+#endif

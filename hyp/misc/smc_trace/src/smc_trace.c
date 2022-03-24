@@ -22,7 +22,7 @@
 #include <asm-generic/prefetch.h>
 
 extern smc_trace_t *hyp_smc_trace;
-smc_trace_t *	    hyp_smc_trace;
+smc_trace_t	    *hyp_smc_trace;
 
 void
 smc_trace_init(partition_t *partition)
@@ -56,7 +56,7 @@ smc_trace_log(smc_trace_id_t id, register_t (*registers)[SMC_TRACE_REG_MAX],
 	cpu_index_t vcpu = 0U;
 	vmid_t	    vmid = 0U;
 
-#if !defined(UNIT_TESTS)
+#if defined(INTERFACE_VCPU)
 	thread_t *current = thread_get_self();
 
 	if (current->kind == THREAD_KIND_VCPU) {
