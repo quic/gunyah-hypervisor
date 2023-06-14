@@ -6,9 +6,16 @@ module addrspace
 
 subscribe boot_cold_init()
 
+#if defined(INTERFACE_VCPU)
 subscribe object_activate_thread
 
 subscribe object_deactivate_thread
+
+subscribe thread_load_state
+	handler addrspace_context_switch_load()
+
+subscribe thread_get_stack_base[THREAD_KIND_VCPU](thread)
+#endif
 
 subscribe object_create_addrspace(addrspace_create)
 	unwinder addrspace_unwind_object_create_addrspace(addrspace_create)
@@ -19,10 +26,8 @@ subscribe object_activate_addrspace
 	priority last
 
 subscribe object_deactivate_addrspace
+	priority last
 
-subscribe thread_load_state
-	handler addrspace_context_switch_load()
-
-subscribe rootvm_init(root_thread, root_cspace, env_data)
-
-subscribe thread_get_stack_base[THREAD_KIND_VCPU](thread)
+#if defined(MODULE_VM_ROOTVM)
+subscribe rootvm_init(root_thread, root_cspace, qcbor_enc_ctxt)
+#endif

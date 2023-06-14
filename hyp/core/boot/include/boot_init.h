@@ -21,6 +21,7 @@ boot_secondary_init(cpu_index_t cpu);
 noreturn void
 boot_warm_init(void);
 
-// Add address range to free ranges in env_data
+// Add address range to free ranges in env data stream
 error_t
-boot_add_free_range(paddr_t base, size_t size, void *arg);
+boot_add_free_range(uintptr_t object, memdb_type_t type,
+		    qcbor_enc_ctxt_t *qcbor_enc_ctxt);

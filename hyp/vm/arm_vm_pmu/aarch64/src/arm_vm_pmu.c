@@ -9,9 +9,11 @@
 #include <hypregisters.h>
 
 #include <atomic.h>
+#include <compiler.h>
 #include <cpulocal.h>
 #include <irq.h>
 #include <panic.h>
+#include <preempt.h>
 #include <vcpu.h>
 #include <virq.h>
 
@@ -44,6 +46,7 @@
 // the context switching of the PMU registers. Currently it looks like Linux
 // does not actually comply with this standard anyway, except for writing the
 // debugger claim bits in the statistical profiling driver.
+// FIXME:
 
 #if (ARCH_ARM_PMU_VER < 3)
 #error Only PMUv3 and above can be implemented in ARMv8/ARMv9.
@@ -55,7 +58,7 @@ arm_vm_pmu_counters_enabled(thread_t *current)
 	// Check if the global enable flag is set and at least one counter is
 	// enabled.
 	return (PMCR_EL0_get_E(&current->pmu.pmu_regs.pmcr_el0) &&
-		(current->pmu.pmu_regs.pmcntenset_el0 != 0));
+		(current->pmu.pmu_regs.pmcntenset_el0 != 0U));
 }
 
 static bool
@@ -80,7 +83,7 @@ arm_vm_pmu_aarch64_handle_object_activate_thread(thread_t *thread)
 	PMCR_EL0_t pmcr_el0 = register_PMCR_EL0_read();
 	MDCR_EL2_set_HPMN(&thread->vcpu_regs_el2.mdcr_el2,
 			  PMCR_EL0_get_N(&pmcr_el0));
-#if defined(ARCH_ARM_8_1_PMU)
+#if defined(ARCH_ARM_FEAT_PMUv3p1)
 	// Prohibit event counting at EL2
 	MDCR_EL2_set_HPMD(&thread->vcpu_regs_el2.mdcr_el2, true);
 #endif
@@ -118,7 +121,7 @@ arm_vm_pmu_save_state(thread_t *thread)
 	sysreg64_read_ordered(PMOVSSET_EL0, thread->pmu.pmu_regs.pmovsset_el0,
 			      asm_ordering);
 
-#if !defined(ARCH_ARM_8_1_PMU)
+#if !defined(ARCH_ARM_FEAT_PMUv3p1)
 	// Event counting cannot be prohibited at EL2. Do an ISB to make sure
 	// the operation above completes before we continue. This to ensure that
 	// the register reads above are not delayed until after some sensitive
@@ -170,19 +173,19 @@ arm_vm_pmu_handle_thread_save_state(void)
 {
 	thread_t *thread = thread_get_self();
 
-	if ((thread->kind == THREAD_KIND_VCPU) &&
-	    (!arm_vm_pmu_is_el1_trap_enabled(thread))) {
+	if (compiler_expected(thread->kind == THREAD_KIND_VCPU) &&
+	    compiler_unexpected(!arm_vm_pmu_is_el1_trap_enabled(thread))) {
 		// PMU access was enabled for this timeslice, save the state
 		arm_vm_pmu_save_state(thread);
 	}
 }
 
 void
-arm_vm_pmu_handle_thread_context_switch_post()
+arm_vm_pmu_handle_thread_context_switch_post(void)
 {
 	thread_t *thread = thread_get_self();
 
-	if (thread->kind == THREAD_KIND_VCPU) {
+	if (compiler_expected(thread->kind == THREAD_KIND_VCPU)) {
 		bool_result_t asserted = virq_query(&thread->pmu.pmu_virq_src);
 		if ((asserted.e == OK) && !asserted.r) {
 			platform_pmu_hw_irq_deactivate();
@@ -207,14 +210,17 @@ arm_vm_pmu_handle_thread_load_state(void)
 {
 	thread_t *thread = thread_get_self();
 
-	if ((thread->kind == THREAD_KIND_VCPU) &&
-	    arm_vm_pmu_counters_enabled(thread)) {
+	if (compiler_unexpected(thread->kind != THREAD_KIND_VCPU)) {
+		// Idle thread. Turn off the counters and the interrupts.
+		sysreg64_write_ordered(PMINTENCLR_EL1, ~0UL, asm_ordering);
+		sysreg64_write_ordered(PMCNTENCLR_EL0, ~0UL, asm_ordering);
+	} else if (compiler_unexpected(arm_vm_pmu_counters_enabled(thread))) {
 		// The thread is actively using PMU. The context_switch_post
 		// has already disabled traps for this thread above, and it will
 		// get loaded into MDCR_EL2 during the context switch load
 		// process in the generic module. Load its PMU context here.
 		arm_vm_pmu_load_state(thread);
-	} else if (thread->kind == THREAD_KIND_VCPU) {
+	} else {
 		// The thread is not actively using PMU. The context_switch_post
 		// has already enabled traps for this thread above, and it will
 		// get loaded into MDCR_EL2 during the context switch load
@@ -226,12 +232,8 @@ arm_vm_pmu_handle_thread_load_state(void)
 		// doesn't currently have access to thems.
 		//
 		// Turn off the counters and the interrupts.
-		sysreg64_write_ordered(PMINTENCLR_EL1, ~0U, asm_ordering);
-		sysreg64_write_ordered(PMCNTENCLR_EL0, ~0U, asm_ordering);
-	} else {
-		// Idle thread. Turn off the counters and the interrupts.
-		sysreg64_write_ordered(PMINTENCLR_EL1, ~0U, asm_ordering);
-		sysreg64_write_ordered(PMCNTENCLR_EL0, ~0U, asm_ordering);
+		sysreg64_write_ordered(PMINTENCLR_EL1, ~0UL, asm_ordering);
+		sysreg64_write_ordered(PMCNTENCLR_EL0, ~0UL, asm_ordering);
 	}
 }
 
@@ -240,7 +242,7 @@ arm_vm_pmu_handle_virq_check_pending(virq_source_t *source)
 {
 	bool ret = true;
 
-	pmu_t    *pmu	 = pmu_container_of_pmu_virq_src(source);
+	pmu_t	 *pmu	 = pmu_container_of_pmu_virq_src(source);
 	thread_t *thread = thread_container_of_pmu(pmu);
 	assert(thread != NULL);
 
@@ -266,7 +268,7 @@ vcpu_trap_result_t
 arm_vm_pmu_handle_vcpu_trap_sysreg_access(ESR_EL2_ISS_MSR_MRS_t iss)
 {
 	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_UNHANDLED;
-	thread_t		 *thread = thread_get_self();
+	thread_t	  *thread = thread_get_self();
 
 	// Remove the fields that are not used in the comparison
 	ESR_EL2_ISS_MSR_MRS_t temp_iss = iss;
@@ -300,7 +302,8 @@ arm_vm_pmu_handle_vcpu_trap_sysreg_access(ESR_EL2_ISS_MSR_MRS_t iss)
 		crn  = ESR_EL2_ISS_MSR_MRS_get_CRn(&iss);
 		crm  = ESR_EL2_ISS_MSR_MRS_get_CRm(&iss);
 
-		if ((opc0 == 3) && (opc1 == 3) && (crn == 14) && (crm >= 8)) {
+		if ((opc0 == 3U) && (opc1 == 3U) && (crn == 14U) &&
+		    (crm >= 8U)) {
 			// PMEVCNTR and PMEVTYPER registers
 			ret = VCPU_TRAP_RESULT_RETRY;
 		}

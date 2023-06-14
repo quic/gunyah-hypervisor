@@ -1,0 +1,121 @@
+
+#def prefix: hypercall_
+#set $wrapper_suffix = "__hyp_wrapper"
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <compiler.h>
+\#include <hypcall_def.h>
+\#include <thread.h>
+\#include <trace.h>
+
+#def return_type(hypcall)
+#if len(hypcall.outputs) > 1
+${prefix}${hypcall.name}_result_t#slurp
+#else
+${hypcall.outputs[0][1].ctype}#slurp
+#end if
+#end def
+
+#def register_expr(variable)
+#if variable.category == 'bitfield'
+## FIXME: this is an implementation detail of the type system
+${variable.name}.bf[0]#slurp
+#else
+${variable.name}#slurp
+#end if
+#end def
+
+#def input_cast(variable, val)
+#if variable.category == 'bitfield'
+## FIXME: this is an implementation detail of the type system
+${variable.type_name}_cast((uint${8 * variable.size}_t)${val})#slurp
+#else
+(${variable.ctype})${val}#slurp
+#end if
+#end def
+
+#for hypcall_num in sorted($hypcall_dict.keys())
+#set $hypcall = $hypcall_dict[$hypcall_num]
+
+#set $num_in = len($hypcall.inputs)
+#set $num_out = len($hypcall.outputs)
+
+#if $num_in > 8 or $num_out > 8
+#error too many hypcall arguments: ${hypcall.name}: input $num_in, output $num_out
+#end if
+
+static void
+${hypcall.name}${wrapper_suffix}(register_t *args) {
+    #if $hypcall.outputs
+        $return_type($hypcall) ret_;
+    #end if
+
+    ## call the implementation
+    #if $hypcall.outputs
+    ret_ =
+    #end if
+    $prefix${hypcall.name}(#slurp
+    #set xar=1
+    #set sep=''
+    #for i, input in $hypcall.inputs
+        #if not $input.ignore
+#set $val = "args[{:d}]".format($xar)
+	    ${sep}$input_cast(input, $val)
+            #set sep=', '
+        #end if
+        #set xar=xar+1
+    #end for
+    );
+
+    ## return the result, if any
+    #if len(hypcall.outputs) > 1
+        #set xar=0
+        #for i, output in hypcall.outputs
+            ##
+            ## assuming complex struct, we only return the first
+            ## 'register_t'.
+            ##
+            args[$xar] = (register_t)(ret_.$register_expr($output));
+            #set xar=xar+1
+        #end for
+    #else if hypcall.outputs
+        args[0] = (register_t)ret_;
+    #end if
+}
+
+#end for
+
+void
+smccc_hypercall_table_wrapper(count_t hyp_num, register_t *args);
+
+void
+smccc_hypercall_table_wrapper(count_t hyp_num, register_t *args) {
+	TRACE(USER, HYPERCALL, "smccc hyp: {:#x}: {:#x} {:#x} {:#x}, {:#x}",
+	      (register_t)(hyp_num), args[1], args[2], args[3], args[4]);
+	bool trace_ret = true;
+
+	switch (hyp_num) {
+#for hypcall_num in sorted($hypcall_dict.keys())
+#set $hypcall = $hypcall_dict[$hypcall_num]
+#set $sensitive = $hypcall.properties.get('sensitive', False)
+		case $hypcall_num:
+#if $sensitive
+			// Sensitive hypercall
+			trace_ret = false;
+#end if
+			${hypcall.name}${wrapper_suffix}(args);
+			break;
+#end for
+		default:
+			args[0] = (register_t)SMCCC_UNKNOWN_FUNCTION64;
+			break;
+	}
+
+	if (compiler_expected(trace_ret)) {
+		TRACE(USER, HYPERCALL,
+		      "smccc ret: {:#x} {:#x} {:#x} {:#x} {:#x}",
+		      args[0], args[1], args[2], args[3], args[4]);
+	}
+}

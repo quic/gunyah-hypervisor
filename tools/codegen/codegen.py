@@ -81,7 +81,7 @@ def main():
         defines.update(options.defines)
 
     if options.imacros:
-        d = re.compile(r'#define (?P<def>\w+)(\s+\"?(?P<val>[\w0-9\ ]+)\"?)?')
+        d = re.compile(r'#define (?P<def>\w+)(\s+\"?(?P<val>[\w0-9,\ ]+)\"?)?')
         for line in options.imacros.readlines():
             match = d.search(line)
             define = match.group('def')
@@ -94,13 +94,14 @@ def main():
                 except AttributeError:
                     pass
             except ValueError:
-                val = True
+                pass
 
             if define in defines:
                 raise Exception("multiply defined: {}\n", define)
 
             defines[define] = val
 
+    sys.path.append(os.path.dirname(options.template.name))
     output = str(Template(file=options.template,
                           searchList=(defines,
                                       {'arch_list': options.archs})))

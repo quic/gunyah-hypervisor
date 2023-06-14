@@ -130,7 +130,7 @@ hypercall_msgqueue_send(cap_id_t msgqueue_cap, size_t size, user_ptr_t data,
 			msgqueue_send_flags_t send_flags)
 {
 	hypercall_msgqueue_send_result_t ret	= { 0 };
-	cspace_t			 *cspace = cspace_get_self();
+	cspace_t			*cspace = cspace_get_self();
 
 	msgqueue_ptr_result_t p = cspace_lookup_msgqueue(
 		cspace, msgqueue_cap, CAP_RIGHTS_MSGQUEUE_SEND);
@@ -157,7 +157,7 @@ hypercall_msgqueue_receive(cap_id_t msgqueue_cap, user_ptr_t buffer,
 			   size_t buf_size)
 {
 	hypercall_msgqueue_receive_result_t ret	   = { 0 };
-	cspace_t				 *cspace = cspace_get_self();
+	cspace_t			   *cspace = cspace_get_self();
 
 	msgqueue_ptr_result_t p = cspace_lookup_msgqueue(
 		cspace, msgqueue_cap, CAP_RIGHTS_MSGQUEUE_RECEIVE);
@@ -253,7 +253,7 @@ hypercall_msgqueue_configure(cap_id_t		    msgqueue_cap,
 			     msgqueue_create_info_t create_info)
 {
 	error_t	      err;
-	cspace_t	 *cspace = cspace_get_self();
+	cspace_t     *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(

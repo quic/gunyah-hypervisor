@@ -8,12 +8,17 @@ define SCHEDULER_VARIANT constant enumeration scheduler_variant = 0x1;
 
 define SCHEDULER_NUM_PRIORITIES constant type priority_t = 64;
 define SCHEDULER_MIN_PRIORITY public constant type priority_t = 0;
-define SCHEDULER_MAX_PRIORITY public constant type priority_t = SCHEDULER_NUM_PRIORITIES - 1;
-define SCHEDULER_DEFAULT_PRIORITY public constant type priority_t = SCHEDULER_NUM_PRIORITIES / 2;
+define SCHEDULER_MAX_PRIORITY public constant type priority_t =
+	SCHEDULER_NUM_PRIORITIES - 1;
+define SCHEDULER_DEFAULT_PRIORITY public constant type priority_t =
+	SCHEDULER_NUM_PRIORITIES / 2;
 
-define SCHEDULER_MAX_TIMESLICE public constant type nanoseconds_t = 100000000;	// 100ms
-define SCHEDULER_MIN_TIMESLICE public constant type nanoseconds_t = 100000; // 100us
-define SCHEDULER_DEFAULT_TIMESLICE public constant type nanoseconds_t = 5000000; // 5ms
+define SCHEDULER_MAX_TIMESLICE public constant type nanoseconds_t =
+	100000000; // 100ms
+define SCHEDULER_MIN_TIMESLICE public constant type nanoseconds_t =
+	100000; // 100µs
+define SCHEDULER_DEFAULT_TIMESLICE public constant type nanoseconds_t =
+	5000000; // 5ms
 
 define SCHEDULER_NUM_BLOCK_BITS constant type index_t = maxof(enumeration scheduler_block) + 1;
 
@@ -38,8 +43,7 @@ define scheduler structure {
 	runqueue array(SCHEDULER_NUM_PRIORITIES) structure list;
 	active_thread pointer object thread;
 	timer structure timer;
-	timeout type ticks_t;
-	timeout_set bool;
+	schedtime type ticks_t;
 	lock structure spinlock;
 };
 
@@ -85,7 +89,7 @@ extend rcu_update_class enumeration {
 
 #if defined(UNIT_TESTS)
 extend thread_kind enumeration {
-	sched_test;
+	sched_test = 2;
 };
 
 define sched_test_op enumeration {

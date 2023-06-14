@@ -21,7 +21,7 @@ INTEGER : DIGIT_NONZERO DIGIT* UNSIGNED_SUFFIX?
 	| ZERO UNSIGNED_SUFFIX?
 
 constant_value : INTEGER
-constant_reference : IDENTIFIER
+constant_reference : _identifier
 
 _primary_expr : constant_value
         | constant_reference
@@ -94,7 +94,7 @@ _indirect_type : array
 
 array_size : constant_expression
 
-array : "array" "(" array_size ")" _type
+array : "array" "(" array_size ")" _qualifiers? _type
 
 pointer : "pointer" _qualifiers? _type
 
@@ -103,18 +103,18 @@ direct_type : _customized_type _qualifiers?
 _qualifiers : "(" qualifier_list? ")"
 qualifier_list : _qualifier ("," _qualifier)*
 
-declaration : IDENTIFIER declaration_offset? _type ";"
+declaration : _identifier declaration_offset? _type ";"
 declaration_offset : "@" bracketed_constant_expression
 
 enumeration_noprefix : "noprefix"
 enumeration_explicit : "explicit"
 enumeration_expr : "=" constant_expression
-enumeration_constant : IDENTIFIER enumeration_expr? enumeration_noprefix? ";"
+enumeration_constant : _identifier enumeration_expr? enumeration_noprefix? ";"
 
 bitfield_declaration: (_bitfield_normal | bitfield_delete) ";"
 _bitfield_normal: bitfield_specifier _bitfield_type_specifier
 _bitfield_type_specifier: bitfield_member | bitfield_unknown | bitfield_const
-bitfield_member: IDENTIFIER _type _bitfield_modifiers bitfield_default?
+bitfield_member: _identifier _type _bitfield_modifiers bitfield_default?
 
 _definition : "define" _type_definition
 _type_definition : bitfield_definition
@@ -128,13 +128,13 @@ _type_definition : bitfield_definition
 
 public : "public"
 
-alternative_definition : IDENTIFIER public? "newtype" _type ";"
+alternative_definition : _identifier public? "newtype" _type ";"
 
 // Constants aka 'C' defines
-constant_definition : IDENTIFIER public? "constant" direct_type? "=" constant_expression ";"
+constant_definition : _identifier public? "constant" direct_type? "=" constant_expression ";"
 
 // Global variables (never public; declaration only)
-global_definition : IDENTIFIER "global" direct_type ";"
+global_definition : _identifier "global" direct_type ";"
 
 bitfield_size : constant_expression
 _bitfield_size : "<" bitfield_size ">"
@@ -142,18 +142,18 @@ bitfield_const_decl : "const"
 bitfield_set_ops_decl : "set_ops"
 _bitfield_param : bitfield_const_decl | bitfield_set_ops_decl
 _bitfield_params : "(" _bitfield_param ("," _bitfield_param)* ")"
-bitfield_definition : IDENTIFIER public? "bitfield" _bitfield_size? _bitfield_params? "{" bitfield_declaration* "}" ";"
+bitfield_definition : _identifier public? "bitfield" _bitfield_size? _bitfield_params? "{" bitfield_declaration* "}" ";"
 
 // NOTE: restrict object declaration only in object when handling AST
-object_definition : IDENTIFIER public? "object" _qualifiers? "{" declaration* "}" ";"
+object_definition : _identifier public? "object" _qualifiers? "{" declaration* "}" ";"
 
-structure_definition : IDENTIFIER public? "structure" _qualifiers? "{" declaration* "}" ";"
+structure_definition : _identifier public? "structure" _qualifiers? "{" declaration* "}" ";"
 
-union_definition : IDENTIFIER public? "union" _qualifiers? "{" declaration* "}" ";"
+union_definition : _identifier public? "union" _qualifiers? "{" declaration* "}" ";"
 
 _enumeration_param : enumeration_noprefix | enumeration_explicit
 _enumeration_params : "(" _enumeration_param? ("," _enumeration_param)* ")"
-enumeration_definition : IDENTIFIER public? "enumeration" _enumeration_params? ("{" enumeration_constant* "}")? ";"
+enumeration_definition : _identifier public? "enumeration" _enumeration_params? ("{" enumeration_constant* "}")? ";"
 
 _extension : "extend" _type_extension
 _type_extension : bitfield_extension
@@ -162,18 +162,18 @@ _type_extension : bitfield_extension
                | union_extension
                | enumeration_extension
 
-module_name : "module" IDENTIFIER
+module_name : "module" _identifier
 
-bitfield_extension : IDENTIFIER "bitfield" module_name? "{" bitfield_declaration+ "}" ";"
+bitfield_extension : _identifier "bitfield" module_name? "{" bitfield_declaration+ "}" ";"
 
-object_extension : IDENTIFIER "object" module_name? "{" declaration+ "}" ";"
+object_extension : _identifier "object" module_name? "{" declaration+ "}" ";"
 
-structure_extension : IDENTIFIER "structure" module_name? "{" declaration+ "}" ";"
+structure_extension : _identifier "structure" module_name? "{" declaration+ "}" ";"
 
-union_extension : IDENTIFIER "union" module_name? "{" declaration+ "}" ";"
+union_extension : _identifier "union" module_name? "{" declaration+ "}" ";"
 
 // TODO: enumeration_extension to support module_name ?
-enumeration_extension : IDENTIFIER "enumeration" "{" enumeration_constant+ "}" ";"
+enumeration_extension : _identifier "enumeration" "{" enumeration_constant+ "}" ";"
 
 _customized_type : bitfield_type
                 | structure_type
@@ -184,17 +184,16 @@ _customized_type : bitfield_type
 		| primitive_type
 
 
-bitfield_type : "bitfield" IDENTIFIER
-structure_type : "structure" IDENTIFIER
+bitfield_type : "bitfield" _identifier
+structure_type : "structure" _identifier
 object_noprefix : "noprefix"
-object_type : "object" ("(" object_noprefix? ")")? IDENTIFIER
-union_type : "union" IDENTIFIER
-enumeration_type : "enumeration" IDENTIFIER
-alternative_type : "type" IDENTIFIER
+object_type : "object" ("(" object_noprefix? ")")? _identifier
+union_type : "union" _identifier
+enumeration_type : "enumeration" _identifier
+_TYPE : "type"
+alternative_type : _TYPE _identifier
 
-PRIMITIVE_TYPE.2 : "sint8" | "sint16" | "sint32" | "sint64"
-                | "bool" | "uint8" | "uint16" | "uint32" | "uint64" | "char"
-                | "sintptr" | "uintptr" | "sregister" | "uregister" | "size"
+PRIMITIVE_TYPE.2 : /([su]int(8|16|32|64|ptr)|bool|char|size|[su]register)\b/
 primitive_type : PRIMITIVE_TYPE
 
 bitfield_specifier: bitfield_others | bitfield_auto | _bitfield_bit_list
@@ -206,7 +205,7 @@ _bitfield_bit: bracketed_constant_expression
 bitfield_width: "<" constant_expression ">"
 bitfield_auto: AUTO bitfield_width?
 bitfield_others: "others"
-bitfield_delete: "delete" IDENTIFIER
+bitfield_delete: "delete" _identifier
 bitfield_default: "=" constant_expression
 _bitfield_modifiers: bitfield_shift?
 bitfield_shift: "lsl" "(" constant_expression ")"
@@ -214,17 +213,19 @@ UNKNOWN : "unknown"
 bitfield_unknown : UNKNOWN bitfield_default?
 bitfield_const: bracketed_constant_expression
 
-_qualifier : basic_qualifier | aligned_qualifier | atomic_qualifier
-          | packed_qualifier | contained_qualifier | writeonly_qualifier
-          | lockable_qualifier
+_qualifier : basic_qualifier | aligned_qualifier | group_qualifier
+	  | atomic_qualifier | packed_qualifier | contained_qualifier
+	  | writeonly_qualifier | lockable_qualifier | optimize_qualifier
 BASIC_QUALIFIER : "const" | "restrict" |  "volatile"
 basic_qualifier : BASIC_QUALIFIER
 aligned_qualifier : "aligned" "(" constant_expression ")"
+group_qualifier : "group" "(" GROUPNAME ("," GROUPNAME )*")"
 atomic_qualifier : "atomic"
 packed_qualifier : "packed"
 contained_qualifier : "contained"
 writeonly_qualifier : "writeonly"
 lockable_qualifier : "lockable"
+optimize_qualifier : "optimize"
 
 BIT : "bit"
 BITS : "bits"
@@ -233,11 +234,9 @@ ONES : "ones"
 SELF : "self"
 AUTO : "auto"
 
-LCASE_LETTER : "a".."z"
-UCASE_LETTER : "A".."Z"
-LETTER : UCASE_LETTER | LCASE_LETTER
-
-IDENTIFIER : LETTER ("_"|LETTER|DIGIT)*
+!_identifier : IDENTIFIER | _TYPE | PRIMITIVE_TYPE
+IDENTIFIER : /\b(?!\d)\w+\b/
+GROUPNAME : /~?\b\w+\b/
 
 WS: /[ \t\f\r\n]/+
 

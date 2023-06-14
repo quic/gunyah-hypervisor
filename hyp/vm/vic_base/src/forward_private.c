@@ -31,6 +31,7 @@
 
 #include "event_handlers.h"
 #include "gicv3.h"
+#include "panic.h"
 #include "vic_base.h"
 
 static vic_private_irq_info_t *
@@ -87,7 +88,8 @@ vic_unbind_private_hwirq_helper(hwirq_t *hwirq)
 			vic_unbind(&fp->irq_info[i].source);
 		}
 
-		list_delete_node(&vic->forward_private_list, &fp->list_node);
+		(void)list_delete_node(&vic->forward_private_list,
+				       &fp->list_node);
 
 		spinlock_release(&vic->forward_private_lock);
 
@@ -103,7 +105,7 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 
 	assert(hwirq->action == HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE);
 
-	struct partition *partition = vic->header.partition;
+	partition_t *partition = vic->header.partition;
 	assert(partition != NULL);
 
 	size_t		  size	  = sizeof(vic_forward_private_t);
@@ -115,7 +117,8 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 	}
 
 	vic_forward_private_t *fp = (vic_forward_private_t *)alloc_r.r;
-	memset(fp, 0, size);
+	(void)memset_s(fp, sizeof(*fp), 0, sizeof(*fp));
+
 	fp->vic	 = object_get_vic_additional(vic);
 	fp->virq = virq;
 
@@ -137,7 +140,7 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 		    &hwirq->vic_base_forward_private, &expected, fp,
 		    memory_order_release, memory_order_relaxed)) {
 		spinlock_release(&vic->forward_private_lock);
-		partition_free(partition, fp, size);
+		(void)partition_free(partition, fp, size);
 		err = ERROR_DENIED;
 		goto out;
 	}
@@ -145,12 +148,16 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 	list_insert_at_tail(&vic->forward_private_list, &fp->list_node);
 
 	// Bind for VCPUs that are attached to the VIC and active.
-	for (cpu_index_t i = 0U; (err == OK) && (i < PLATFORM_MAX_CORES); i++) {
+	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
 		rcu_read_start();
 
 		thread_t *vcpu = atomic_load_consume(&vic->gicr_vcpus[i]);
 		if ((vcpu != NULL) && vcpu->forward_private_active) {
 			err = vic_bind_private_hwirq_helper(fp, vcpu);
+			if (err != OK) {
+				rcu_read_finish();
+				break;
+			}
 		}
 
 		rcu_read_finish();
@@ -345,7 +352,7 @@ vic_handle_free_forward_private(rcu_entry_t *entry)
 
 	partition_t *partition = vic->header.partition;
 	assert(partition != NULL);
-	partition_free(partition, fp, sizeof(vic_forward_private_t));
+	(void)partition_free(partition, fp, sizeof(vic_forward_private_t));
 
 	object_put_vic(vic);
 

@@ -9,7 +9,6 @@ define THREAD_STACK_MAP_ALIGN_BITS constant type count_t = THREAD_STACK_MAX_BITS
 define THREAD_STACK_MAP_ALIGN constant type count_t = 1 << THREAD_STACK_MAP_ALIGN_BITS;
 
 define thread_kind enumeration {
-	none = 0;
 };
 
 define thread_state enumeration {

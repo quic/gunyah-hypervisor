@@ -83,6 +83,10 @@ elf_valid(void *elf_file, size_t max_size)
 #error unimplemented
 #endif
 
+	if (util_add_overflows((uintptr_t)elf_file, ehdr->e_phoff)) {
+		goto out;
+	}
+
 	Elf_Phdr *phdr	= (Elf_Phdr *)((uintptr_t)elf_file + ehdr->e_phoff);
 	Elf_Half  phnum = ehdr->e_phnum;
 
@@ -149,6 +153,7 @@ elf_load_phys(void *elf_file, size_t elf_max_size, paddr_t phys_base)
 		Elf_Phdr *cur_phdr = &phdr[i];
 		Elf_Word  type	   = cur_phdr->p_type;
 
+		// FIXME:
 		assert(type != PT_TLS);
 
 		if (type != PT_LOAD) {
@@ -196,10 +201,12 @@ elf_load_phys(void *elf_file, size_t elf_max_size, paddr_t phys_base)
 		assert(err == OK);
 
 		// copy elf segment data
-		memcpy((char *)seg_dest, (char *)seg_base, cur_phdr->p_filesz);
+		(void)memcpy((char *)seg_dest, (char *)seg_base,
+			     cur_phdr->p_filesz);
 		// zero bss
-		memset((char *)(seg_dest + cur_phdr->p_filesz), 0,
-		       cur_phdr->p_memsz - cur_phdr->p_filesz);
+		size_t bss_size = cur_phdr->p_memsz - cur_phdr->p_filesz;
+		(void)memset_s((char *)(seg_dest + cur_phdr->p_filesz),
+			       bss_size, 0, bss_size);
 
 		LOG(DEBUG, INFO, "Elf copied from {:#x} to {:#x} - size {:#x}",
 		    seg_base, seg_dest, cur_phdr->p_filesz);

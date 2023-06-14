@@ -45,3 +45,12 @@ define platform_msi_controller structure {
 };
 
 #endif // IRQ_HAS_MSI
+
+#if defined(ARCH_ARM)
+define platform_mpidr_mapping structure {
+	aff_shift	array(4) type count_t;
+	aff_mask	array(4) uint8;
+	uniprocessor	bool;
+	multi_thread	bool;
+};
+#endif

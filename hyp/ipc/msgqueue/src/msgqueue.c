@@ -202,7 +202,7 @@ msgqueue_handle_object_activate_msgqueue(msgqueue_t *msgqueue)
 		goto out;
 	}
 
-	msgqueue->buf	       = res.r;
+	msgqueue->buf	       = (uint8_t *)res.r;
 	msgqueue->count	       = 0U;
 	msgqueue->queue_size   = queue_size;
 	msgqueue->head	       = 0U;

@@ -9,6 +9,7 @@ subscribe thread_save_state()
 subscribe thread_load_state()
 
 subscribe thread_context_switch_post()
+	require_preempt_disabled
 
 subscribe object_activate_thread
 	unwinder arm_vm_pmu_handle_object_deactivate_thread(thread)
@@ -18,3 +19,4 @@ subscribe object_deactivate_thread
 subscribe platform_pmu_counter_overflow
 
 subscribe virq_check_pending[VIRQ_TRIGGER_PMU](source)
+	require_preempt_disabled

@@ -14,51 +14,16 @@
 	// The vector table base is 2KB aligned
 	// (16 vectors, 32 instructions each)
 	.balign		2048
-.global vectors_aarch64
-vectors_aarch64:
+.global kernel_vectors_aarch64
+kernel_vectors_aarch64:
 
-el2_vectors kernel
+default_vectors kernel 1
 
-// Guest vectors
-vector vector_guest64_sync_panic
-	save_kernel_context_full
-	panic	"64-bit guest vectors"
-vector_end vector_guest64_sync_panic
+	.balign		2048
+.global emergency_vectors_aarch64
+emergency_vectors_aarch64:
 
-vector vector_guest64_irq_panic
-	save_kernel_context_full
-	panic	"64-bit guest vectors"
-vector_end vector_guest64_irq_panic
-
-vector vector_guest64_fiq_panic
-	save_kernel_context_full
-	panic	"64-bit guest vectors"
-vector_end vector_guest64_fiq_panic
-
-vector vector_guest64_serror_panic
-	save_kernel_context_full
-	panic	"64-bit guest vectors"
-vector_end vector_guest64_serror_panic
-
-vector vector_guest32_sync_panic
-	save_kernel_context_full
-	panic	"32-bit guest vectors"
-vector_end vector_guest32_sync_panic
-
-vector vector_guest32_irq_panic
-	save_kernel_context_full
-	panic	"32-bit guest vectors"
-vector_end vector_guest32_irq_panic
-
-vector vector_guest32_fiq_panic
-	save_kernel_context_full
-	panic	"32-bit guest vectors"
-vector_end vector_guest32_fiq_panic
-
-vector vector_guest32_serror_panic
-	save_kernel_context_full
-	panic	"32-bit guest vectors"
-vector_end vector_guest32_serror_panic
+default_vectors emergency 0
 
 function vectors_exception_dispatch_full
 	// In save_kernel_context, space was reserved for a full frame.

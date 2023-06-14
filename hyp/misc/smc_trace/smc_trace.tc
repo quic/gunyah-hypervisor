@@ -10,10 +10,10 @@ define smc_trace_entry structure {
 	pcpu		uint8;
 	vcpu		uint8;
 	vmid		type vmid_t;
-	res0		uint8(const);
-	regs		uint8;		// number of used x registers below
 	x		array(14) type register_t;
 	timestamp	uint64;
+	regs		uint8;		// The number of X registers used above
+	res0		uint8(const);
 };
 
 define smc_trace structure(aligned(64)) {

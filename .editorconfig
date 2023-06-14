@@ -1,0 +1,16 @@
+root = True
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+tab_width = 8
+
+[*.{c,h,tc,ev,S,hvc}]
+indent_style = tab
+indent_size = 8
+
+[*.{py,md}]
+indent_style = space
+indent_size = 4

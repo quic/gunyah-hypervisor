@@ -1,0 +1,50 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define rtc_seconds_t		newtype uint32;
+
+define VRTC_DEV_SIZE constant size = PGTABLE_HYP_PAGE_SIZE;
+
+define VRTC_PL031_PERIPH_ID constant uint32 = 0x00041031;
+define VRTC_PL031_PCELL_ID constant uint32 = 0xb105f00d;
+
+extend cap_rights_vrtc bitfield
+{
+	0	configure		bool;
+	1	attach_addrspace	bool;
+	2	set_time_base		bool;
+};
+
+// One vRTC object per VM. All the vCPUs in the VM get the same vRTC.
+extend vrtc object {
+	time_base		type ticks_t;
+	lr			type rtc_seconds_t;
+	ipa			type vmaddr_t;
+};
+
+extend addrspace object
+{
+	vrtc pointer object vrtc;
+};
+
+define vrtc_pl031 structure
+{
+	RTCDR @0x000		uint32;
+	RTCMR @0x004		uint32;
+	RTCLR @0x008		uint32;
+	RTCCR @0x00C		uint32;
+	RTCIMSC @0x010		uint32;
+	RTCRRS @0x014		uint32;
+	RTCMIS @0x018		uint32;
+	RTCICR @0x01C		uint32;
+
+	RTCPeriphID0 @0xfe0		uint32;
+	RTCPeriphID1 @0xfe4		uint32;
+	RTCPeriphID2 @0xfe8		uint32;
+	RTCPeriphID3 @0xfec		uint32;
+	RTCPCellID0 @0xff0		uint32;
+	RTCPCellID1 @0xff4		uint32;
+	RTCPCellID2 @0xff8		uint32;
+	RTCPCellID3 @0xffc		uint32;
+};

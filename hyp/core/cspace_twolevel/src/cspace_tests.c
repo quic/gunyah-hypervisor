@@ -21,7 +21,7 @@
 
 #include "event_handlers.h"
 
-static cspace_t	*test_cspace;
+static cspace_t	      *test_cspace;
 static cap_id_t	       test_cspace_master_cap;
 static _Atomic count_t test_cspace_wait_count;
 static _Atomic count_t test_cspace_finish_count;
@@ -81,7 +81,7 @@ bool
 tests_cspace_start(void)
 {
 	cap_id_result_t	    cap_ret;
-	cap_id_t		 *cap		  = CPULOCAL(test_caps);
+	cap_id_t	   *cap		  = CPULOCAL(test_caps);
 	cap_rights_cspace_t cspace_rights = cap_rights_cspace_default();
 	cap_rights_t	    rights;
 	error_t		    err;

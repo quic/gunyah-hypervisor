@@ -1,0 +1,160 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+static void
+ete_save_registers(ete_context_t *context,
+    asm_ordering_dummy_t *ordering_var)
+{
+#set ete_contexts = [c for c in $definitions \
+     if c.category == 'structure' and c.type_name == 'ete_context']
+#assert len($ete_contexts) == 1
+#set ete_context = $ete_contexts[0]
+
+#for d in $ete_context.declarations
+    #if d.member_name == "TRCRSCTLR"
+        #continue
+    #end if
+    #set is_array = False
+    #set array_size = 0
+
+    #if $d.complex_type
+        #set current_type = $d.compound_type
+
+        #while $current_type is not None
+            #if $current_type.is_array
+                #set is_array = True
+                #set array_size = $current_type.length
+                #break
+            #end if
+
+            #set $current_type = $current_type.base_type
+
+            #if $current_type is None
+                #break
+            #end if
+        #end while
+    #end if
+
+    #if $is_array
+        #set idx = 0
+        #set reg_offset = 0
+
+        #if d.member_name == "TRCRSCTLR"
+            #set reg_offset = 2
+        #end if
+
+        #while $idx < $array_size
+            #set reg_idx = $idx + $reg_offset
+
+            #if d.member_name == "TRCSSPCICR"
+                uint64_t trcsscsr${reg_idx} = register_TRCSSCSR${reg_idx}_read_ordered(ordering_var);
+                if (trcsscsr${reg_idx} & 0x8) {
+            #end if
+
+                    context->${d.member_name}[${idx}] = register_${d.member_name}${reg_idx}_read_ordered(ordering_var);
+
+            #if d.member_name == "TRCSSPCICR"
+                }
+            #end if
+
+            #set idx = $idx + 1
+        #end while
+    #else
+        #if d.member_name == "TRCSTALLCTLR"
+            TRCIDR3_t trcidr3 = register_TRCIDR3_read();
+            if (TRCIDR3_get_STALLCTL(&trcidr3)) {
+        #else if d.member_name == "TRCQCTLR"
+            TRCIDR0_t trcidr0 = register_TRCIDR0_read();
+            if (TRCIDR0_get_QFILT(&trcidr0)) {
+        #end if
+
+                context->$d.member_name = register_${d.member_name}_read_ordered(ordering_var);
+
+        #if d.member_name == "TRCSTALLCTLR"
+            }
+        #else if d.member_name == "TRCQCTLR"
+            }
+        #end if
+    #end if
+#end for
+}
+
+static void
+ete_restore_registers(ete_context_t *context,
+    asm_ordering_dummy_t *ordering_var)
+{
+#set ete_contexts = [c for c in $definitions \
+     if c.category == 'structure' and c.type_name == 'ete_context']
+#assert len($ete_contexts) == 1
+#set ete_context = $ete_contexts[0]
+
+#for d in $ete_context.declarations
+    #if d.member_name == "TRCRSCTLR"
+        #continue
+    #end if
+    #set is_array = False
+    #set array_size = 0
+
+    #if $d.complex_type
+        #set current_type = $d.compound_type
+
+        #while $current_type is not None
+            #if $current_type.is_array
+                #set is_array = True
+                #set array_size = $current_type.length
+                #break
+            #end if
+
+            #set $current_type = $current_type.base_type
+
+            #if $current_type is None
+                #break
+            #end if
+        #end while
+    #end if
+
+    #if $is_array
+        #set idx = 0
+        #set reg_offset = 0
+
+        #if d.member_name == "TRCRSCTLR"
+            #set reg_offset = 2
+        #end if
+
+        #while $idx < $array_size
+            #set reg_idx = $idx + $reg_offset
+
+            #if d.member_name == "TRCSSPCICR"
+                uint64_t trcsscsr${reg_idx} = register_TRCSSCSR${reg_idx}_read_ordered(ordering_var);
+                if (trcsscsr${reg_idx} & 0x8) {
+            #end if
+
+                    register_${d.member_name}${reg_idx}_write_ordered(context->${d.member_name}[${idx}], ordering_var);
+
+            #if d.member_name == "TRCSSPCICR"
+                }
+            #end if
+
+            #set idx = $idx + 1
+        #end while
+    #else
+        #if d.member_name == "TRCSTALLCTLR"
+            TRCIDR3_t trcidr3 = register_TRCIDR3_read();
+            if (TRCIDR3_get_STALLCTL(&trcidr3)) {
+        #else if d.member_name == "TRCQCTLR"
+            TRCIDR0_t trcidr0 = register_TRCIDR0_read();
+            if (TRCIDR0_get_QFILT(&trcidr0)) {
+        #end if
+
+                register_${d.member_name}_write_ordered(context->$d.member_name, ordering_var);
+
+        #if d.member_name == "TRCSTALLCTLR"
+            }
+        #else if d.member_name == "TRCQCTLR"
+            }
+        #end if
+
+    #end if
+#end for
+}

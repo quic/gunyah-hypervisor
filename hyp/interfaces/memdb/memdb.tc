@@ -8,6 +8,8 @@ define memdb_type enumeration {
 	PARTITION;
 	ALLOCATOR;
 	EXTENT;
+	// FIXME:
 	// Memory which may not be mapped, e.g. converted to secure memory
 	PARTITION_NOMAP;
+	TRACE;
 };

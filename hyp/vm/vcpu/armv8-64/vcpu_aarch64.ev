@@ -1,0 +1,8 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vcpu
+
+subscribe boot_cpu_cold_init
+	handler vcpu_arch_handle_boot_cpu_cold_init

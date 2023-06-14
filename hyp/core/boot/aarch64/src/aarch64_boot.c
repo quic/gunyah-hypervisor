@@ -13,7 +13,7 @@
 void
 aarch64_handle_boot_runtime_init(void)
 {
-#if defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_FEAT_VHE)
 	CPTR_EL2_E2H1_t cptr = CPTR_EL2_E2H1_default();
 	register_CPTR_EL2_E2H1_write_ordered(cptr, &asm_ordering);
 #else

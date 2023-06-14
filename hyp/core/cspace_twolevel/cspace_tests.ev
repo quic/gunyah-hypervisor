@@ -11,5 +11,6 @@ subscribe tests_init
 
 subscribe tests_start
 	handler tests_cspace_start()
+	require_preempt_disabled
 
 #endif

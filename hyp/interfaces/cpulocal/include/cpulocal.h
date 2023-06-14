@@ -37,6 +37,14 @@
 #define CPULOCAL_BY_INDEX(name, index)                                         \
 	cpulocal_##name[cpulocal_check_index(index)]
 
+// Given a pointer to an object that is known to be an element of a given
+// CPU-local data array, obtain its index. The behaviour is undefined (and
+// violates MISRA rule 18.2) if the object is not a member of the specified
+// array.
+#define CPULOCAL_PTR_INDEX(name, ptr)                                          \
+	(assert(ptr != NULL),                                                  \
+	 cpulocal_check_index((cpu_index_t)(ptr - cpulocal_##name)))
+
 // Return true if a CPU index is valid.
 bool
 cpulocal_index_valid(cpu_index_t index);
@@ -48,14 +56,29 @@ cpulocal_index_valid(cpu_index_t index);
 cpu_index_t
 cpulocal_check_index(cpu_index_t index);
 
+// Get the CPU index of the caller at the instant of the call.
+//
+// This is the same as cpulocal_get_index(), except that it does not require
+// preemption to be disabled. The result may therefore be stale by the time
+// the caller gets it. The result should only be used for purposes where this
+// does not matter, e.g. for debug traces.
+//
+// The result of this function is not checked and may be invalid if called
+// very early in the boot sequence.
+cpu_index_t
+cpulocal_get_index_unsafe(void);
+
 // Get the CPU index of the caller.
 //
 // All calls to this function should be inside a critical section, which may
 // be either an explicit preemption disable, a spinlock, or a cpulocal
 // critical section. All uses of its result should occur before the
 // corresponding critical section ends.
-cpu_index_t
-cpulocal_get_index(void);
+static inline cpu_index_t
+cpulocal_get_index(void) REQUIRE_PREEMPT_DISABLED
+{
+	return cpulocal_check_index(cpulocal_get_index_unsafe());
+}
 
 // Get the CPU index of a specified thread.
 //

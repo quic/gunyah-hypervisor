@@ -1,0 +1,31 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define addrspace_map_flags public bitfield<32> {
+	0	partial	bool;
+	31	no_sync	bool;
+	30:1	res0_0	uregister(const) = 0;
+};
+
+define addrspace_lookup structure {
+	phys		type paddr_t;
+	size		size;
+	memtype		enumeration pgtable_vm_memtype;
+	kernel_access	enumeration pgtable_access;
+	user_access	enumeration pgtable_access;
+};
+
+// Allocate one page for the info area for now
+define MAX_VM_INFO_AREA_SIZE constant = PGTABLE_HYP_PAGE_SIZE;
+
+// The modules that need to use the VM Info Area will extend this structure
+// and add their own entries, then use the generated offsets. This structure
+// should never be directly used or referenced.
+define addrspace_info_area_layout structure {
+};
+
+define addrspace_vmmio_configure_op public enumeration(explicit) {
+	ADD = 0;
+	REMOVE = 1;
+};

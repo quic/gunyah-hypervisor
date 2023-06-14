@@ -16,8 +16,9 @@ nospec_range_check(index_t val, index_t limit)
 			 "cset %w[valid], lo;"
 			 "csel %w[result_r], %w[val], wzr, lo;"
 			 "csdb;"
-			 : [valid] "=r"(valid), [result_r] "=r"(result.r)
-			 : [val] "r"(val), [limit] "r"(limit));
+			 : [valid] "=&r"(valid), [result_r] "=r"(result.r)
+			 : [val] "r"(val), [limit] "r"(limit)
+			 : "cc");
 
 	if (valid) {
 		result.e = OK;

@@ -7,6 +7,6 @@
 local panic_str\@:
 	.asciz	"\panic_str"
 .popsection
-	adr	x0, LOCAL(panic_str\@)
+	adrl	x0, LOCAL(panic_str\@)
 	bl	panic
 .endm

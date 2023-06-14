@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define cntbase structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	pct @ 0x000	uint64(atomic);
+	vct @ 0x008	uint64(atomic);
+	frq @ 0x010	uint32(atomic);
+	el0acr @ 0x014	bitfield CNTEL0ACR(atomic);
+	voff @ 0x018	uint64(atomic);
+	p_cval @ 0x020	uint64(atomic);
+	p_tval @ 0x028	uint32(atomic);
+	p_ctl @ 0x02c	bitfield CNTP_CTL(atomic);
+	v_cval @ 0x030	uint64(atomic);
+	v_tval @ 0x038	uint32(atomic);
+	v_ctl @ 0x03c	bitfield CNTV_CTL(atomic);
+};
+
+extend hwirq_action enumeration {
+	hyp_timer_lp;
+};

@@ -27,7 +27,7 @@ handled_event vectors_trap_sp_alignment_fault_el2
 handled_event vectors_trap_brk_el2
 	param esr: ESR_EL2_t
 
-#if defined(ARCH_ARM_8_3_PAUTH) && defined(ARCH_ARM_8_3_FPAC)
+#if defined(ARCH_ARM_FEAT_PAuth) && defined(ARCH_ARM_FEAT_FPAC)
 handled_event vectors_trap_pauth_failed_el2
 	param iss: ESR_EL2_t
 #endif

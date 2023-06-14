@@ -22,7 +22,7 @@
 #endif
 .endm
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 // Define symbols for pointer auth offsets so we can access them from macros
 .equ	pauth_DA_ofs, OFS_AARCH64_PAUTH_KEYS_DA
 .equ	pauth_DB_ofs, OFS_AARCH64_PAUTH_KEYS_DB
@@ -40,7 +40,7 @@
 
 // Macro for restoring the EL2 pointer auth keys (discarding any EL1 keys)
 .macro kernel_pauth_entry kp:req, kl:req, kh:req
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	adrl	\kp, aarch64_pauth_keys
 	kernel_pauth_entry_key DA, \kp, \kl, \kh
 	kernel_pauth_entry_key DB, \kp, \kl, \kh
@@ -65,7 +65,7 @@
 	b.ne	handle_stack_fault
 .endm
 
-.macro	save_kernel_context full:req
+.macro	save_kernel_context full:req overflow:req
 	disable_phys_access
 
 .if \full
@@ -78,7 +78,7 @@
 	sub	sp, sp, KERNEL_TRAP_FRAME_SIZE
 .endif
 
-.if \full
+.if \overflow
 	// The exception may have been triggered by a stack overflow,
 	// so check for this before storing anything on the stack.
 	check_stack_overflow
@@ -98,7 +98,7 @@
 .endif
 
 	stp	x4, x5, [sp, OFS_KERNEL_TRAP_FRAME_X(4)]
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// Insert PAC bits in ELR_EL2 before we save it (matching the ERETAA
 	// in vectors_kernel_return)
 	pacia	x0, x2
@@ -166,11 +166,15 @@
 // For the nested faults the stack may be corrupted, so we switch to a special
 // stack set aside for this purpose.
 .macro	save_kernel_context_stack_fault
-
 	// At this point we don't care about preserving the value of TPIDR_EL0
 	// and TPIDR_EL1
 	msr	TPIDR_EL0, x0
 	msr	TPIDR_EL1, x1
+
+	// The emergency stacks must use the emergency vectors.
+	adr	x0, emergency_vectors_aarch64
+	msr	VBAR_EL2, x0
+	isb
 
 	// Get the CPU number and use it to calculate the address of the nested
 	// fault context buffer for this CPU
@@ -238,7 +242,7 @@
 .endm
 
 // Hypervisor self vectors
-.macro el2_vectors name
+.macro el2_vectors name:req, overflow:req
 	vector vector_el2t_sync_\name\()
 		save_kernel_context_full
 		mov	x0, sp
@@ -270,7 +274,7 @@
 
 	// Hypervisor nested vectors
 	vector vector_el2h_sync_\name\()
-		save_kernel_context 1
+		save_kernel_context 1 \overflow
 
 		mov	x0, sp
 		bl	vectors_exception_dispatch_full
@@ -279,7 +283,7 @@
 	vector_end vector_el2h_sync_\name\()
 
 	vector vector_el2h_irq_\name\()
-		save_kernel_context 0
+		save_kernel_context 0 0
 
 		bl	vectors_interrupt_dispatch
 		b	vectors_kernel_return
@@ -294,7 +298,7 @@
 	vector_end vector_el2h_fiq_\name\()
 
 	vector vector_el2h_serror_\name\()
-		save_kernel_context 1
+		save_kernel_context 1 0
 
 		// The dispatcher will inject a virtual SError to the RAS VM.
 		mov	x0, sp
@@ -302,4 +306,51 @@
 		mov	x0, 0
 		b	vectors_kernel_return
 	vector_end vector_el2h_serror_\name\()
+.endm
+
+.macro default_guest_vectors name:req
+	vector vector_guest64_sync_\name\()
+		save_kernel_context_full
+		panic	"64-bit guest vectors"
+	vector_end vector_guest64_sync_\name\()
+
+	vector vector_guest64_irq_\name\()
+		save_kernel_context_full
+		panic	"64-bit guest vectors"
+	vector_end vector_guest64_irq_\name\()
+
+	vector vector_guest64_fiq_\name\()
+		save_kernel_context_full
+		panic	"64-bit guest vectors"
+	vector_end vector_guest64_fiq_\name\()
+
+	vector vector_guest64_serror_\name\()
+		save_kernel_context_full
+		panic	"64-bit guest vectors"
+	vector_end vector_guest64_serror_\name\()
+
+	vector vector_guest32_sync_\name\()
+		save_kernel_context_full
+		panic	"32-bit guest vectors"
+	vector_end vector_guest32_sync_\name\()
+
+	vector vector_guest32_irq_\name\()
+		save_kernel_context_full
+		panic	"32-bit guest vectors"
+	vector_end vector_guest32_irq_\name\()
+
+	vector vector_guest32_fiq_\name\()
+		save_kernel_context_full
+		panic	"32-bit guest vectors"
+	vector_end vector_guest32_fiq_\name\()
+
+	vector vector_guest32_serror_\name\()
+		save_kernel_context_full
+		panic	"32-bit guest vectors"
+	vector_end vector_guest32_serror_\name\()
+.endm
+
+.macro default_vectors name:req, overflow:req
+	el2_vectors \name \overflow
+	default_guest_vectors \name
 .endm

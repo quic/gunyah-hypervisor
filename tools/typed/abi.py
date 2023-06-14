@@ -114,7 +114,7 @@ class ABI(metaclass=abc.ABCMeta):
             alignment = next_alignment
         else:
             alignment = current_alignment
-        assert(self.is_power2(alignment))
+        assert (self.is_power2(alignment))
 
         align_mask = alignment - 1
         return (current_offset + align_mask) & ~align_mask
@@ -153,7 +153,7 @@ class AArch64ABI(ABI):
 
     def get_c_type_name(self, abi_type_name):
         """Return the c name for the abi type name."""
-        assert(abi_type_name in self.abi_type_map)
+        assert (abi_type_name in self.abi_type_map)
         return self.abi_type_map[abi_type_name]
 
     def get_enum_properties(self, e_min, e_max):

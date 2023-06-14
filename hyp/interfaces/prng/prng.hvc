@@ -10,7 +10,7 @@ define prng_get_entropy hypercall {
 	sensitve_return;
 	call_num	0x57;
 	num_bytes	input type count_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	data0		output uint32;
 	data1		output uint32;

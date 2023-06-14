@@ -12,4 +12,14 @@
 // Command queue length
 #define GICV3_ITS_QUEUE_LEN 128U
 
+#if GICV3_HAS_VLPI
+
+// Default vPE ID range. We don't support sharing these, so this limits the
+// number of VCPUs that may be attached to at least one VGITS.
+#if !defined(GICV3_ITS_VPES)
+#define GICV3_ITS_VPES 64U
+#endif
+
+#endif // GICV3_HAS_ITS
+
 #endif // GICV3_HAS_ITS

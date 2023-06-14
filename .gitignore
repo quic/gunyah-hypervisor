@@ -4,6 +4,7 @@
 /.ninja_log
 /.sconsign.dblite
 /build*/
+hyp/**/*.o
 
 # Ignore Python precompiled bitcode
 *.pyc
@@ -20,3 +21,10 @@
 # Ignore Vim temporary files
 .*.sw[a-p]
 .*.un~
+
+# Ignore host test temporary files
+*.o
+
+# Ignore documentation output
+*.pdf
+*.html

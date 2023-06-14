@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vdevice
+
+handled_event vdevice_access_fixed_addr
+	param ipa:		vmaddr_t
+	param access_size:	size_t
+	param value:		register_t *
+	param is_write:		bool
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+selector_event vdevice_access
+	selector type_:		vdevice_type_t
+	param vdevice:		vdevice_t *
+	param offset:		size_t
+	param access_size:	size_t
+	param value:		register_t *
+	param is_write:		bool
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED

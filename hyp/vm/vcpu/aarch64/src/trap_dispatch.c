@@ -36,34 +36,31 @@
 static inline void
 exception_skip_inst(bool is_il32)
 {
-	thread_t	 *thread = thread_get_self();
+	thread_t  *thread = thread_get_self();
 	register_t pc = ELR_EL2_get_ReturnAddress(&thread->vcpu_regs_gpr.pc);
 
 #if ARCH_AARCH64_32BIT_EL0
 	pc += is_il32 ? 4U : 2U;
 
-	SPSR_EL2_A64_t	  spsr_el2 = thread->vcpu_regs_gpr.spsr_el2;
-	spsr_64bit_mode_t spsr_m   = SPSR_EL2_A64_get_M(&spsr_el2);
+	SPSR_EL2_base_t spsr_base = thread->vcpu_regs_gpr.spsr_el2.base;
 
-	if ((spsr_m & 0x10) != 0U) {
+	if (SPSR_EL2_base_get_M4(&spsr_base)) {
 		// Exception was in AArch32 execution. Update PSTATE.IT
-		SPSR_EL2_A32_t spsr32 =
-			SPSR_EL2_A32_cast(SPSR_EL2_A64_raw(spsr_el2));
+		SPSR_EL2_A32_t spsr32 = thread->vcpu_regs_gpr.spsr_el2.a32;
 		if (SPSR_EL2_A32_get_T(&spsr32)) {
 			uint8_t IT = SPSR_EL2_A32_get_IT(&spsr32);
-			if ((IT & 0xf) == 0x8) {
+			if ((IT & 0xfU) == 0x8U) {
 				// Was the last instruction in IT block
 				IT = 0;
 			} else {
 				// Otherwise shift bits. This is safe even if
 				// not in an IT block.
-				IT = (uint8_t)((IT & 0xe0) | ((IT & 0xf) << 1));
+				IT = (uint8_t)((IT & 0xe0U) |
+					       ((IT & 0xfU) << 1U));
 			}
 			SPSR_EL2_A32_set_IT(&spsr32, IT);
 
-			spsr_el2 = SPSR_EL2_A64_cast(SPSR_EL2_A32_raw(spsr32));
-
-			thread->vcpu_regs_gpr.spsr_el2 = spsr_el2;
+			thread->vcpu_regs_gpr.spsr_el2.a32 = spsr32;
 		} else {
 			assert(is_il32);
 		}
@@ -77,101 +74,47 @@ exception_skip_inst(bool is_il32)
 	ELR_EL2_set_ReturnAddress(&thread->vcpu_regs_gpr.pc, pc);
 }
 
-static bool
-handle_tlb_conflict()
-{
-	// FIXME:
-	// First check if a page table update is already in progress. If this is
-	// the case, flush the TLBs and return true (to retry the instruction).
-	// Otherwise return false.
-
-	return false;
-}
-
-static bool
-handle_break_before_make()
-{
-	// FIXME:
-	// First check if a page table update is already in progress. If this is
-	// the case return true (to retry the instruction). Otherwise return
-	// false.
-
-	return false;
-}
-
 static vcpu_trap_result_t
 handle_inst_data_abort(ESR_EL2_t esr, esr_ec_t ec, FAR_EL2_t far,
-		       HPFAR_EL2_t hpfar, iss_da_ia_fsc_t fsc,
+		       HPFAR_EL2_t hpfar, iss_da_ia_fsc_t fsc, bool is_s1ptw,
 		       bool is_data_abort)
 {
 	vcpu_trap_result_t ret = VCPU_TRAP_RESULT_UNHANDLED;
+	gvaddr_t	   va  = FAR_EL2_get_VirtualAddress(&far);
+	vmaddr_result_t	   ipa_r;
 
-	if (fsc == ISS_DA_IA_FSC_TLB_CONFLICT) {
-		if (handle_tlb_conflict()) {
-			ret = VCPU_TRAP_RESULT_RETRY;
-		}
-#if defined(ARCH_ARM_8_1_TTHM)
-	} else if (fsc == ISS_DA_IA_FSC_ATOMIC_HW_UPDATE) {
-		// Unsupported atomic hardware update fail
-		if (handle_break_before_make()) {
-			ret = VCPU_TRAP_RESULT_RETRY;
-		}
-#endif
+	if (is_s1ptw || (fsc == ISS_DA_IA_FSC_ADDR_SIZE_0) ||
+	    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_1) ||
+	    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_2) ||
+	    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_3) ||
+	    (fsc == ISS_DA_IA_FSC_TRANSLATION_0) ||
+	    (fsc == ISS_DA_IA_FSC_TRANSLATION_1) ||
+	    (fsc == ISS_DA_IA_FSC_TRANSLATION_2) ||
+	    (fsc == ISS_DA_IA_FSC_TRANSLATION_3) ||
+	    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_1) ||
+	    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_2) ||
+	    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_3)) {
+		// HPFAR_EL2 is valid; combine it with the sub-page bits
+		// of the VA to find the exact IPA.
+		ipa_r = vmaddr_result_ok(HPFAR_EL2_get_FIPA(&hpfar) |
+					 (va & 0xfffU));
 	} else {
-		gvaddr_t	va = FAR_EL2_get_VirtualAddress(&far);
-		vmaddr_result_t ipa_r;
+		// HPFAR_EL2 was not set by the fault; we can't rely on it.
+		ipa_r = vmaddr_result_error(ERROR_ADDR_INVALID);
+	}
 
-		if ((fsc == ISS_DA_IA_FSC_ADDR_SIZE_0) ||
-		    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_1) ||
-		    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_2) ||
-		    (fsc == ISS_DA_IA_FSC_ADDR_SIZE_3) ||
-		    (fsc == ISS_DA_IA_FSC_TRANSLATION_0) ||
-		    (fsc == ISS_DA_IA_FSC_TRANSLATION_1) ||
-		    (fsc == ISS_DA_IA_FSC_TRANSLATION_2) ||
-		    (fsc == ISS_DA_IA_FSC_TRANSLATION_3) ||
-		    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_1) ||
-		    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_2) ||
-		    (fsc == ISS_DA_IA_FSC_ACCESS_FLAG_3) ||
-		    (fsc == ISS_DA_IA_FSC_SYNC_EXTERN_WALK_0) ||
-		    (fsc == ISS_DA_IA_FSC_SYNC_EXTERN_WALK_1) ||
-		    (fsc == ISS_DA_IA_FSC_SYNC_EXTERN_WALK_2) ||
-		    (fsc == ISS_DA_IA_FSC_SYNC_EXTERN_WALK_3)) {
-			// HPFAR_EL2 is valid
-			ipa_r = vmaddr_result_ok(HPFAR_EL2_get_FIPA(&hpfar) |
-						 (va & 0xfff));
-		} else {
-			// HPFAR_EL2 is invalid, translate
-			ipa_r = addrspace_va_to_ipa_read(va);
-		}
+	// Call the event handlers for the DA/PA
+	if (is_data_abort) {
+		ret = trigger_vcpu_trap_data_abort_guest_event(esr, ipa_r, far);
+	} else {
+		ret = trigger_vcpu_trap_pf_abort_guest_event(esr, ipa_r, far);
+	}
 
-		// Call the event handlers for the DA/PA
-		if (compiler_unexpected(ipa_r.e != OK)) {
-			// This can happen if the guest unmapped the faulting
-			// VA in stage 1 on another CPU after the stage 2
-			// fault was triggered. In that case, we must retry the
-			// faulting instruction; it should fault in stage 1.
-			ret = VCPU_TRAP_RESULT_RETRY;
-		} else if (is_data_abort) {
-			ret = trigger_vcpu_trap_data_abort_guest_event(
-				esr, ipa_r.r, far);
-		} else {
-			ret = trigger_vcpu_trap_pf_abort_guest_event(
-				esr, ipa_r.r, far);
-		}
-
-		// If not handled, check if we are in the middle of a page
-		// table update
-		if ((ret == VCPU_TRAP_RESULT_UNHANDLED) &&
-		    handle_break_before_make()) {
-			ret = VCPU_TRAP_RESULT_RETRY;
-		}
-
-		// If still not handled inject the abort to the guest
-		if ((ret == VCPU_TRAP_RESULT_UNHANDLED) &&
-		    inject_inst_data_abort(esr, ec, fsc, far, ipa_r.r,
-					   is_data_abort)) {
-			ret = VCPU_TRAP_RESULT_RETRY;
-		}
+	// If faulting or still not handled, inject the abort to the guest
+	if (((ret == VCPU_TRAP_RESULT_UNHANDLED) ||
+	     (ret == VCPU_TRAP_RESULT_FAULT)) &&
+	    inject_inst_data_abort(esr, ec, fsc, far, ipa_r.r, is_data_abort)) {
+		ret = VCPU_TRAP_RESULT_RETRY;
 	}
 
 	return ret;
@@ -186,7 +129,7 @@ vcpu_interrupt_dispatch(void)
 	preempt_disable_in_irq();
 
 	if (irq_interrupt_dispatch()) {
-		scheduler_schedule();
+		(void)scheduler_schedule();
 	}
 
 	preempt_enable_in_irq();
@@ -194,7 +137,7 @@ vcpu_interrupt_dispatch(void)
 	trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_INTERRUPT);
 }
 
-// Dispatching of guest synchronous exceptions and asynchronous system errors
+// Dispatching of guest synchronous exceptions
 void
 vcpu_exception_dispatch(bool is_aarch64)
 {
@@ -204,10 +147,12 @@ vcpu_exception_dispatch(bool is_aarch64)
 
 	trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_EXCEPTION);
 
+	bool		   fatal  = false;
 	vcpu_trap_result_t result = VCPU_TRAP_RESULT_UNHANDLED;
 
 	esr_ec_t ec	 = ESR_EL2_get_EC(&esr);
 	bool	 is_il32 = true;
+	// FIXME:
 	// For exceptions AArch32 execution, we need to determine whether the
 	// trapped instruction passed its condition code. If it did not pass,
 	// then skip the instruction. Remember special cases, such as BKPT in
@@ -230,37 +175,58 @@ vcpu_exception_dispatch(bool is_aarch64)
 		ESR_EL2_ISS_WFI_WFE_t iss =
 			ESR_EL2_ISS_WFI_WFE_cast(ESR_EL2_get_ISS(&esr));
 #if ARCH_AARCH64_32BIT_EL1
+		// FIXME:
 #error Check the condition code
 #endif
-		if (ESR_EL2_ISS_WFI_WFE_get_TI(&iss)) {
+		switch (ESR_EL2_ISS_WFI_WFE_get_TI(&iss)) {
+		case ISS_WFX_TI_WFE:
 			result = trigger_vcpu_trap_wfe_event(iss);
-		} else {
+			break;
+		case ISS_WFX_TI_WFI:
 			result = trigger_vcpu_trap_wfi_event(iss);
+			break;
+#if defined(ARCH_ARM_FEAT_WFxT)
+		// These need events updated to pass timeout for FEAT_WFxT
+		// support
+		// FIXME:
+		case ISS_WFX_TI_WFET:
+			result = trigger_vcpu_trap_wfe_event(iss);
+			break;
+		case ISS_WFX_TI_WFIT:
+			result = trigger_vcpu_trap_wfi_event(iss);
+			break;
+#endif
+		default:
+			// should not happen
+			// result = VCPU_TRAP_RESULT_UNHANDLED
+			break;
 		}
 		break;
 	}
-	case ESR_EC_FPEN:
+	case ESR_EC_FPEN: {
 #if ARCH_AARCH64_32BIT_EL1
+		// FIXME:
 #error Check the condition code
 #endif
 		result = trigger_vcpu_trap_fp_enabled_event(esr);
 		break;
+	}
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	case ESR_EC_PAUTH:
 		if (trigger_vcpu_trap_pauth_event()) {
 			result = VCPU_TRAP_RESULT_RETRY;
 		}
 		break;
 
-#if defined(ARCH_ARM_8_3_NV)
+#if defined(ARCH_ARM_FEAT_NV)
 	case ESR_EC_ERET:
 		if (trigger_vcpu_trap_eret_event(esr)) {
 			result = VCPU_TRAP_RESULT_RETRY;
 		}
 		break;
 #endif
-#endif // defined(ARCH_ARM_8_3_FPAC)
+#endif // defined(ARCH_ARM_FEAT_FPAC)
 
 	case ESR_EC_ILLEGAL:
 		if (trigger_vcpu_trap_illegal_state_event()) {
@@ -322,7 +288,7 @@ vcpu_exception_dispatch(bool is_aarch64)
 		}
 		break;
 	}
-#if defined(ARCH_ARM_8_2_SVE)
+#if defined(ARCH_ARM_FEAT_SVE)
 	case ESR_EC_SVE:
 		result = trigger_vcpu_trap_sve_access_event();
 		break;
@@ -330,10 +296,11 @@ vcpu_exception_dispatch(bool is_aarch64)
 	case ESR_EC_INST_ABT_LO: {
 		ESR_EL2_ISS_INST_ABORT_t iss =
 			ESR_EL2_ISS_INST_ABORT_cast(ESR_EL2_get_ISS(&esr));
-		iss_da_ia_fsc_t fsc = ESR_EL2_ISS_INST_ABORT_get_IFSC(&iss);
+		iss_da_ia_fsc_t fsc   = ESR_EL2_ISS_INST_ABORT_get_IFSC(&iss);
+		bool		s1ptw = ESR_EL2_ISS_INST_ABORT_get_S1PTW(&iss);
 
-		result =
-			handle_inst_data_abort(esr, ec, far, hpfar, fsc, false);
+		result = handle_inst_data_abort(esr, ec, far, hpfar, fsc, s1ptw,
+						false);
 		break;
 	}
 	case ESR_EC_PC_ALIGN:
@@ -345,9 +312,11 @@ vcpu_exception_dispatch(bool is_aarch64)
 	case ESR_EC_DATA_ABT_LO: {
 		ESR_EL2_ISS_DATA_ABORT_t iss =
 			ESR_EL2_ISS_DATA_ABORT_cast(ESR_EL2_get_ISS(&esr));
-		iss_da_ia_fsc_t fsc = ESR_EL2_ISS_DATA_ABORT_get_DFSC(&iss);
+		iss_da_ia_fsc_t fsc   = ESR_EL2_ISS_DATA_ABORT_get_DFSC(&iss);
+		bool		s1ptw = ESR_EL2_ISS_DATA_ABORT_get_S1PTW(&iss);
 
-		result = handle_inst_data_abort(esr, ec, far, hpfar, fsc, true);
+		result = handle_inst_data_abort(esr, ec, far, hpfar, fsc, s1ptw,
+						true);
 		break;
 	}
 	case ESR_EC_SP_ALIGN:
@@ -360,12 +329,6 @@ vcpu_exception_dispatch(bool is_aarch64)
 		result = trigger_vcpu_trap_fp64_event(esr);
 		break;
 
-	case ESR_EC_SERROR: {
-		ESR_EL2_ISS_SERROR_t iss =
-			ESR_EL2_ISS_SERROR_cast(ESR_EL2_get_ISS(&esr));
-		result = trigger_vcpu_trap_serror_event(iss);
-		break;
-	}
 	case ESR_EC_BREAK_LO:
 		result = trigger_vcpu_trap_breakpoint_guest_event(esr);
 		break;
@@ -417,6 +380,8 @@ vcpu_exception_dispatch(bool is_aarch64)
 	case ESR_EC_BKPT:
 		break;
 #endif
+	/* Asynchronous traps which don't come through this path */
+	case ESR_EC_SERROR:
 	/* AArch32 traps which may come when TGE=1 */
 	case ESR_EC_FP32:
 	/* AArch32 traps which may come only from EL1 */
@@ -434,14 +399,45 @@ vcpu_exception_dispatch(bool is_aarch64)
 	case ESR_EC_BREAK:
 	case ESR_EC_STEP:
 	case ESR_EC_WATCH:
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 	case ESR_EC_BTI:
 #endif
-#if defined(ARCH_ARM_8_3_PAUTH) && defined(ARCH_ARM_8_3_FPAC)
+#if defined(ARCH_ARM_FEAT_PAuth) && defined(ARCH_ARM_FEAT_FPAC)
 	case ESR_EC_FPAC:
 #endif
-	default: {
-		thread_t *thread = thread_get_self();
+#if defined(ARCH_ARM_FEAT_LS64)
+	case ESR_EC_LD64B_ST64B:
+#endif
+#if defined(ARCH_ARM_FEAT_TME)
+	case ESR_EC_TSTART:
+#endif
+#if defined(ARCH_ARM_FEAT_SME)
+	case ESR_EC_SME:
+#endif
+#if defined(ARCH_ARM_FEAT_RME)
+	case ESR_EC_RME:
+#endif
+#if defined(ARCH_ARM_FEAT_MOPS)
+	case ESR_EC_MOPS:
+#endif
+#if defined(VERBOSE) && VERBOSE
+	// Cause a fatal error in verbose builds so we can detect any unhandled
+	// ECs
+	default:
+#endif
+		fatal = true;
+		break;
+#if !(defined(VERBOSE) && VERBOSE)
+	// On non-verbose builds pass the unexpected ECs back to the VM
+	default:
+		result = VCPU_TRAP_RESULT_UNHANDLED;
+		break;
+#endif
+	}
+
+	thread_t *thread = thread_get_self();
+
+	if (compiler_unexpected(fatal)) {
 		TRACE_AND_LOG(ERROR, WARN,
 			      "Unexpected trap from VM {:d}, ESR_EL2 = {:#x}, "
 			      "ELR_EL2 = {:#x}",
@@ -450,11 +446,9 @@ vcpu_exception_dispatch(bool is_aarch64)
 		abort("Unexpected guest trap",
 		      ABORT_REASON_UNHANDLED_EXCEPTION);
 	}
-	}
 
 	switch (result) {
-	case VCPU_TRAP_RESULT_UNHANDLED: {
-		thread_t *thread = thread_get_self();
+	case VCPU_TRAP_RESULT_UNHANDLED:
 		TRACE_AND_LOG(ERROR, WARN,
 			      "Unhandled trap from VM {:d}, ESR_EL2 = {:#x}, "
 			      "ELR_EL2 = {:#x}",
@@ -462,7 +456,6 @@ vcpu_exception_dispatch(bool is_aarch64)
 			      ELR_EL2_raw(thread->vcpu_regs_gpr.pc));
 		inject_undef_abort(esr);
 		break;
-	}
 	case VCPU_TRAP_RESULT_FAULT:
 		inject_undef_abort(esr);
 		break;
@@ -470,9 +463,29 @@ vcpu_exception_dispatch(bool is_aarch64)
 		exception_skip_inst(is_il32);
 		break;
 	case VCPU_TRAP_RESULT_RETRY:
+	default:
 		// Nothing to do here.
 		break;
 	}
 
 	trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_EXCEPTION);
+}
+
+// Dispatching of guest asynchronous system errors
+void
+vcpu_error_dispatch(void)
+{
+	ESR_EL2_t esr = register_ESR_EL2_read_ordered(&asm_ordering);
+
+	trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_INTERRUPT);
+
+	preempt_disable_in_irq();
+
+	ESR_EL2_ISS_SERROR_t iss =
+		ESR_EL2_ISS_SERROR_cast(ESR_EL2_get_ISS(&esr));
+	(void)trigger_vcpu_trap_serror_event(iss);
+
+	preempt_enable_in_irq();
+
+	trigger_thread_exit_to_user_event(THREAD_ENTRY_REASON_INTERRUPT);
 }

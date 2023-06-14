@@ -4,3 +4,7 @@
 
 extern const char hypervisor_version[];
 extern const char hypervisor_build_date[];
+
+// Triggers the hypervisor hand-over event
+void
+boot_start_hypervisor_handover(void) REQUIRE_PREEMPT_DISABLED;

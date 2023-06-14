@@ -67,7 +67,7 @@ thread_standard_handle_object_create_thread(thread_create_t thread_create)
 #if !defined(NDEBUG)
 	// Fill the stack with a pattern so we can detect maximum stack
 	// depth
-	memset(stack.r, 0x57, stack_size);
+	(void)memset_s(stack.r, stack_size, 0x57, stack_size);
 #endif
 
 	thread->stack_mem  = (uintptr_t)stack.r;
@@ -89,8 +89,9 @@ thread_standard_unwind_object_create_thread(error_t	    result,
 	assert(atomic_load_relaxed(&thread->state) == THREAD_STATE_INIT);
 
 	if (thread->stack_mem != 0U) {
-		partition_free(thread->header.partition,
-			       (void *)thread->stack_mem, thread->stack_size);
+		(void)partition_free(thread->header.partition,
+				     (void *)thread->stack_mem,
+				     thread->stack_size);
 		thread->stack_mem = 0U;
 	}
 }
@@ -151,8 +152,9 @@ thread_standard_handle_object_deactivate_thread(thread_t *thread)
 	}
 
 	if (thread->stack_mem != 0U) {
-		partition_free(thread->header.partition,
-			       (void *)thread->stack_mem, thread->stack_size);
+		(void)partition_free(thread->header.partition,
+				     (void *)thread->stack_mem,
+				     thread->stack_size);
 		thread->stack_mem = 0U;
 	}
 }
@@ -170,7 +172,7 @@ thread_get_self(void)
 }
 
 error_t
-thread_switch_to(thread_t *thread)
+thread_switch_to(thread_t *thread, ticks_t schedtime)
 {
 	assert_preempt_disabled();
 
@@ -181,16 +183,18 @@ thread_switch_to(thread_t *thread)
 		    (uintptr_t)current, (uintptr_t)thread);
 
 	trigger_thread_save_state_event();
-	error_t err = trigger_thread_context_switch_pre_event(thread);
+	error_t err =
+		trigger_thread_context_switch_pre_event(thread, schedtime);
 	if (compiler_unexpected(err != OK)) {
 		object_put_thread(thread);
 		goto out;
 	}
 
-	thread_t *prev = thread_arch_switch_thread(thread);
+	ticks_t	  prevticks = schedtime;
+	thread_t *prev	    = thread_arch_switch_thread(thread, &schedtime);
 	assert(prev != NULL);
 
-	trigger_thread_context_switch_post_event(prev);
+	trigger_thread_context_switch_post_event(prev, schedtime, prevticks);
 	object_put_thread(prev);
 
 	trigger_thread_load_state_event(false);
@@ -205,13 +209,19 @@ thread_kill(thread_t *thread)
 {
 	assert(thread != NULL);
 
-	error_t	       err	      = OK;
+	error_t	       err;
 	thread_state_t expected_state = THREAD_STATE_READY;
 	if (atomic_compare_exchange_strong_explicit(
 		    &thread->state, &expected_state, THREAD_STATE_KILLED,
 		    memory_order_relaxed, memory_order_relaxed)) {
 		trigger_thread_killed_event(thread);
+		err = OK;
+	} else if ((expected_state == THREAD_STATE_KILLED) ||
+		   (expected_state == THREAD_STATE_EXITED)) {
+		// Thread was already killed, or has exited
+		err = OK;
 	} else {
+		// Thread had not started yet
 		err = ERROR_OBJECT_STATE;
 	}
 
@@ -223,6 +233,13 @@ thread_is_dying(const thread_t *thread)
 {
 	assert(thread != NULL);
 	return atomic_load_relaxed(&thread->state) == THREAD_STATE_KILLED;
+}
+
+bool
+thread_has_exited(const thread_t *thread)
+{
+	assert(thread != NULL);
+	return atomic_load_relaxed(&thread->state) == THREAD_STATE_EXITED;
 }
 
 noreturn void

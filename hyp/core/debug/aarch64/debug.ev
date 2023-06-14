@@ -14,4 +14,7 @@ subscribe power_cpu_suspend(may_poweroff)
 subscribe power_cpu_resume(was_poweroff)
 	require_preempt_disabled
 
+subscribe power_cpu_offline
+	require_preempt_disabled
+
 #endif

@@ -19,10 +19,10 @@ platform_get_cpu_features(void)
 	platform_cpu_features_set_trace_disable(&features, false);
 #endif
 #if defined(INTERFACE_DEBUG)
-	platform_cpu_features_set_debug_disable(&features, true);
+	platform_cpu_features_set_debug_disable(&features, false);
 #endif
 #if defined(MODULE_VM_ARM_VM_SVE_SIMPLE)
-	platform_cpu_features_set_sve_disable(&features, true);
+	platform_cpu_features_set_sve_disable(&features, false);
 #endif
 
 	return features;

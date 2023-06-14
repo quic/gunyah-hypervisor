@@ -11,7 +11,7 @@
 //
 // The caller must not assume that this function disables preemption.
 void
-rcu_read_start(void);
+rcu_read_start(void) ACQUIRE_RCU_READ;
 
 // End a read-side critical section.
 //
@@ -20,7 +20,7 @@ rcu_read_start(void);
 // queued on any CPU after the start of the critical section are permitted to
 // run.
 void
-rcu_read_finish(void);
+rcu_read_finish(void) RELEASE_RCU_READ;
 
 // Enqueue a write-side update.
 //
@@ -52,3 +52,10 @@ rcu_sync(void);
 // be running while blocked and/or on a CPU it does not have affinity to.
 bool
 rcu_sync_killable(void);
+
+// Check for pending updates on the calling CPU.
+//
+// If this call returns true, the CPU should not be allowed to enter a low power
+// state or power itself off.
+bool
+rcu_has_pending_updates(void) REQUIRE_PREEMPT_DISABLED;

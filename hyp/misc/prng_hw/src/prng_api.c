@@ -17,7 +17,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 {
 	hypercall_prng_get_entropy_result_t ret = { 0 };
 
-	if ((num_bytes == 0) || (num_bytes > sizeof(uint32_t) * 4)) {
+	if ((num_bytes == 0U) || (num_bytes > (sizeof(uint32_t) * 4U))) {
 		ret.error = ERROR_ARGUMENT_SIZE;
 		goto out;
 	}
@@ -36,7 +36,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 	ticks_t last_read = thread->prng_last_read & ~util_mask(2);
 	assert(now >= last_read);
 
-	count_t read_count = thread->prng_last_read & util_mask(2);
+	count_t read_count = (count_t)(thread->prng_last_read & util_mask(2));
 
 	// Read rate-limit window is 33ms per thread to reduce DoS.
 	if ((now - last_read) < platform_convert_ns_to_ticks(33000000U)) {
@@ -58,7 +58,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 			goto out;
 		}
 	}
-	if (num_bytes >= (2 * sizeof(uint32_t))) {
+	if (num_bytes >= (2U * sizeof(uint32_t))) {
 		error_t err = platform_get_random32(&ret.data1);
 
 		if (err != OK) {
@@ -66,7 +66,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 			goto out;
 		}
 	}
-	if (num_bytes >= (3 * sizeof(uint32_t))) {
+	if (num_bytes >= (3U * sizeof(uint32_t))) {
 		error_t err = platform_get_random32(&ret.data2);
 
 		if (err != OK) {
@@ -74,7 +74,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 			goto out;
 		}
 	}
-	if (num_bytes >= (4 * sizeof(uint32_t))) {
+	if (num_bytes >= (4U * sizeof(uint32_t))) {
 		error_t err = platform_get_random32(&ret.data3);
 
 		if (err != OK) {

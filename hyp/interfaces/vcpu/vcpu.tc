@@ -7,7 +7,11 @@ extend cap_rights_thread bitfield {
 	1	affinity	bool;
 	2	priority	bool;
 	3	timeslice	bool;
+	5	bind_virq	bool;
+	6	state		bool;
 	7	lifecycle	bool;
+	8	write_context	bool;
+	9	disable		bool;
 };
 
 define vcpu_trap_result enumeration {
@@ -15,4 +19,23 @@ define vcpu_trap_result enumeration {
 	emulated;
 	retry;
 	fault;
+};
+
+define vcpu_virq_type public enumeration(explicit) {
+	vcpu_run_wakeup = 1;
+};
+
+define vcpu_poweroff_flags public bitfield<64> {
+	0	last_vcpu			bool;
+	others	unknown=0;
+};
+
+define vcpu_register_set public enumeration(explicit) {
+	// All values are arch-specific
+};
+
+define vcpu_poweron_flags public bitfield<64> {
+	0	preserve_entry_point		bool;
+	1	preserve_context		bool;
+	others	unknown=0;
 };

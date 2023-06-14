@@ -1,0 +1,19 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module psci_pc
+
+#include "psci_events.h"
+
+PSCI_FUNCTION32(PSCI_SET_SUSPEND_MODE, 0U, pc_set_suspend_mode, arg1, ret0)
+
+subscribe boot_cold_init()
+
+subscribe object_activate_vpm_group
+
+subscribe idle_yield
+	// Run late, but before handlers that may sleep, to check
+	// whether we should suspend the physical CPU instead
+	priority -10
+	require_preempt_disabled

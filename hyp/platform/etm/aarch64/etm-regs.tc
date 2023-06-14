@@ -1,0 +1,48 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define ETM_TRCVI_CTLR_EXLEVEL_S bitfield<4> {
+	0		el0		bool = 0x1;
+	1		el1		bool = 0x1;
+	2		res0		bool;
+	3		el3		bool = 0x1;
+};
+
+define ETM_TRCVI_CTLR_EXLEVEL_NS bitfield<4> {
+	0		el0		bool = 0x1;
+	1		el1		bool = 0x1;
+	2		el2		bool = 0x1;
+	3		res0		bool;
+};
+
+define ETM_TRCVI_CTLR bitfield<32> {
+	7:0		event			uint8;
+	8		res0			bool;
+	9		ssstatus		bool;
+	10		trcreset		bool;
+	11		trcerr			bool;
+	15:12		res1			uint8;
+	19:16		exlevel_s		uint8 = 0xf;
+	23:20		exlevel_ns		uint8 = 0xf;
+	31:24		unknown=0;
+};
+
+define ETM_EVENT bitfield<8> {
+	4:0	sel			uint8;
+	6:5	res0			uint8;
+	7	is_single_resource	bool;
+};
+
+
+define ETM_TRCSTATR bitfield<32> {
+	0	idle		bool;
+	1	pmstable	bool;
+	31:2	res0		uint32;
+};
+
+define ETM_TRCOSLSR bitfield<32> {
+	3,0	oslm		uint8;
+	1	oslk		bool;
+	2	ntt		bool;
+};

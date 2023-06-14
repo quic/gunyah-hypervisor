@@ -23,19 +23,11 @@ define rootvm_package_header structure {
 
 	list	array(ROOTVM_PACKAGE_ITEMS_MAX) structure rootvm_package_entry;
 };
-
-extend boot_env_data structure {
-	me_capid	type cap_id_t;
+extend hyp_env_data structure {
 	me_ipa_base	type vmaddr_t;
-	me_size		size;
-
 	ipa_offset	uintptr;
 	app_ipa		type vmaddr_t;
 	runtime_ipa	type vmaddr_t;
-
-	usable_cores	uint64;
-	boot_core	type cpu_index_t;
-
 	app_heap_ipa	type vmaddr_t;
 	app_heap_size	size;
 };

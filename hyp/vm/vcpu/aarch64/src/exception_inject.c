@@ -16,6 +16,7 @@
 #include <thread.h>
 #include <trace.h>
 #include <util.h>
+#include <vcpu.h>
 
 #include "event_handlers.h"
 #include "exception_inject.h"
@@ -27,18 +28,17 @@
 static void
 exception_inject(ESR_EL1_t esr_el1)
 {
-	VBAR_EL1_t     vbar;
-	ELR_EL2_t      elr_el2;
-	SPSR_EL2_A64_t spsr_el2;
-	thread_t	 *thread = thread_get_self();
-	register_t     guest_vector;
+	VBAR_EL1_t vbar;
+	ELR_EL2_t  elr_el2;
+	thread_t  *thread = thread_get_self();
+	register_t guest_vector;
 
 	vbar	     = register_VBAR_EL1_read();
 	guest_vector = VBAR_EL1_get_VectorBase(&vbar);
 
-	spsr_el2 = thread->vcpu_regs_gpr.spsr_el2;
-
+	SPSR_EL2_A64_t spsr_el2 = thread->vcpu_regs_gpr.spsr_el2.a64;
 	// Adjust the vector based on the mode we came from
+	// FIXME:
 	spsr_64bit_mode_t spsr_m = SPSR_EL2_A64_get_M(&spsr_el2);
 	switch (spsr_m) {
 	case SPSR_64BIT_MODE_EL0T:
@@ -60,7 +60,7 @@ exception_inject(ESR_EL1_t esr_el1)
 	default:
 		// Either illegal M, or exceptions coming from 32-bit EL0/EL1
 		// For now we only support 32-bit EL0
-		if (spsr_m == SPSR_32BIT_MODE_USER) {
+		if (spsr_m == (spsr_64bit_mode_t)SPSR_32BIT_MODE_USER) {
 			// Exception from 32-bit EL0 User
 			guest_vector += 0x600U;
 			break;
@@ -81,27 +81,27 @@ exception_inject(ESR_EL1_t esr_el1)
 	SPSR_EL2_A64_set_IL(&spsr_el2, false);
 	SPSR_EL2_A64_set_SS(&spsr_el2, false);
 	SPSR_EL2_A64_set_M(&spsr_el2, SPSR_64BIT_MODE_EL1H);
-#if defined(ARCH_ARM_8_0_SSBS) || defined(ARCH_ARM_8_1_PAN)
+#if defined(ARCH_ARM_FEAT_SSBS) || defined(ARCH_ARM_FEAT_PAN)
 	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
-#if defined(ARCH_ARM_8_0_SSBS)
+#if defined(ARCH_ARM_FEAT_SSBS)
 	SPSR_EL2_A64_set_SSBS(&spsr_el2, SCTLR_EL1_get_DSSBS(&sctlr_el1));
 #endif
-#if defined(ARCH_ARM_8_1_PAN)
+#if defined(ARCH_ARM_FEAT_PAN)
 	if (!SCTLR_EL1_get_SPAN(&sctlr_el1)) {
 		SPSR_EL2_A64_set_PAN(&spsr_el2, true);
 	}
 #endif
 #endif
-#if defined(ARCH_ARM_8_2_UAO)
+#if defined(ARCH_ARM_FEAT_UAO)
 	SPSR_EL2_A64_set_UAO(&spsr_el2, false);
 #endif
-#if defined(ARCH_ARM_8_5_MEMTAG)
+#if defined(ARCH_ARM_FEAT_MTE)
 	SPSR_EL2_A64_set_TCO(&spsr_el2, true);
 #endif
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 	SPSR_EL2_A64_set_BTYPE(&spsr_el2, 0);
 #endif
-	thread->vcpu_regs_gpr.spsr_el2 = spsr_el2;
+	thread->vcpu_regs_gpr.spsr_el2.a64 = spsr_el2;
 
 	// Tell the guest where the exception came from
 	elr_el2		  = thread->vcpu_regs_gpr.pc;
@@ -119,9 +119,10 @@ bool
 inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 		       FAR_EL2_t far, vmaddr_t ipa, bool is_data_abort)
 {
-	thread_t	 *thread  = thread_get_self();
-	SPSR_EL2_A64_t spsr    = thread->vcpu_regs_gpr.spsr_el2;
-	ESR_EL1_t      esr_el1 = ESR_EL1_cast(ESR_EL2_raw(esr_el2));
+	thread_t      *thread	= thread_get_self();
+	ESR_EL1_t      esr_el1	= ESR_EL1_cast(ESR_EL2_raw(esr_el2));
+	SPSR_EL2_A64_t spsr_el2 = thread->vcpu_regs_gpr.spsr_el2.a64;
+	gvaddr_t       va	= FAR_EL2_get_VirtualAddress(&far);
 
 	assert(thread->kind == THREAD_KIND_VCPU);
 	assert(thread->addrspace != NULL);
@@ -147,7 +148,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 #if !defined(NDEBUG)
 		// Injecting an abort from the guest EL1H sync vector will
 		// cause an exception inject loop, so block the vcpu instead.
-		if (SPSR_EL2_A64_get_M(&spsr) == SPSR_64BIT_MODE_EL1H) {
+		if (SPSR_EL2_A64_get_M(&spsr_el2) == SPSR_64BIT_MODE_EL1H) {
 			VBAR_EL1_t vbar = register_VBAR_EL1_read();
 			uint64_t   pc	= ELR_EL2_get_ReturnAddress(
 				    &thread->vcpu_regs_gpr.pc);
@@ -158,23 +159,22 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 				TRACE_AND_LOG(
 					DEBUG, DEBUG,
 					"Detected exception inject loop from "
-					"VM {:d}, original ESR_EL2 = {:#x}, "
-					"ELR_EL2 = {:#x}, VBAR_EL1 = {:#x}",
+					"VM {:d}, previous ESR_EL1 = {:#x}, "
+					"ELR_EL1 = {:#x}, VBAR_EL1 = {:#x}",
 					VTTBR_EL2_get_VMID(&vttbr),
-					ESR_EL2_raw(esr_el2),
-					ELR_EL2_raw(thread->vcpu_regs_gpr.pc),
+					ESR_EL1_raw(register_ESR_EL1_read()),
+					ELR_EL1_raw(register_ELR_EL1_read()),
 					VBAR_EL1_raw(vbar));
 				scheduler_lock(thread);
 				scheduler_block(thread,
 						SCHEDULER_BLOCK_VCPU_FAULT);
 				scheduler_unlock(thread);
-				scheduler_yield();
-				break;
+				vcpu_halted();
 			}
 		}
 #endif
 		// Inject a synchronous external abort
-		spsr_64bit_mode_t mode = SPSR_EL2_A64_get_M(&spsr);
+		spsr_64bit_mode_t mode = SPSR_EL2_A64_get_M(&spsr_el2);
 		if ((mode == SPSR_64BIT_MODE_EL1T) ||
 		    (mode == SPSR_64BIT_MODE_EL1H)) {
 			if (is_data_abort) {
@@ -214,8 +214,6 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 
 		register_FAR_EL1_write(FAR_EL1_cast(FAR_EL2_raw(far)));
 
-		gvaddr_t va = FAR_EL2_get_VirtualAddress(&far);
-
 		TRACE_AND_LOG(ERROR, WARN,
 			      "Injecting instruction/data abort to VM {:d}, "
 			      "original ESR_EL2 = {:#x}, fault VA = {:#x}, "
@@ -242,7 +240,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 	case ISS_DA_IA_FSC_SYNC_PARITY_ECC_WALK_3:
 	case ISS_DA_IA_FSC_SYNC_TAG_CHECK:
 	case ISS_DA_IA_FSC_TLB_CONFLICT:
-#if defined(ARCH_ARM_8_1_TTHM)
+#if defined(ARCH_ARM_FEAT_HAFDBS)
 	case ISS_DA_IA_FSC_ATOMIC_HW_UPDATE:
 #endif
 	case ISS_DA_IA_FSC_PAGE_DOMAIN:
@@ -251,8 +249,6 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 	case ISS_DA_IA_FSC_IMP_DEF_LOCKDOWN:
 	case ISS_DA_IA_FSC_IMP_DEF_ATOMIC:
 	default: {
-		gvaddr_t va = FAR_EL2_get_VirtualAddress(&far);
-
 		TRACE_AND_LOG(ERROR, WARN,
 			      "instruction/data abort from VM {:d}, "
 			      "ESR_EL2 = {:#x}, fault VA = {:#x}, "
@@ -268,10 +264,19 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 		// - IMPLEMENTATION DEFINED fault
 		// Also the following have already been checked by the caller:
 		// - TLB conflict
-		// - Unsupported atomic hardware update file (ARMv8.1-TTHM)
+		// - Unsupported atomic hardware update file (ARM_FEAT_HAFDBS)
 
-		abort("Unhandled instruction/data abort",
-		      ABORT_REASON_UNHANDLED_EXCEPTION);
+		if (vcpu_option_flags_get_critical(&thread->vcpu_options)) {
+			abort("Unhandled instruction/data abort",
+			      ABORT_REASON_UNHANDLED_EXCEPTION);
+		} else {
+			// The above faults cannot be triggered by the VM, so
+			// halt the VCPU without revealing any fault state.
+			scheduler_lock(thread);
+			scheduler_block(thread, SCHEDULER_BLOCK_VCPU_FAULT);
+			scheduler_unlock(thread);
+			vcpu_halted();
+		}
 	}
 	}
 

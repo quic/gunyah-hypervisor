@@ -36,6 +36,10 @@
 
 #include <asm/barrier.h>
 
+#if defined(ARCH_ARM_FEAT_FGT) && ARCH_ARM_FEAT_FGT
+#include <arm_fgt.h>
+#endif
+
 #include "event_handlers.h"
 #include "gich_lrs.h"
 #include "gicv3.h"
@@ -43,7 +47,7 @@
 
 static hwirq_t *vgic_maintenance_hwirq;
 
-static struct asm_ordering_dummy gich_lr_ordering;
+static asm_ordering_dummy_t gich_lr_ordering;
 
 // Set to 1 to boot enable the virtual GIC delivery tracepoints
 #if defined(VERBOSE_TRACE) && VERBOSE_TRACE
@@ -51,6 +55,16 @@ static struct asm_ordering_dummy gich_lr_ordering;
 #else
 #define VGIC_TRACES 0
 #endif
+
+static bool
+vgic_fgt_allowed(void)
+{
+#if defined(ARCH_ARM_FEAT_FGT) && ARCH_ARM_FEAT_FGT
+	return compiler_expected(arm_fgt_is_allowed());
+#else
+	return false;
+#endif
+}
 
 void
 vgic_handle_boot_hypervisor_start(void)
@@ -102,10 +116,10 @@ vgic_handle_boot_cpu_warm_init(void)
 void
 vgic_read_lr_state(index_t i)
 {
-	assert(i < CPU_GICH_LR_COUNT);
 	thread_t *current = thread_get_self();
 	assert((current != NULL) && (current->kind == THREAD_KIND_VCPU));
 
+	assert_debug(i < CPU_GICH_LR_COUNT);
 	vgic_lr_status_t *status = &current->vgic_lrs[i];
 
 	// Read back the hardware register if necessary
@@ -118,15 +132,44 @@ vgic_read_lr_state(index_t i)
 static void
 vgic_write_lr(index_t i)
 {
-	assert(i < CPU_GICH_LR_COUNT);
+	assert_debug(i < CPU_GICH_LR_COUNT);
 	thread_t *current = thread_get_self();
-	assert((current != NULL) && (current->kind == THREAD_KIND_VCPU));
+	assert_debug((current != NULL) && (current->kind == THREAD_KIND_VCPU));
 
 	vgic_lr_status_t *status = &current->vgic_lrs[i];
-	assert(status != NULL);
 
 	gicv3_write_ich_lr(i, status->lr, &gich_lr_ordering);
 }
+
+#if VGIC_HAS_1N
+static bool
+vgic_get_delivery_state_is_class0(vgic_delivery_state_t *dstate)
+{
+	bool ret;
+#if defined(GICV3_HAS_GICD_ICLAR) && GICV3_HAS_GICD_ICLAR
+	ret = !vgic_delivery_state_get_nclass0(dstate);
+#else
+	(void)dstate;
+	ret = true;
+#endif
+
+	return ret;
+}
+
+static bool
+vgic_get_delivery_state_is_class1(vgic_delivery_state_t *dstate)
+{
+	bool ret;
+#if defined(GICV3_HAS_GICD_ICLAR) && GICV3_HAS_GICD_ICLAR
+	ret = vgic_delivery_state_get_class1(dstate);
+#else
+	(void)dstate;
+	ret = false;
+#endif
+
+	return ret;
+}
+#endif
 
 // Determine whether a VCPU is a valid route for a given VIRQ.
 //
@@ -154,8 +197,8 @@ vgic_route_allowed(vic_t *vic, thread_t *vcpu, vgic_delivery_state_t dstate)
 		// check the class bits.
 		allowed = (platform_irq_cpu_class(
 				   (cpu_index_t)vcpu->vgic_gicr_index) == 0U)
-				  ? !vgic_delivery_state_get_nclass0(&dstate)
-				  : vgic_delivery_state_get_class1(&dstate);
+				  ? vgic_get_delivery_state_is_class0(&dstate)
+				  : vgic_get_delivery_state_is_class1(&dstate);
 	}
 #endif
 	else {
@@ -180,72 +223,88 @@ vgic_spi_set_route_1n(irq_t irq, vgic_delivery_state_t dstate)
 	// Restore the 1-of-N route
 	GICD_IROUTER_t route_1n = GICD_IROUTER_default();
 	GICD_IROUTER_set_IRM(&route_1n, true);
-	gicv3_spi_set_route(irq, route_1n);
+	(void)gicv3_spi_set_route(irq, route_1n);
 
 #if GICV3_HAS_GICD_ICLAR
 	// Set the HW IRQ's 1-of-N routing classes. Note that these are reset
 	// in the hardware whenever the IRM bit is cleared.
-	gicv3_spi_set_classes(irq, !vgic_delivery_state_get_nclass0(&dstate),
-			      vgic_delivery_state_get_class1(&dstate));
+	(void)gicv3_spi_set_classes(irq,
+				    !vgic_delivery_state_get_nclass0(&dstate),
+				    vgic_delivery_state_get_class1(&dstate));
 #else
 	(void)dstate;
 #endif
 }
 #endif
 
-// Clear pending or enable bits from a listed VIRQ, and then update its LR.
-//
-// This is used for all changes to a currently listed VIRQ other than a local
-// redelivery: disabling, clearing, rerouting, remotely enabling or asserting,
-// or releasing the source. Locally enabling or asserting a listed VIRQ is
-// handled by vgic_redeliver_lr().
-//
-// The flags that are set in the clear_dstate argument, if any, will be cleared
-// in the delivery state. This value must not have any flags set other than the
-// four pending flags, the enabled flag, and the hardware active flag.
-//
-// If the current delivery state has the enable bit clear or clear_dstate has
-// the enable bit set, the pending state will be removed from the LR regardless
-// of the pending state of the interrupt (though the active state can remain in
-// the LR).
-//
-// If the current delivery state has the hw_detached bit set or clear_dstate has
-// the hw_active bit set, the HW bit of the LR will be cleared even if it is
-// left listed. The HW bit of the LR may also be cleared if it is necessary to
-// trap EOI to guarantee delivery of the IRQ.
-//
-// The specified VCPU must either be the current thread, or LR-locked by
-// the caller and known not to be running remotely. If the VCPU is the current
-// thread, the caller is responsible for syncing and updating the physical LR.
-//
-// For hardware interrupts, the level_src flag in clear_dstate may be overridden
-// by the hw_active flag, if it has been set by a concurrent remote delivery;
-// this is unnecessary for software interrupts because level_src changes are
-// required to be serialised.
-//
-// If the VIRQ is still enabled and pending after clearing the pending and
-// enable bits, it will be set pending in the LR if possible, or otherwise
-// rerouted. If it is 1-of-N, the use_local_vcpu flag determines whether the
-// current VCPU is given routing priority.
-//
-// The result is true if the VIRQ has been unlisted.
+// Check whether a level-triggered source is still asserting its interrupt.
 static bool
-vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
-	     vgic_delivery_state_t clear_dstate, bool use_local_vcpu)
-	REQUIRE_PREEMPT_DISABLED EXCLUDE_SCHEDULER_LOCK(vcpu)
+vgic_virq_check_pending(virq_source_t *source, bool reasserted)
+	REQUIRE_PREEMPT_DISABLED
 {
-	virq_t virq = ICH_LR_EL2_base_get_vINTID(&status->lr.base);
+	bool is_pending;
 
-	assert(status->dstate != NULL);
+	if (compiler_unexpected(source == NULL)) {
+		// Source has been detached since the IRQ was asserted.
+		is_pending = false;
+	} else {
+		// The virq_check_pending event must guarantee that all memory
+		// reads executed by the handler are ordered after the read that
+		// determined (a) that the IRQ was marked level-pending, and (b)
+		// the value of the reasserted argument. Since the callers of
+		// this function make those determinations using relaxed atomic
+		// reads of the delivery state, we need an acquire fence here to
+		// enforce the correct ordering.
+		atomic_thread_fence(memory_order_acquire);
 
-	bool		   lr_hw = ICH_LR_EL2_base_get_HW(&status->lr.base);
-	ICH_LR_EL2_State_t lr_state =
-		ICH_LR_EL2_base_get_State(&status->lr.base);
-	bool lr_pending = (lr_state == ICH_LR_EL2_STATE_PENDING) ||
-			  (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
-	bool lr_active = (lr_state == ICH_LR_EL2_STATE_ACTIVE) ||
-			 (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
+		is_pending = trigger_virq_check_pending_event(
+			source->trigger, source, reasserted);
+	}
 
+	return is_pending;
+}
+
+static bool
+vgic_sync_lr_set_delivery_state(bool lr_active, bool virq_pending,
+				bool allow_pending, bool lr_pending,
+				vgic_delivery_state_t *new_dstate)
+{
+	bool remove_hw;
+
+	if (!lr_active && (!virq_pending || !allow_pending)) {
+		vgic_delivery_state_set_listed(new_dstate, false);
+		vgic_delivery_state_set_active(new_dstate, false);
+		remove_hw = lr_pending;
+	} else if (virq_pending && allow_pending) {
+		// We're going to leave the LR in pending state, so
+		// clear the edge bit.
+		vgic_delivery_state_set_edge(new_dstate, false);
+		remove_hw = false;
+	} else {
+		// We are leaving the VIRQ listed in active state, and
+		// can't set the pending state in the LR. If the VIRQ is
+		// pending, we must trap EOI to deliver it elsewhere.
+		remove_hw = virq_pending;
+	}
+
+	return remove_hw;
+}
+
+typedef struct {
+	vgic_delivery_state_t new_dstate;
+	bool		      virq_pending;
+	bool		      hw_detach;
+	bool		      allow_pending;
+	bool		      remove_hw;
+} vgic_sync_lr_update_t;
+
+static vgic_sync_lr_update_t
+vgic_sync_lr_update_delivery_state(vic_t *vic, thread_t *vcpu,
+				   const vgic_lr_status_t *status,
+				   vgic_delivery_state_t   clear_dstate,
+				   bool lr_hw, bool lr_pending, virq_t virq,
+				   bool lr_active) REQUIRE_PREEMPT_DISABLED
+{
 	vgic_delivery_state_t old_dstate = atomic_load_relaxed(status->dstate);
 	bool hw_detach = vgic_delivery_state_get_hw_active(&clear_dstate);
 
@@ -268,7 +327,8 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 		}
 
 		// If level_src is set and is not being explicitly cleared,
-		// check whether we need to clear it.
+		// check whether it should be cleared based on the LR's pending
+		// state.
 		if (vgic_delivery_state_get_level_src(&old_dstate) &&
 		    !vgic_delivery_state_get_level_src(&clear_dstate)) {
 			if (lr_hw && (!lr_pending || hw_detach)) {
@@ -282,11 +342,11 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 			} else {
 				virq_source_t *source =
 					vgic_find_source(vic, vcpu, virq);
-				if (compiler_unexpected(source == NULL) ||
-				    !trigger_virq_check_pending_event(
-					    source->trigger, source,
-					    vgic_delivery_state_get_edge(
-						    &old_dstate))) {
+				bool reassert = lr_pending ||
+						vgic_delivery_state_get_edge(
+							&old_dstate);
+				if (!vgic_virq_check_pending(source,
+							     reassert)) {
 					vgic_delivery_state_set_level_src(
 						&new_dstate, false);
 				}
@@ -312,21 +372,9 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 
 		// Determine whether to delist the IRQ, and whether the HW=1 bit
 		// is being removed from a valid LR (whether delisted or not).
-		if (!lr_active && (!virq_pending || !allow_pending)) {
-			vgic_delivery_state_set_listed(&new_dstate, false);
-			vgic_delivery_state_set_active(&new_dstate, false);
-			remove_hw = lr_pending;
-		} else if (virq_pending && allow_pending) {
-			// We're going to leave the LR in pending state, so
-			// clear the edge bit.
-			vgic_delivery_state_set_edge(&new_dstate, false);
-			remove_hw = false;
-		} else {
-			// We are leaving the VIRQ listed in active state, and
-			// can't set the pending state in the LR. If the VIRQ is
-			// pending, we must trap EOI to deliver it elsewhere.
-			remove_hw = virq_pending;
-		}
+		remove_hw = vgic_sync_lr_set_delivery_state(
+			lr_active, virq_pending, allow_pending, lr_pending,
+			&new_dstate);
 
 		// If we're removing HW=1 from a valid LR, but not detaching
 		// (and therefore deactivating) the HW IRQ, we need to reset the
@@ -345,39 +393,36 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 		   virq, vgic_delivery_state_raw(old_dstate),
 		   vgic_delivery_state_raw(new_dstate));
 
-	// If we're detaching a HW IRQ, clear the HW bit in the LR.
-	if (compiler_unexpected(lr_hw && hw_detach)) {
-		// If the LR was pending or active, the physical IRQ is still
-		// active. Clearing the HW bit destroys our record that this
-		// might be the case, so we have to deactivate at this point.
-		if (lr_pending || lr_active) {
-			assert(!vgic_delivery_state_get_hw_active(&new_dstate));
-			irq_t irq = ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw);
-			VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
-				   "sync_lr {:d}: deactivate HW IRQ {:d}",
-				   ICH_LR_EL2_HW1_get_vINTID(&status->lr.hw),
-				   irq);
-			gicv3_irq_deactivate(irq);
-		}
+	return (vgic_sync_lr_update_t){
+		.new_dstate    = new_dstate,
+		.virq_pending  = virq_pending,
+		.hw_detach     = hw_detach,
+		.allow_pending = allow_pending,
+		.remove_hw     = remove_hw,
+	};
+}
 
-		ICH_LR_EL2_base_set_HW(&status->lr.base, false);
-		// If HW was 1 there must be no SW level assertion, so we don't
-		// need to trap EOI
-		ICH_LR_EL2_HW0_set_EOI(&status->lr.sw, false);
-	}
-
-	// Update the LR.
+static void
+vgic_sync_lr_update_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
+		       bool lr_pending, virq_t virq, bool lr_active,
+		       bool virq_pending, bool allow_pending, bool remove_hw,
+		       bool lr_hw, vgic_delivery_state_t new_dstate,
+		       bool use_local_vcpu) REQUIRE_PREEMPT_DISABLED
+{
 	if (!vgic_delivery_state_get_listed(&new_dstate)) {
 		VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
 			   "sync_lr {:d}: delisted (pending {:d})", virq,
-			   virq_pending);
+			   (register_t)virq_pending);
 
 #if VGIC_HAS_1N
 		if (lr_hw && vgic_delivery_state_get_route_1n(&new_dstate)) {
+			assert(ICH_LR_EL2_base_get_HW(&status->lr.base));
 			vgic_spi_set_route_1n(
 				ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw),
 				new_dstate);
 		}
+#else
+		(void)lr_hw;
 #endif
 		status->dstate	= NULL;
 		status->lr.base = ICH_LR_EL2_base_default();
@@ -449,8 +494,193 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 		VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
 			   "sync_lr {:d}: LR unchanged", virq);
 	}
+}
+
+// Clear pending or enable bits from a listed VIRQ, and then update its LR.
+//
+// This is used for all changes to a currently listed VIRQ other than a local
+// redelivery: disabling, clearing, rerouting, remotely enabling or asserting,
+// or releasing the source. Locally enabling or asserting a listed VIRQ is
+// handled by vgic_redeliver_lr().
+//
+// The flags that are set in the clear_dstate argument, if any, will be cleared
+// in the delivery state. This value must not have any flags set other than the
+// four pending flags, the enabled flag, and the hardware active flag.
+//
+// If the current delivery state has the enable bit clear or clear_dstate has
+// the enable bit set, the pending state will be removed from the LR regardless
+// of the pending state of the interrupt (though the active state can remain in
+// the LR).
+//
+// If the current delivery state has the hw_detached bit set or clear_dstate has
+// the hw_active bit set, the HW bit of the LR will be cleared even if it is
+// left listed. The HW bit of the LR may also be cleared if it is necessary to
+// trap EOI to guarantee delivery of the IRQ.
+//
+// The specified VCPU must either be the current thread, or LR-locked by
+// the caller and known not to be running remotely. If the VCPU is the current
+// thread, the caller is responsible for syncing and updating the physical LR.
+//
+// For hardware interrupts, the level_src flag in clear_dstate may be overridden
+// by the hw_active flag, if it has been set by a concurrent remote delivery;
+// this is unnecessary for software interrupts because level_src changes are
+// required to be serialised.
+//
+// If the VIRQ is still enabled and pending after clearing the pending and
+// enable bits, it will be set pending in the LR if possible, or otherwise
+// rerouted. If it is 1-of-N, the use_local_vcpu flag determines whether the
+// current VCPU is given routing priority.
+//
+// The result is true if the VIRQ has been unlisted.
+static bool
+vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
+	     vgic_delivery_state_t clear_dstate, bool use_local_vcpu)
+	REQUIRE_PREEMPT_DISABLED EXCLUDE_SCHEDULER_LOCK(vcpu)
+{
+	virq_t virq = ICH_LR_EL2_base_get_vINTID(&status->lr.base);
+
+	assert(status->dstate != NULL);
+
+	bool		   lr_hw = ICH_LR_EL2_base_get_HW(&status->lr.base);
+	ICH_LR_EL2_State_t lr_state =
+		ICH_LR_EL2_base_get_State(&status->lr.base);
+	bool lr_pending = (lr_state == ICH_LR_EL2_STATE_PENDING) ||
+			  (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
+	bool lr_active = (lr_state == ICH_LR_EL2_STATE_ACTIVE) ||
+			 (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
+
+	vgic_delivery_state_t new_dstate;
+	bool		      virq_pending;
+	bool		      hw_detach;
+	bool		      allow_pending;
+	bool		      remove_hw;
+	{
+		vgic_sync_lr_update_t sync_lr_info =
+			vgic_sync_lr_update_delivery_state(vic, vcpu, status,
+							   clear_dstate, lr_hw,
+							   lr_pending, virq,
+							   lr_active);
+		new_dstate    = sync_lr_info.new_dstate;
+		virq_pending  = sync_lr_info.virq_pending;
+		hw_detach     = sync_lr_info.hw_detach;
+		allow_pending = sync_lr_info.allow_pending;
+		remove_hw     = sync_lr_info.remove_hw;
+	}
+
+	// If we're detaching a HW IRQ, clear the HW bit in the LR.
+	if (compiler_unexpected(lr_hw && hw_detach)) {
+		// If the LR was pending or active, the physical IRQ is still
+		// active. Clearing the HW bit destroys our record that this
+		// might be the case, so we have to deactivate at this point.
+		if (lr_pending || lr_active) {
+			assert(!vgic_delivery_state_get_hw_active(&new_dstate));
+			irq_t irq = ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw);
+			VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
+				   "sync_lr {:d}: deactivate HW IRQ {:d}",
+				   ICH_LR_EL2_HW1_get_vINTID(&status->lr.hw),
+				   irq);
+			gicv3_irq_deactivate(irq);
+		}
+
+		// If the LR will remain valid, turn it into a SW IRQ.
+		if (vgic_delivery_state_get_listed(&new_dstate)) {
+			ICH_LR_EL2_base_set_HW(&status->lr.base, false);
+			// If HW was 1 there must be no SW level assertion, so
+			// we don't need to trap EOI
+			ICH_LR_EL2_HW0_set_EOI(&status->lr.sw, false);
+		}
+	}
+
+	// Update the LR.
+	vgic_sync_lr_update_lr(vic, vcpu, status, lr_pending, virq, lr_active,
+			       virq_pending, allow_pending, remove_hw, lr_hw,
+			       new_dstate, use_local_vcpu);
 
 	return !vgic_delivery_state_get_listed(&new_dstate);
+}
+
+static bool
+vgic_undeliver_update_hw_detach_and_sync(const vic_t *vic, const thread_t *vcpu,
+					 virq_t				virq,
+					 _Atomic vgic_delivery_state_t *dstate,
+					 vgic_delivery_state_t clear_dstate,
+					 vgic_delivery_state_t old_dstate,
+					 bool		       check_route)
+{
+	vgic_delivery_state_t new_dstate;
+	bool hw_detach = vgic_delivery_state_get_hw_active(&clear_dstate);
+	vgic_delivery_state_set_hw_active(&clear_dstate, false);
+
+	do {
+		new_dstate = vgic_delivery_state_difference(old_dstate,
+							    clear_dstate);
+
+		if (!vgic_delivery_state_get_listed(&old_dstate)) {
+			// Delisted by another thread; no sync needed.
+		} else if (check_route) {
+			// Force a sync regardless of pending state.
+			vgic_delivery_state_set_need_sync(&new_dstate, true);
+		} else if (!vgic_delivery_state_get_enabled(&new_dstate)) {
+			// No longer enabled; a sync is required.
+			vgic_delivery_state_set_need_sync(&new_dstate, true);
+		} else if (!vgic_delivery_state_get_cfg_is_edge(&new_dstate) &&
+			   !vgic_delivery_state_is_level_asserted(
+				   &new_dstate)) {
+			// No longer pending; a sync is required.
+			vgic_delivery_state_set_need_sync(&new_dstate, true);
+		} else {
+			// Still pending and not reclaimed; no sync needed.
+		}
+
+		if (hw_detach && vgic_delivery_state_get_listed(&old_dstate)) {
+			vgic_delivery_state_set_hw_detached(&new_dstate, true);
+		}
+	} while (!atomic_compare_exchange_strong_explicit(
+		dstate, &old_dstate, new_dstate, memory_order_relaxed,
+		memory_order_relaxed));
+
+	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu,
+		   "undeliver-sync {:d}: {:#x} -> {:#x}", virq,
+		   vgic_delivery_state_raw(old_dstate),
+		   vgic_delivery_state_raw(new_dstate));
+
+	return !vgic_delivery_state_get_listed(&old_dstate);
+}
+
+static vgic_delivery_state_t
+vgic_undeliver_update_dstate(vic_t *vic, thread_t *vcpu,
+			     _Atomic vgic_delivery_state_t *dstate, virq_t virq,
+			     vgic_delivery_state_t clear_dstate,
+			     vgic_delivery_state_t old_dstate)
+	REQUIRE_PREEMPT_DISABLED
+{
+	vgic_delivery_state_t new_dstate;
+	do {
+		// If the VIRQ is not listed, update its flags directly.
+		new_dstate = vgic_delivery_state_difference(old_dstate,
+							    clear_dstate);
+		if (vgic_delivery_state_get_listed(&old_dstate)) {
+			break;
+		}
+
+		// If level_src is set and is not being explicitly cleared,
+		// check whether we need to clear it.
+		if (vgic_delivery_state_get_level_src(&old_dstate) &&
+		    !vgic_delivery_state_get_level_src(&clear_dstate)) {
+			virq_source_t *source =
+				vgic_find_source(vic, vcpu, virq);
+			if (!vgic_virq_check_pending(
+				    source, vgic_delivery_state_get_edge(
+						    &old_dstate))) {
+				vgic_delivery_state_set_level_src(&new_dstate,
+								  false);
+			}
+		}
+	} while (!atomic_compare_exchange_strong_explicit(
+		dstate, &old_dstate, new_dstate, memory_order_relaxed,
+		memory_order_relaxed));
+
+	return new_dstate;
 }
 
 // Clear pending bits from a given VIRQ, and abort its delivery if necessary.
@@ -484,33 +714,8 @@ vgic_undeliver(vic_t *vic, thread_t *vcpu,
 	cpu_index_t remote_cpu = vgic_lr_owner_lock(vcpu);
 
 	vgic_delivery_state_t old_dstate = atomic_load_relaxed(dstate);
-	vgic_delivery_state_t new_dstate;
-
-	do {
-		// If the VIRQ is not listed, update its flags directly.
-		new_dstate = vgic_delivery_state_difference(old_dstate,
-							    clear_dstate);
-		if (vgic_delivery_state_get_listed(&old_dstate)) {
-			break;
-		}
-
-		// If level_src is set and is not being explicitly cleared,
-		// check whether we need to clear it.
-		if (vgic_delivery_state_get_level_src(&old_dstate) &&
-		    !vgic_delivery_state_get_level_src(&clear_dstate)) {
-			virq_source_t *source =
-				vgic_find_source(vic, vcpu, virq);
-			if (compiler_unexpected(source == NULL) ||
-			    !trigger_virq_check_pending_event(
-				    source->trigger, source,
-				    vgic_delivery_state_get_edge(&old_dstate))) {
-				vgic_delivery_state_set_level_src(&new_dstate,
-								  false);
-			}
-		}
-	} while (!atomic_compare_exchange_strong_explicit(
-		dstate, &old_dstate, new_dstate, memory_order_relaxed,
-		memory_order_relaxed));
+	vgic_delivery_state_t new_dstate = vgic_undeliver_update_dstate(
+		vic, vcpu, dstate, virq, clear_dstate, old_dstate);
 
 	bool unlisted = false;
 	if (!vgic_delivery_state_get_listed(&old_dstate)) {
@@ -524,9 +729,6 @@ vgic_undeliver(vic_t *vic, thread_t *vcpu,
 		    !vgic_delivery_state_get_hw_active(&new_dstate)) {
 			virq_source_t *source =
 				vgic_find_source(vic, vcpu, virq);
-			assert(source != NULL);
-			assert(source->trigger ==
-			       VIRQ_TRIGGER_VGIC_FORWARDED_SPI);
 
 			hwirq_t *hwirq = hwirq_from_virq_source(source);
 
@@ -587,48 +789,123 @@ vgic_undeliver(vic_t *vic, thread_t *vcpu,
 #endif
 	// We can't directly clear hw_active on a remote CPU; we need to use
 	// the hw_detached bit to ask the remote CPU to do it.
-	bool hw_detach = vgic_delivery_state_get_hw_active(&clear_dstate);
-	vgic_delivery_state_set_hw_active(&clear_dstate, false);
-
-	do {
-		new_dstate = vgic_delivery_state_difference(old_dstate,
-							    clear_dstate);
-
-		if (!vgic_delivery_state_get_listed(&old_dstate)) {
-			// Delisted by another thread; no sync needed.
-		} else if (check_route) {
-			// Force a sync regardless of pending state.
-			vgic_delivery_state_set_need_sync(&new_dstate, true);
-		} else if (!vgic_delivery_state_get_enabled(&new_dstate)) {
-			// No longer enabled; a sync is required.
-			vgic_delivery_state_set_need_sync(&new_dstate, true);
-		} else if (!vgic_delivery_state_get_cfg_is_edge(&new_dstate) &&
-			   !vgic_delivery_state_is_level_asserted(
-				   &new_dstate)) {
-			// No longer pending; a sync is required.
-			vgic_delivery_state_set_need_sync(&new_dstate, true);
-		} else {
-			// Still pending and not reclaimed; no sync needed.
-		}
-
-		if (hw_detach && vgic_delivery_state_get_listed(&old_dstate)) {
-			vgic_delivery_state_set_hw_detached(&new_dstate, true);
-		}
-	} while (!atomic_compare_exchange_strong_explicit(
-		dstate, &old_dstate, new_dstate, memory_order_relaxed,
-		memory_order_relaxed));
-
-	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu,
-		   "undeliver-sync {:d}: {:#x} -> {:#x}", virq,
-		   vgic_delivery_state_raw(old_dstate),
-		   vgic_delivery_state_raw(new_dstate));
-
-	unlisted = !vgic_delivery_state_get_listed(&old_dstate);
+	unlisted = vgic_undeliver_update_hw_detach_and_sync(
+		vic, vcpu, virq, dstate, clear_dstate, old_dstate, check_route);
 
 out:
 	vgic_lr_owner_unlock(vcpu);
 
 	return unlisted;
+}
+
+typedef struct {
+	ICH_LR_EL2_t	      new_lr;
+	vgic_delivery_state_t new_dstate;
+	bool		      force_eoi_trap;
+	bool		      need_wakeup;
+	uint8_t		      pad[2];
+} vgic_redeliver_lr_info_t;
+
+static vgic_redeliver_lr_info_t
+vgic_redeliver_lr_update_state(const vic_t *vic, const thread_t *vcpu,
+			       virq_source_t *source, virq_t virq,
+			       ICH_LR_EL2_State_t      old_lr_state,
+			       const vgic_lr_status_t *status,
+			       vgic_delivery_state_t   old_dstate,
+			       vgic_delivery_state_t   assert_dstate)
+{
+	vgic_delivery_state_t new_dstate =
+		vgic_delivery_state_union(old_dstate, assert_dstate);
+	bool	     is_hw  = vgic_delivery_state_get_hw_active(&new_dstate);
+	ICH_LR_EL2_t new_lr = status->lr;
+	bool	     force_eoi_trap = false;
+	bool	     need_wakeup    = false;
+
+	if (compiler_expected(old_lr_state == ICH_LR_EL2_STATE_INVALID)) {
+		// Previous interrupt is gone; take the new one. Don't
+		// bother to recheck level triggering yet; that will be
+		// done when this interrupt ends.
+		ICH_LR_EL2_base_set_HW(&new_lr.base, is_hw);
+		if (ICH_LR_EL2_base_get_HW(&new_lr.base)) {
+			vgic_delivery_state_set_hw_active(&new_dstate, false);
+			ICH_LR_EL2_HW1_set_pINTID(
+				&new_lr.hw,
+				hwirq_from_virq_source(source)->irq);
+		}
+		ICH_LR_EL2_base_set_State(&new_lr.base,
+					  ICH_LR_EL2_STATE_PENDING);
+
+		// Interrupt is newly pending; we need to wake the VCPU.
+		need_wakeup = true;
+	} else if (compiler_unexpected(is_hw !=
+				       ICH_LR_EL2_base_get_HW(&new_lr.base))) {
+		// If we have both a SW and a HW source, deliver the SW
+		// assertion first, and request an EOI maintenance
+		// interrupt to deliver (or trigger reassertion of) the
+		// HW source afterwards.
+		if (ICH_LR_EL2_base_get_HW(&new_lr.base)) {
+			ICH_LR_EL2_base_set_HW(&new_lr.base, false);
+			vgic_delivery_state_set_hw_active(&new_dstate, true);
+
+			VGIC_DEBUG_TRACE(
+				HWSTATE_UNCHANGED, vic, vcpu,
+				"redeliver {:d}: hw + sw; relisting as sw",
+				virq);
+		}
+		force_eoi_trap = true;
+
+		// Interrupt is either already pending (so the VCPU
+		// should be awake) or is active (so not deliverable,
+		// and the VCPU should not be woken); no need for a
+		// wakeup.
+	}
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	else if ((old_lr_state == ICH_LR_EL2_STATE_ACTIVE) &&
+		 vic->vsgis_enabled &&
+		 (vgic_get_irq_type(virq) == VGIC_IRQ_TYPE_SGI)) {
+		// A vSGI delivered by the ITS does not have an active
+		// state, because it is really a vLPI in disguise. Make
+		// software-delivered SGIs behave the same way.
+		assert(!is_hw && !ICH_LR_EL2_base_get_HW(&new_lr.base));
+		ICH_LR_EL2_base_set_State(&new_lr.base,
+					  ICH_LR_EL2_STATE_PENDING);
+
+		// Interrupt was previously active and is now pending,
+		// so it has just become deliverable and we need to wake
+		// the VCPU.
+		need_wakeup = true;
+	}
+#endif
+	else {
+		// We should never get here for a hardware-mode LR,
+		// since it would mean that we were risking a double
+		// deactivate.
+		assert(!is_hw && !ICH_LR_EL2_base_get_HW(&new_lr.base));
+
+		// A software-mode LR that is in active state can me
+		// moved straight to active+pending.
+		if (old_lr_state == ICH_LR_EL2_STATE_ACTIVE) {
+			ICH_LR_EL2_base_set_State(
+				&new_lr.base, ICH_LR_EL2_STATE_PENDING_ACTIVE);
+		} else {
+			VGIC_DEBUG_TRACE(
+				HWSTATE_UNCHANGED, vic, vcpu,
+				"redeliver {:d}: redundant assertions merged",
+				virq);
+		}
+
+		// Interrupt is already pending, so the VCPU should be
+		// awake; no need for a wakeup.
+	}
+
+	vgic_delivery_state_set_edge(&new_dstate, force_eoi_trap);
+
+	return (vgic_redeliver_lr_info_t){
+		.new_dstate	= new_dstate,
+		.force_eoi_trap = force_eoi_trap,
+		.need_wakeup	= need_wakeup,
+		.new_lr		= new_lr,
+	};
 }
 
 static bool
@@ -637,7 +914,7 @@ vgic_redeliver_lr(vic_t *vic, thread_t *vcpu, virq_source_t *source,
 		  vgic_delivery_state_t		*old_dstate,
 		  vgic_delivery_state_t assert_dstate, index_t lr)
 {
-	assert(lr < CPU_GICH_LR_COUNT);
+	assert_debug(lr < CPU_GICH_LR_COUNT);
 
 	// Merge the old and new LR states.
 	vgic_lr_status_t *status = &vcpu->vgic_lrs[lr];
@@ -650,86 +927,27 @@ vgic_redeliver_lr(vic_t *vic, thread_t *vcpu, virq_source_t *source,
 	bool		      need_wakeup;
 
 	do {
+		ICH_LR_EL2_State_t trace_state;
 		assert(vgic_delivery_state_get_listed(old_dstate));
-		new_dstate =
-			vgic_delivery_state_union(*old_dstate, assert_dstate);
-		bool is_hw     = vgic_delivery_state_get_hw_active(&new_dstate);
-		new_lr	       = status->lr;
-		force_eoi_trap = false;
-		need_wakeup    = false;
 
-		ICH_LR_EL2_State_t old_state =
+		ICH_LR_EL2_State_t old_lr_state =
 			ICH_LR_EL2_base_get_State(&status->lr.base);
 
-		if (compiler_expected(old_state == ICH_LR_EL2_STATE_INVALID)) {
-			// Previous interrupt is gone; take the new one. Don't
-			// bother to recheck level triggering yet; that will be
-			// done when this interrupt ends.
-			ICH_LR_EL2_base_set_HW(&new_lr.base, is_hw);
-			if (ICH_LR_EL2_base_get_HW(&new_lr.base)) {
-				vgic_delivery_state_set_hw_active(&new_dstate,
-								  false);
-				ICH_LR_EL2_HW1_set_pINTID(
-					&new_lr.hw,
-					hwirq_from_virq_source(source)->irq);
-			}
-			ICH_LR_EL2_base_set_State(&new_lr.base,
-						  ICH_LR_EL2_STATE_PENDING);
-
-			// Interrupt is newly pending; we need to wake the VCPU.
-			need_wakeup = true;
-		} else if (compiler_unexpected(
-				   is_hw !=
-				   ICH_LR_EL2_base_get_HW(&new_lr.base))) {
-			// If we have both a SW and a HW source, deliver the SW
-			// assertion first, and request an EOI maintenance
-			// interrupt to deliver (or trigger reassertion of) the
-			// HW source afterwards.
-			if (ICH_LR_EL2_base_get_HW(&new_lr.base)) {
-				ICH_LR_EL2_base_set_HW(&new_lr.base, false);
-				vgic_delivery_state_set_hw_active(&new_dstate,
-								  true);
-
-				VGIC_DEBUG_TRACE(
-					HWSTATE_UNCHANGED, vic, vcpu,
-					"redeliver {:d}: hw + sw; relisting as sw",
-					virq);
-			}
-			force_eoi_trap = true;
-
-			// Interrupt is either already pending (so the VCPU
-			// should be awake) or is active (so not deliverable,
-			// and the VCPU should not be woken); no need for a
-			// wakeup.
-		}
-		else {
-			// We should never get here for a hardware-mode LR,
-			// since it would mean that we were risking a double
-			// deactivate.
-			assert(!is_hw && !ICH_LR_EL2_base_get_HW(&new_lr.base));
-
-			// A software-mode LR that is in active state can me
-			// moved straight to active+pending.
-			if (old_state == ICH_LR_EL2_STATE_ACTIVE) {
-				ICH_LR_EL2_base_set_State(
-					&new_lr.base,
-					ICH_LR_EL2_STATE_PENDING_ACTIVE);
-			} else {
-				VGIC_DEBUG_TRACE(
-					HWSTATE_UNCHANGED, vic, vcpu,
-					"redeliver {:d}: redundant assertions merged",
-					virq);
-			}
-
-			// Interrupt is already pending, so the VCPU should be
-			// awake; no need for a wakeup.
+		{
+			vgic_redeliver_lr_info_t vgic_redeliver_lr_info =
+				vgic_redeliver_lr_update_state(
+					vic, vcpu, source, virq, old_lr_state,
+					status, *old_dstate, assert_dstate);
+			new_dstate     = vgic_redeliver_lr_info.new_dstate;
+			force_eoi_trap = vgic_redeliver_lr_info.force_eoi_trap;
+			need_wakeup    = vgic_redeliver_lr_info.need_wakeup;
+			new_lr	       = vgic_redeliver_lr_info.new_lr;
 		}
 
+		trace_state = ICH_LR_EL2_base_get_State(&new_lr.base);
 		VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
-			   "redeliver {:d}: lr {:d} -> {:d}", virq, old_state,
-			   ICH_LR_EL2_base_get_State(&new_lr.base));
-
-		vgic_delivery_state_set_edge(&new_dstate, force_eoi_trap);
+			   "redeliver {:d}: lr {:d} -> {:d}", virq,
+			   (register_t)old_lr_state, (register_t)trace_state);
 	} while (!atomic_compare_exchange_strong_explicit(
 		dstate, old_dstate, new_dstate, memory_order_relaxed,
 		memory_order_relaxed));
@@ -759,19 +977,17 @@ vgic_redeliver(vic_t *vic, thread_t *vcpu, virq_source_t *source,
 	       vgic_delivery_state_t	     *old_dstate,
 	       vgic_delivery_state_t	      assert_dstate)
 {
-	const bool    to_self  = vcpu == thread_get_self();
-	bool	      found_lr = false;
+	const bool    to_self = vcpu == thread_get_self();
 	index_t	      i;
 	bool_result_t ret = bool_result_error(ERROR_BUSY);
 
 	for (i = 0; i < CPU_GICH_LR_COUNT; i++) {
 		if (dstate == vcpu->vgic_lrs[i].dstate) {
-			found_lr = true;
 			break;
 		}
 	}
 
-	if (found_lr) {
+	if (i < CPU_GICH_LR_COUNT) {
 		// If we are targeting ourselves, read the current state.
 		if (to_self) {
 			vgic_read_lr_state(i);
@@ -895,12 +1111,25 @@ out:
 	return result;
 }
 
-// The number of VIRQs in each low (SPI + PPI) range.
+// The number of VIRQs in each low (SPI + PPI) range other than the last SPI
+// range (which has 4 fewer because of the "special" IRQ numbers 1020-1023).
 #define VGIC_LOW_RANGE_SIZE                                                    \
-	(count_t)((GIC_SPI_BASE + GIC_SPI_NUM + VGIC_LOW_RANGES - 1) /         \
+	(count_t)((GIC_SPI_BASE + GIC_SPI_NUM + VGIC_LOW_RANGES - 1U) /        \
 		  VGIC_LOW_RANGES)
 static_assert(util_is_p2(VGIC_LOW_RANGE_SIZE),
 	      "VGIC search ranges must have power-of-two sizes");
+static_assert(VGIC_LOW_RANGE_SIZE > GIC_SPECIAL_INTIDS_NUM,
+	      "VGIC search ranges must have size greater than 4");
+
+// The number of VIRQs in a specific low range, taking into account the special
+// IRQ numbers that immediately follow the SPIs.
+static count_t
+vgic_low_range_size(index_t range)
+{
+	return (range == (VGIC_LOW_RANGES - 1U))
+		       ? (VGIC_LOW_RANGE_SIZE - GIC_SPECIAL_INTIDS_NUM)
+		       : VGIC_LOW_RANGE_SIZE;
+}
 
 // Mark an unlisted interrupt as pending on a VCPU.
 //
@@ -918,7 +1147,7 @@ vgic_flag_locked(virq_t virq, thread_t *vcpu, uint8_t priority, bool group1,
 {
 	assert_preempt_disabled();
 
-	count_t priority_shifted = priority >> VGIC_PRIO_SHIFT;
+	count_t priority_shifted = (count_t)priority >> VGIC_PRIO_SHIFT;
 
 	bitmap_atomic_set(vcpu->vgic_search_ranges_low[priority_shifted],
 			  virq / VGIC_LOW_RANGE_SIZE, memory_order_release);
@@ -961,8 +1190,9 @@ vgic_flag_locked(virq_t virq, thread_t *vcpu, uint8_t priority, bool group1,
 // signalling is performed without having to acquire the LR lock.
 static void
 vgic_flag_unlocked(virq_t virq, thread_t *vcpu, uint8_t priority)
+	REQUIRE_PREEMPT_DISABLED
 {
-	count_t priority_shifted = priority >> VGIC_PRIO_SHIFT;
+	count_t priority_shifted = (count_t)priority >> VGIC_PRIO_SHIFT;
 
 	if (!bitmap_atomic_test_and_set(
 		    vcpu->vgic_search_ranges_low[priority_shifted],
@@ -986,9 +1216,9 @@ vgic_flag_unlocked(virq_t virq, thread_t *vcpu, uint8_t priority)
 					ipi_one(IPI_REASON_VGIC_DELIVER,
 						lr_owner);
 				} else {
-					scheduler_lock(vcpu);
+					scheduler_lock_nopreempt(vcpu);
 					vcpu_wakeup(vcpu);
-					scheduler_unlock(vcpu);
+					scheduler_unlock_nopreempt(vcpu);
 				}
 			}
 		}
@@ -1058,7 +1288,7 @@ vgic_route_1n_preference(vic_t *vic, thread_t *vcpu,
 	REQUIRE_SCHEDULER_LOCK(vcpu)
 {
 	vgic_route_preference_t ret	= VGIC_ROUTE_DENIED;
-	thread_t		 *current = thread_get_self();
+	thread_t	       *current = thread_get_self();
 
 	if (compiler_unexpected(!vgic_route_allowed(vic, vcpu, dstate))) {
 		ret = VGIC_ROUTE_DENIED;
@@ -1134,7 +1364,7 @@ vgic_wakeup_1n(vic_t *vic, bool class0, bool class1)
 	// We always start this search from the VCPU corresponding to the
 	// current physical CPU, to reduce the chances of waking a second
 	// physical CPU if the GIC has just chosen to wake this one.
-	count_t start_point = cpulocal_get_index();
+	count_t start_point = cpulocal_check_index(cpulocal_get_index_unsafe());
 	for (index_t i = 0U; i < vic->gicr_count; i++) {
 		cpu_index_t cpu =
 			(cpu_index_t)((i + start_point) % vic->gicr_count);
@@ -1200,7 +1430,7 @@ vgic_get_route_from_state(vic_t *vic, vgic_delivery_state_t dstate,
 	if (use_local_vcpu) {
 		// Assuming that any VM receiving physical 1-of-N IRQs has a
 		// 1:1 VCPU to PCPU mapping, start by checking the local VCPU.
-		start_point = cpulocal_get_index();
+		start_point = cpulocal_check_index(cpulocal_get_index_unsafe());
 	} else {
 		// Determine the starting point for VIRQ selection using
 		// round-robin, if we didn't get a hint from the physical GIC.
@@ -1228,7 +1458,8 @@ vgic_get_route_from_state(vic_t *vic, vgic_delivery_state_t dstate,
 			target = candidate;
 			VGIC_DEBUG_TRACE(ROUTE, vic, target,
 					 "route: {:d} immediate, checked {:d}",
-					 target->vgic_gicr_index, i + 1);
+					 target->vgic_gicr_index,
+					 ((register_t)i + 1U));
 			goto out;
 		}
 		if (candidate_pref > target_pref) {
@@ -1242,6 +1473,7 @@ vgic_get_route_from_state(vic_t *vic, vgic_delivery_state_t dstate,
 	// This should be unconditional, and everything beyond this point
 	// should be moved to after the VIRQ has been flagged as unrouted.
 	//
+	// FIXME:
 	if (compiler_expected(target != NULL)) {
 		VGIC_DEBUG_TRACE(ROUTE, vic, target, "route: {:d} best ({:d})",
 				 target->vgic_gicr_index,
@@ -1249,9 +1481,10 @@ vgic_get_route_from_state(vic_t *vic, vgic_delivery_state_t dstate,
 		goto out;
 	}
 
-	GICD_CTLR_DS_t gicd_ctlr = atomic_load_relaxed(&vic->gicd_ctlr);
+	GICD_CTLR_DS_t gicd_ctlr     = atomic_load_relaxed(&vic->gicd_ctlr);
+	bool	       trace_IsE1NWF = GICD_CTLR_DS_get_E1NWF(&gicd_ctlr);
 	VGIC_TRACE(ROUTE, vic, target, "route: none (E1NWF={:d})",
-		   GICD_CTLR_DS_get_E1NWF(&gicd_ctlr));
+		   (register_t)trace_IsE1NWF);
 
 out:
 	return target;
@@ -1301,6 +1534,7 @@ vgic_get_route_for_spi(vic_t *vic, virq_t virq, bool use_local_vcpu)
 static bool
 vgic_try_route_and_flag(vic_t *vic, virq_t virq,
 			vgic_delivery_state_t new_dstate, bool use_local_vcpu)
+	REQUIRE_PREEMPT_DISABLED
 {
 	rcu_read_start();
 	thread_t *target =
@@ -1321,16 +1555,109 @@ vgic_try_route_and_flag(vic_t *vic, virq_t virq,
 // failure, and triggers a 1-of-N wakeup.
 static void
 vgic_route_and_flag(vic_t *vic, virq_t virq, vgic_delivery_state_t new_dstate,
-		    bool use_local_vcpu)
+		    bool use_local_vcpu) REQUIRE_PREEMPT_DISABLED
 {
 	if (!vgic_try_route_and_flag(vic, virq, new_dstate, use_local_vcpu)) {
 		vgic_flag_unrouted(vic, virq);
 #if VGIC_HAS_1N
 		vgic_wakeup_1n(vic,
-			       !vgic_delivery_state_get_nclass0(&new_dstate),
-			       vgic_delivery_state_get_class1(&new_dstate));
+			       vgic_get_delivery_state_is_class0(&new_dstate),
+			       vgic_get_delivery_state_is_class1(&new_dstate));
 #endif
 	}
+}
+
+static vgic_delivery_state_t
+vgic_reclaim_update_level_src_and_hw(const vic_t *vic, const thread_t *vcpu,
+				     virq_t		    virq,
+				     vgic_delivery_state_t *old_dstate,
+				     bool lr_active, bool lr_hw,
+				     vgic_lr_status_t *status,
+				     virq_source_t    *source)
+	REQUIRE_PREEMPT_DISABLED
+{
+	bool lr_pending = (ICH_LR_EL2_base_get_State(&status->lr.base) ==
+			   ICH_LR_EL2_STATE_PENDING) ||
+			  (ICH_LR_EL2_base_get_State(&status->lr.base) ==
+			   ICH_LR_EL2_STATE_PENDING_ACTIVE);
+	vgic_delivery_state_t new_dstate;
+	bool		      need_deactivate;
+
+	do {
+		new_dstate	= *old_dstate;
+		need_deactivate = false;
+
+		vgic_delivery_state_set_active(&new_dstate, lr_active);
+		vgic_delivery_state_set_listed(&new_dstate, false);
+		vgic_delivery_state_set_need_sync(&new_dstate, false);
+		vgic_delivery_state_set_hw_detached(&new_dstate, false);
+		if (lr_pending) {
+			vgic_delivery_state_set_edge(&new_dstate, true);
+		}
+
+		// Update level_src and hw_active based on the LR state.
+		if (lr_hw && vgic_delivery_state_get_hw_active(old_dstate)) {
+			// If it's a hardware IRQ that has already been marked
+			// active somewhere else, we don't need to change its
+			// state beyond the abave. For this to happen, it must
+			// have been inactive in the LR already.
+			assert(!lr_pending && !lr_active);
+		} else if (lr_hw && lr_pending &&
+			   vgic_delivery_state_get_need_sync(old_dstate) &&
+			   !vgic_delivery_state_get_cfg_is_edge(old_dstate)) {
+			// If it's a pending hardware level-triggered interrupt
+			// that has been marked for sync, we clear its pending
+			// state and deactivate it early to force the hardware
+			// to re-check it (and possibly re-route it in 1-of-N
+			// mode).
+			vgic_delivery_state_set_level_src(&new_dstate, false);
+			need_deactivate = true;
+		} else if (lr_hw && (lr_pending || lr_active)) {
+			// If it's a pending or active hardware IRQ, we must
+			// re-set hw_active, and clear level_src if it has
+			// been acknowledged.
+			vgic_delivery_state_set_hw_active(&new_dstate, true);
+			if (!lr_pending) {
+				vgic_delivery_state_set_level_src(&new_dstate,
+								  false);
+			}
+		} else if (lr_hw) {
+			// If it's a hardware IRQ that was deactivated directly,
+			// reset level_src to the old hw_active (which preserves
+			// any remote assertion).
+			vgic_delivery_state_set_level_src(
+				&new_dstate,
+				vgic_delivery_state_get_hw_active(old_dstate));
+		} else if (vgic_delivery_state_get_level_src(old_dstate)) {
+			// It's a software IRQ with level_src set; call the
+			// source to check whether it's still pending, and order
+			// the check_pending event after the dstate read.
+			if (!vgic_virq_check_pending(
+				    source,
+				    vgic_delivery_state_get_edge(old_dstate))) {
+				vgic_delivery_state_set_level_src(&new_dstate,
+								  false);
+			}
+		} else {
+			// Software IRQ with level_src clear; nothing to do.
+		}
+	} while (!atomic_compare_exchange_strong_explicit(
+		status->dstate, old_dstate, new_dstate, memory_order_relaxed,
+		memory_order_relaxed));
+
+	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu, "reclaim_lr {:d}: {:#x} -> {:#x}",
+		   virq, vgic_delivery_state_raw(*old_dstate),
+		   vgic_delivery_state_raw(new_dstate));
+
+	if (need_deactivate) {
+		VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
+			   "reclaim_lr {:d}: deactivate HW IRQ {:d}",
+			   ICH_LR_EL2_HW1_get_vINTID(&status->lr.hw),
+			   ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw));
+		gicv3_irq_deactivate(ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw));
+	}
+
+	return new_dstate;
 }
 
 // Clear out a VIRQ from a specified LR and flag it to be delivered later.
@@ -1362,17 +1689,20 @@ vgic_reclaim_lr(vic_t *vic, thread_t *vcpu, index_t lr, bool reroute)
 		vgic_read_lr_state(lr);
 	}
 
-	virq_t virq	  = ICH_LR_EL2_base_get_vINTID(&status->lr.base);
-	bool   lr_hw	  = ICH_LR_EL2_base_get_HW(&status->lr.base);
-	bool   lr_pending = (ICH_LR_EL2_base_get_State(&status->lr.base) ==
-			     ICH_LR_EL2_STATE_PENDING) ||
-			  (ICH_LR_EL2_base_get_State(&status->lr.base) ==
-			   ICH_LR_EL2_STATE_PENDING_ACTIVE);
-	bool lr_active = (ICH_LR_EL2_base_get_State(&status->lr.base) ==
-			  ICH_LR_EL2_STATE_ACTIVE) ||
+	virq_t virq	 = ICH_LR_EL2_base_get_vINTID(&status->lr.base);
+	bool   lr_hw	 = ICH_LR_EL2_base_get_HW(&status->lr.base);
+	bool   lr_active = (ICH_LR_EL2_base_get_State(&status->lr.base) ==
+			    ICH_LR_EL2_STATE_ACTIVE) ||
 			 (ICH_LR_EL2_base_get_State(&status->lr.base) ==
 			  ICH_LR_EL2_STATE_PENDING_ACTIVE);
 
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	if (vic->vsgis_enabled &&
+	    (vgic_get_irq_type(virq) == VGIC_IRQ_TYPE_SGI)) {
+		// vSGIs have no active state.
+		lr_active = false;
+	}
+#endif
 
 	if (lr_active) {
 		index_t i = vcpu->vgic_active_unlisted_count % VGIC_PRIORITIES;
@@ -1380,87 +1710,11 @@ vgic_reclaim_lr(vic_t *vic, thread_t *vcpu, index_t lr, bool reroute)
 		vcpu->vgic_active_unlisted_count++;
 	}
 
-	virq_source_t	      *source	 = vgic_find_source(vic, vcpu, virq);
+	virq_source_t	     *source	 = vgic_find_source(vic, vcpu, virq);
 	vgic_delivery_state_t old_dstate = atomic_load_relaxed(status->dstate);
 
-	vgic_delivery_state_t new_dstate;
-	bool		      need_deactivate;
-
-	do {
-		new_dstate	= old_dstate;
-		need_deactivate = false;
-
-		vgic_delivery_state_set_active(&new_dstate, lr_active);
-		vgic_delivery_state_set_listed(&new_dstate, false);
-		vgic_delivery_state_set_need_sync(&new_dstate, false);
-		vgic_delivery_state_set_hw_detached(&new_dstate, false);
-		if (lr_pending) {
-			vgic_delivery_state_set_edge(&new_dstate, true);
-		}
-
-		// Update level_src and hw_active based on the LR state.
-		if (lr_hw && vgic_delivery_state_get_hw_active(&old_dstate)) {
-			// If it's a hardware IRQ that has already been marked
-			// active somewhere else, we don't need to change its
-			// state beyond the abave. For this to happen, it must
-			// have been inactive in the LR already.
-			assert(!lr_pending && !lr_active);
-		} else if (lr_hw && lr_pending &&
-			   vgic_delivery_state_get_need_sync(&old_dstate) &&
-			   !vgic_delivery_state_get_cfg_is_edge(&old_dstate)) {
-			// If it's a pending hardware level-triggered interrupt
-			// that has been marked for sync, we clear its pending
-			// state and deactivate it early to force the hardware
-			// to re-check it (and possibly re-route it in 1-of-N
-			// mode).
-			vgic_delivery_state_set_level_src(&new_dstate, false);
-			need_deactivate = true;
-		} else if (lr_hw && (lr_pending || lr_active)) {
-			// If it's a pending or active hardware IRQ, we must
-			// re-set hw_active, and clear level_src if it has
-			// been acknowledged.
-			vgic_delivery_state_set_hw_active(&new_dstate, true);
-			if (!lr_pending) {
-				vgic_delivery_state_set_level_src(&new_dstate,
-								  false);
-			}
-		} else if (lr_hw) {
-			// If it's a hardware IRQ that was deactivated directly,
-			// reset level_src to the old hw_active (which preserves
-			// any remote assertion).
-			vgic_delivery_state_set_level_src(
-				&new_dstate,
-				vgic_delivery_state_get_hw_active(&old_dstate));
-		} else if (vgic_delivery_state_get_level_src(&old_dstate)) {
-			// It's a software IRQ with level_src set; call the
-			// source to check whether it's still pending, and order
-			// the check_pending event after the dstate read.
-			atomic_thread_fence(memory_order_acquire);
-			if (compiler_unexpected(source == NULL) ||
-			    !trigger_virq_check_pending_event(
-				    source->trigger, source,
-				    vgic_delivery_state_get_edge(&old_dstate))) {
-				vgic_delivery_state_set_level_src(&new_dstate,
-								  false);
-			}
-		} else {
-			// Software IRQ with level_src clear; nothing to do.
-		}
-	} while (!atomic_compare_exchange_strong_explicit(
-		status->dstate, &old_dstate, new_dstate, memory_order_relaxed,
-		memory_order_relaxed));
-
-	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu, "reclaim_lr {:d}: {:#x} -> {:#x}",
-		   virq, vgic_delivery_state_raw(old_dstate),
-		   vgic_delivery_state_raw(new_dstate));
-
-	if (need_deactivate) {
-		VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
-			   "reclaim_lr {:d}: deactivate HW IRQ {:d}",
-			   ICH_LR_EL2_HW1_get_vINTID(&status->lr.hw),
-			   ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw));
-		gicv3_irq_deactivate(ICH_LR_EL2_HW1_get_pINTID(&status->lr.hw));
-	}
+	vgic_delivery_state_t new_dstate = vgic_reclaim_update_level_src_and_hw(
+		vic, vcpu, virq, &old_dstate, lr_active, lr_hw, status, source);
 
 #if VGIC_HAS_1N
 	if (lr_hw && vgic_delivery_state_get_route_1n(&new_dstate)) {
@@ -1493,6 +1747,274 @@ vgic_reclaim_lr(vic_t *vic, thread_t *vcpu, index_t lr, bool reroute)
 
 static bool
 vgic_sync_vcpu(thread_t *vcpu, bool hw_access);
+
+static void
+vgic_list_irq(vgic_delivery_state_t new_dstate, index_t lr, bool is_hw,
+	      uint8_t priority, _Atomic vgic_delivery_state_t *dstate,
+	      virq_t virq, vic_t *vic, thread_t *vcpu, virq_source_t *source,
+	      bool to_self) REQUIRE_LOCK(vcpu->vgic_lr_owner_lock)
+	REQUIRE_PREEMPT_DISABLED
+{
+	assert(vgic_delivery_state_get_listed(&new_dstate));
+	assert_debug(lr < CPU_GICH_LR_COUNT);
+
+	vgic_lr_status_t *status = &vcpu->vgic_lrs[lr];
+	if (status->dstate != NULL) {
+		vgic_reclaim_lr(vic, vcpu, lr, false);
+		assert(status->dstate == NULL);
+	}
+
+	status->dstate = dstate;
+	ICH_LR_EL2_base_set_HW(&status->lr.base, is_hw);
+	if (is_hw) {
+		ICH_LR_EL2_HW1_set_pINTID(&status->lr.hw,
+					  hwirq_from_virq_source(source)->irq);
+	} else {
+		ICH_LR_EL2_HW0_set_EOI(
+			&status->lr.sw,
+			!vgic_delivery_state_get_cfg_is_edge(&new_dstate) &&
+				vgic_delivery_state_is_level_asserted(
+					&new_dstate));
+	}
+	ICH_LR_EL2_base_set_vINTID(&status->lr.base, virq);
+	ICH_LR_EL2_base_set_Priority(&status->lr.base, priority);
+	ICH_LR_EL2_base_set_Group(&status->lr.base,
+				  vgic_delivery_state_get_group1(&new_dstate));
+	ICH_LR_EL2_base_set_State(&status->lr.base, ICH_LR_EL2_STATE_PENDING);
+
+	if (to_self) {
+		vgic_write_lr(lr);
+	}
+}
+
+typedef struct {
+	bool need_wakeup;
+	bool need_sync_all;
+} vgic_deliver_list_or_flag_info_t;
+
+static vgic_deliver_list_or_flag_info_t
+vgic_deliver_list_or_flag(vic_t *vic, thread_t *vcpu, virq_source_t *source,
+			  vgic_delivery_state_t old_dstate,
+			  vgic_delivery_state_t new_dstate, index_result_t lr_r,
+			  _Atomic vgic_delivery_state_t *dstate, virq_t virq,
+			  cpu_index_t remote_cpu, uint8_t lr_priority,
+			  bool is_private, bool to_self, bool is_hw,
+			  uint8_t priority, bool pending, bool enabled,
+			  bool route_valid)
+	REQUIRE_LOCK(vcpu->vgic_lr_owner_lock) REQUIRE_PREEMPT_DISABLED
+{
+	bool need_wakeup   = true;
+	bool need_sync_all = false;
+
+	assert(vcpu != NULL);
+	thread_t *target = vcpu;
+
+	if (!pending) {
+		// Not pending; nothing more to do.
+		need_wakeup = false;
+	} else if (vgic_delivery_state_get_listed(&old_dstate)) {
+		// IRQ is already listed remotely; send a sync IPI.
+		assert(vgic_delivery_state_get_need_sync(&new_dstate));
+		if (!is_private) {
+			need_sync_all = true;
+			need_wakeup   = false;
+		} else if (cpulocal_index_valid(remote_cpu)) {
+			ipi_one(IPI_REASON_VGIC_SYNC, remote_cpu);
+		} else {
+			TRACE(DEBUG, INFO,
+			      "vgic sync after failed redeliver of {:#x}: dstate {:#x} -> {:#x}",
+			      virq, vgic_delivery_state_raw(old_dstate),
+			      vgic_delivery_state_raw(new_dstate));
+
+			(void)vgic_sync_vcpu(target, to_self);
+		}
+	} else if (!enabled) {
+		// Not enabled; nothing more to do.
+		need_wakeup = false;
+	} else if (!route_valid) {
+		// The route became invalid after it was selected. Try to
+		// re-route and flag it, and if that fails, flag it as unrouted.
+		// This function issues a wakeup, so we don't need to do it
+		// below.
+		vgic_route_and_flag(vic, virq, new_dstate, false);
+		need_wakeup = false;
+	} else if ((lr_r.e == OK) && (priority < lr_priority)) {
+		// List the IRQ immediately.
+		vgic_list_irq(new_dstate, lr_r.r, is_hw, priority, dstate, virq,
+			      vic, vcpu, source, to_self);
+	} else {
+		assert(route_valid);
+		// We have a valid route, but can't immediately list; set the
+		// search flags in the target VCPU so it finds this VIRQ next
+		// time it goes looking for something to deliver. A delivery IPI
+		// is sent if the target is currently running.
+		vgic_flag_locked(virq, target, priority,
+				 vgic_delivery_state_get_group1(&new_dstate),
+				 remote_cpu);
+	}
+
+	return (vgic_deliver_list_or_flag_info_t){
+		.need_wakeup   = need_wakeup,
+		.need_sync_all = need_sync_all,
+	};
+}
+
+typedef struct {
+	vgic_delivery_state_t new_dstate;
+	vgic_delivery_state_t old_dstate;
+	bool		      need_wakeup;
+	bool		      need_sync_all;
+	uint8_t		      pad[2];
+} vgic_deliver_info_t;
+
+static vgic_deliver_info_t
+vgic_deliver_update_state(virq_t virq, vgic_delivery_state_t prev_dstate,
+			  vgic_delivery_state_t		 assert_dstate,
+			  _Atomic vgic_delivery_state_t *dstate, vic_t *vic,
+			  thread_t *vcpu, cpu_index_t remote_cpu,
+			  virq_source_t *source, bool is_private, bool to_self)
+	REQUIRE_LOCK(vcpu->vgic_lr_owner_lock) REQUIRE_PREEMPT_DISABLED
+{
+	// Keep track of the LR allocated for delivery (if any) and the priority
+	// of the VIRQ currently in it (if any).
+	index_result_t lr_r = index_result_error(ERROR_BUSY);
+	uint8_t	       priority;
+	uint8_t	       lr_priority	= GIC_PRIORITY_LOWEST;
+	uint8_t	       checked_priority = GIC_PRIORITY_LOWEST;
+	bool	       pending;
+	bool	       enabled;
+	bool	       route_valid;
+	bool	       is_hw;
+
+	// Clarify for the static analyser that we have not allocated an LR yet
+	// at this point.
+	assert(lr_r.e != OK);
+
+	vgic_delivery_state_t new_dstate;
+	vgic_delivery_state_t old_dstate    = prev_dstate;
+	bool		      need_wakeup   = true;
+	bool		      need_sync_all = false;
+
+	do {
+		new_dstate =
+			vgic_delivery_state_union(old_dstate, assert_dstate);
+		is_hw	 = vgic_delivery_state_get_hw_active(&new_dstate);
+		priority = vgic_delivery_state_get_priority(&new_dstate);
+
+		pending	    = vgic_delivery_state_is_pending(&new_dstate);
+		enabled	    = vgic_delivery_state_get_enabled(&new_dstate);
+		route_valid = (vcpu != NULL) &&
+			      vgic_route_allowed(vic, vcpu, new_dstate);
+
+		if (vgic_delivery_state_get_listed(&old_dstate)) {
+			// Already listed (and not redelivered locally, above);
+			// just request a sync.
+			vgic_delivery_state_set_need_sync(&new_dstate, true);
+			continue;
+		}
+
+		if (!route_valid || !pending || !enabled ||
+		    vgic_delivery_state_get_active(&old_dstate)) {
+			// Can't deliver; just update the delivery state.
+			continue;
+		}
+
+		// Try to allocate an LR, unless we have already done so at a
+		// priority no lower than the current one.
+		if ((lr_r.e != OK) && (priority < checked_priority) &&
+		    !cpulocal_index_valid(remote_cpu)) {
+			lr_r = vgic_select_lr(vcpu, priority, &lr_priority);
+			checked_priority = priority;
+		}
+
+		if ((lr_r.e == OK) && (priority < lr_priority)) {
+			// We're newly listing the IRQ.
+			vgic_delivery_state_set_listed(&new_dstate, true);
+			vgic_delivery_state_set_edge(&new_dstate, false);
+			vgic_delivery_state_set_hw_active(&new_dstate, false);
+		}
+	} while (!atomic_compare_exchange_strong_explicit(
+		dstate, &old_dstate, new_dstate, memory_order_relaxed,
+		memory_order_relaxed));
+
+	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu, "deliver {:d}: {:#x} -> {:#x}",
+		   virq, vgic_delivery_state_raw(old_dstate),
+		   vgic_delivery_state_raw(new_dstate));
+
+	if (vcpu == NULL) {
+		// VIRQ is unrouted. Flag it in the shared search bitmap.
+		if (pending && enabled) {
+			vgic_flag_unrouted(vic, virq);
+#if VGIC_HAS_1N
+			// If this is a 1-of-N VIRQ, we might need to pick a
+			// VCPU to wake (if E1NWF is enabled).
+			need_wakeup =
+				vgic_delivery_state_get_route_1n(&new_dstate);
+#else
+			// There is no VCPU to wake.
+			need_wakeup = false;
+#endif
+		} else {
+			need_wakeup = false;
+		}
+
+		goto out;
+	}
+
+	vgic_deliver_list_or_flag_info_t info = vgic_deliver_list_or_flag(
+		vic, vcpu, source, old_dstate, new_dstate, lr_r, dstate, virq,
+		remote_cpu, lr_priority, is_private, to_self, is_hw, priority,
+		pending, enabled, route_valid);
+
+	need_wakeup   = info.need_wakeup;
+	need_sync_all = info.need_sync_all;
+
+out:
+	return (vgic_deliver_info_t){
+		.new_dstate    = new_dstate,
+		.old_dstate    = old_dstate,
+		.need_wakeup   = need_wakeup,
+		.need_sync_all = need_sync_all,
+	};
+}
+
+static void
+vgic_deliver_update_spi_route(vgic_delivery_state_t assert_dstate,
+			      vgic_delivery_state_t old_dstate,
+			      const vic_t *vic, const thread_t *vcpu,
+			      cpu_index_t remote_cpu, virq_source_t *source)
+{
+	if (vgic_delivery_state_get_hw_active(&assert_dstate)) {
+#if VGIC_HAS_1N
+		if (vgic_delivery_state_get_route_1n(&old_dstate) &&
+		    (vcpu != NULL)) {
+			// Make the IRQ stick to the physical CPU that is
+			// handling it, until it is delisted. This is because a
+			// delivery on another CPU while it is still listed
+			// will require a sync IPI to delist it first.
+			hwirq_t *hwirq = hwirq_from_virq_source(source);
+			(void)gicv3_spi_set_route(hwirq->irq,
+						  vcpu->vgic_irouter);
+		} else
+#else
+		(void)old_dstate;
+#endif
+			if (cpulocal_index_valid(remote_cpu)) {
+			assert(vcpu != NULL);
+			// IRQ was HW-delivered to the wrong CPU, probably
+			// because the VCPU was migrated. Update the route.
+			hwirq_t *hwirq = hwirq_from_virq_source(source);
+			(void)gicv3_spi_set_route(hwirq->irq,
+						  vcpu->vgic_irouter);
+
+			VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
+				   "lazy reroute {:d}: to cpu {:d}", hwirq->irq,
+				   remote_cpu);
+		} else {
+			// Directly routed to the correct CPU; do nothing
+		}
+	}
+}
 
 // Try to deliver a VIRQ to a specified target for a specified reason.
 //
@@ -1564,191 +2086,18 @@ vgic_deliver(virq_t virq, vic_t *vic, thread_t *vcpu, virq_source_t *source,
 
 	// If this is a physical SPI assertion, we may need to update the route
 	// of the physical SPI.
-	if (vgic_delivery_state_get_hw_active(&assert_dstate)) {
-#if VGIC_HAS_1N
-		if (vgic_delivery_state_get_route_1n(&old_dstate) &&
-		    (vcpu != NULL)) {
-			// Make the IRQ stick to the physical CPU that is
-			// handling it, until it is delisted. This is because a
-			// delivery on another CPU while it is still listed will
-			// require a sync IPI to delist it first.
-			hwirq_t *hwirq = hwirq_from_virq_source(source);
-			gicv3_spi_set_route(hwirq->irq, vcpu->vgic_irouter);
-		} else
-#endif
-			if (cpulocal_index_valid(remote_cpu)) {
-			assert(vcpu != NULL);
-			// IRQ was HW-delivered to the wrong CPU, probably
-			// because the VCPU was migrated. Update the route.
-			hwirq_t *hwirq = hwirq_from_virq_source(source);
-			gicv3_spi_set_route(hwirq->irq, vcpu->vgic_irouter);
+	vgic_deliver_update_spi_route(assert_dstate, old_dstate, vic, vcpu,
+				      remote_cpu, source);
 
-			VGIC_TRACE(HWSTATE_CHANGED, vic, vcpu,
-				   "lazy reroute {:d}: to cpu {:d}", hwirq->irq,
-				   remote_cpu);
-		} else {
-			// Directly routed to the correct CPU; do nothing
-		}
-	}
+	// Update the dstate and deliver the interrupt
+	vgic_deliver_info_t vgic_deliver_info = vgic_deliver_update_state(
+		virq, old_dstate, assert_dstate, dstate, vic, vcpu, remote_cpu,
+		source, is_private, to_self);
 
-	// Keep track of the LR allocated for delivery (if any) and the priority
-	// of the VIRQ currently in it (if any).
-	index_result_t lr_r = index_result_error(ERROR_BUSY);
-	uint8_t	       priority;
-	uint8_t	       lr_priority	= GIC_PRIORITY_LOWEST;
-	uint8_t	       checked_priority = GIC_PRIORITY_LOWEST;
-	bool	       pending;
-	bool	       enabled;
-	bool	       route_valid;
-	bool	       is_hw;
-
-	// Clarify for the static analyser that we have not allocated an LR yet
-	// at this point.
-	assert(lr_r.e != OK);
-
-	do {
-		new_dstate =
-			vgic_delivery_state_union(old_dstate, assert_dstate);
-		is_hw	 = vgic_delivery_state_get_hw_active(&new_dstate);
-		priority = vgic_delivery_state_get_priority(&new_dstate);
-
-		pending	    = vgic_delivery_state_is_pending(&new_dstate);
-		enabled	    = vgic_delivery_state_get_enabled(&new_dstate);
-		route_valid = (vcpu != NULL) &&
-			      vgic_route_allowed(vic, vcpu, new_dstate);
-
-		if (vgic_delivery_state_get_listed(&old_dstate)) {
-			// Already listed (and not redelivered locally, above);
-			// just request a sync.
-			vgic_delivery_state_set_need_sync(&new_dstate, true);
-			continue;
-		}
-
-		if (!route_valid || !pending || !enabled ||
-		    vgic_delivery_state_get_active(&old_dstate)) {
-			// Can't deliver; just update the delivery state.
-			continue;
-		}
-
-		// Try to allocate an LR, unless we have already done so at a
-		// priority no lower than the current one.
-		if ((lr_r.e != OK) && (priority < checked_priority) &&
-		    !cpulocal_index_valid(remote_cpu)) {
-			lr_r = vgic_select_lr(vcpu, priority, &lr_priority);
-			checked_priority = priority;
-		}
-
-		if ((lr_r.e == OK) && (priority < lr_priority)) {
-			// We're newly listing the IRQ.
-			vgic_delivery_state_set_listed(&new_dstate, true);
-			vgic_delivery_state_set_edge(&new_dstate, false);
-			vgic_delivery_state_set_hw_active(&new_dstate, false);
-		}
-	} while (!atomic_compare_exchange_strong_explicit(
-		dstate, &old_dstate, new_dstate, memory_order_relaxed,
-		memory_order_relaxed));
-
-	VGIC_TRACE(DSTATE_CHANGED, vic, vcpu, "deliver {:d}: {:#x} -> {:#x}",
-		   virq, vgic_delivery_state_raw(old_dstate),
-		   vgic_delivery_state_raw(new_dstate));
-
-	if (vcpu == NULL) {
-		// VIRQ is unrouted. Flag it in the shared search bitmap.
-		if (pending && enabled) {
-			vgic_flag_unrouted(vic, virq);
-#if VGIC_HAS_1N
-			// If this is a 1-of-N VIRQ, we might need to pick a
-			// VCPU to wake (if E1NWF is enabled).
-			need_wakeup =
-				vgic_delivery_state_get_route_1n(&new_dstate);
-#else
-			// There is no VCPU to wake.
-			need_wakeup = false;
-#endif
-		} else {
-			need_wakeup = false;
-		}
-
-		goto out;
-	}
-
-	assert(vcpu != NULL);
-	thread_t *target = vcpu;
-
-	if (!pending) {
-		// Not pending; nothing more to do.
-		need_wakeup = false;
-	} else if (vgic_delivery_state_get_listed(&old_dstate)) {
-		// IRQ is already listed remotely; send a sync IPI.
-		assert(vgic_delivery_state_get_need_sync(&new_dstate));
-		if (!is_private) {
-			need_sync_all = true;
-			need_wakeup   = false;
-		} else if (cpulocal_index_valid(remote_cpu)) {
-			ipi_one(IPI_REASON_VGIC_SYNC, remote_cpu);
-		} else {
-			TRACE(DEBUG, INFO,
-			      "vgic sync after failed redeliver of {:#x}: dstate {:#x} -> {:#x}",
-			      virq, vgic_delivery_state_raw(old_dstate),
-			      vgic_delivery_state_raw(new_dstate));
-
-			vgic_sync_vcpu(target, to_self);
-		}
-	} else if (!enabled) {
-		// Not enabled; nothing more to do.
-		need_wakeup = false;
-	} else if (!route_valid) {
-		// The route became invalid after it was selected. Try to
-		// re-route and flag it, and if that fails, flag it as unrouted.
-		// This function issues a wakeup, so we don't need to do it
-		// below.
-		vgic_route_and_flag(vic, virq, new_dstate, false);
-		need_wakeup = false;
-	} else if ((lr_r.e == OK) && (priority < lr_priority)) {
-		// List the IRQ immediately.
-		assert(vgic_delivery_state_get_listed(&new_dstate));
-
-		vgic_lr_status_t *status = &vcpu->vgic_lrs[lr_r.r];
-		if (status->dstate != NULL) {
-			vgic_reclaim_lr(vic, vcpu, lr_r.r, false);
-			assert(status->dstate == NULL);
-		}
-
-		status->dstate = dstate;
-		ICH_LR_EL2_base_set_HW(&status->lr.base, is_hw);
-		if (is_hw) {
-			ICH_LR_EL2_HW1_set_pINTID(
-				&status->lr.hw,
-				hwirq_from_virq_source(source)->irq);
-		} else {
-			ICH_LR_EL2_HW0_set_EOI(
-				&status->lr.sw,
-				!vgic_delivery_state_get_cfg_is_edge(
-					&new_dstate) &&
-					vgic_delivery_state_is_level_asserted(
-						&new_dstate));
-		}
-		ICH_LR_EL2_base_set_vINTID(&status->lr.base, virq);
-		ICH_LR_EL2_base_set_Priority(&status->lr.base, priority);
-		ICH_LR_EL2_base_set_Group(
-			&status->lr.base,
-			vgic_delivery_state_get_group1(&new_dstate));
-		ICH_LR_EL2_base_set_State(&status->lr.base,
-					  ICH_LR_EL2_STATE_PENDING);
-
-		if (to_self) {
-			vgic_write_lr(lr_r.r);
-		}
-	} else {
-		assert(route_valid);
-		// We have a valid route, but can't immediately list; set the
-		// search flags in the target VCPU so it finds this VIRQ next
-		// time it goes looking for something to deliver. A delivery IPI
-		// is sent if the target is currently running.
-		vgic_flag_locked(virq, target, priority,
-				 vgic_delivery_state_get_group1(&new_dstate),
-				 remote_cpu);
-	}
+	new_dstate    = vgic_deliver_info.new_dstate;
+	old_dstate    = vgic_deliver_info.old_dstate;
+	need_wakeup   = vgic_deliver_info.need_wakeup;
+	need_sync_all = vgic_deliver_info.need_sync_all;
 
 out:
 	vgic_lr_owner_unlock(vcpu);
@@ -1764,8 +2113,8 @@ out:
 #if VGIC_HAS_1N
 			vgic_wakeup_1n(
 				vic,
-				!vgic_delivery_state_get_nclass0(&new_dstate),
-				vgic_delivery_state_get_class1(&new_dstate));
+				vgic_get_delivery_state_is_class0(&new_dstate),
+				vgic_get_delivery_state_is_class1(&new_dstate));
 #else
 			// VIRQ is unrouted; there is no VCPU we can wake.
 			assert(!need_wakeup);
@@ -1832,7 +2181,7 @@ vgic_update_enables(vic_t *vic, GICD_CTLR_DS_t gicd_ctlr)
 	rcu_read_start();
 
 	for (index_t i = 0; i < vic->gicr_count; i++) {
-		thread_t	 *vcpu     = atomic_load_consume(&vic->gicr_vcpus[i]);
+		thread_t   *vcpu     = atomic_load_consume(&vic->gicr_vcpus[i]);
 		cpu_index_t lr_owner = vgic_lr_owner_lock_nopreempt(vcpu);
 		if (thread_get_self() == vcpu) {
 			if (vgic_gicr_update_group_enables(vic, vcpu,
@@ -1964,7 +2313,7 @@ vgic_handle_eoi_lr(vic_t *vic, thread_t *vcpu, index_t lr)
 	REQUIRE_PREEMPT_DISABLED
 {
 	assert(thread_get_self() == vcpu);
-	assert(lr < CPU_GICH_LR_COUNT);
+	assert_debug(lr < CPU_GICH_LR_COUNT);
 
 	// The specified LR should have a software delivery listed in it
 	vgic_lr_status_t *status = &vcpu->vgic_lrs[lr];
@@ -1986,8 +2335,6 @@ vgic_handle_eoi_lr(vic_t *vic, thread_t *vcpu, index_t lr)
 		// If level_src is set, check that the source is still pending
 		// before we set the LR state back to pending.
 		if (vgic_delivery_state_get_level_src(&old_dstate)) {
-			// Order the check_pending event after the dstate read.
-			atomic_thread_fence(memory_order_acquire);
 			// If the source is a physical SPI, assume it is no
 			// longer pending. If it is, then the deactivation below
 			// will reassert it. Note that this is different to the
@@ -1998,11 +2345,9 @@ vgic_handle_eoi_lr(vic_t *vic, thread_t *vcpu, index_t lr)
 			     VIRQ_TRIGGER_VGIC_FORWARDED_SPI)) {
 				vgic_delivery_state_set_level_src(&new_dstate,
 								  false);
-			} else if (compiler_unexpected(source == NULL) ||
-				   !trigger_virq_check_pending_event(
-					   source->trigger, source,
-					   vgic_delivery_state_get_edge(
-						   &new_dstate))) {
+			} else if (!vgic_virq_check_pending(
+					   source, vgic_delivery_state_get_edge(
+							   &new_dstate))) {
 				vgic_delivery_state_set_level_src(&new_dstate,
 								  false);
 			} else {
@@ -2119,7 +2464,8 @@ vgic_deactivate(vic_t *vic, thread_t *vcpu, virq_t virq,
 
 		if (local_listed) {
 			// Nobody else should delist the IRQ from under us.
-			assert(vgic_delivery_state_get_listed(&old_dstate));
+			assert(vgic_delivery_state_get_listed(&old_dstate) ==
+			       true);
 			vgic_delivery_state_set_listed(&new_dstate, false);
 			vgic_delivery_state_set_need_sync(&new_dstate, false);
 			vgic_delivery_state_set_hw_detached(&new_dstate, false);
@@ -2132,11 +2478,21 @@ vgic_deactivate(vic_t *vic, thread_t *vcpu, virq_t virq,
 				// already. It must have been deactivated some
 				// other way, e.g. by a previous ICACTIVE write,
 				// so we have nothing to do here.
+				VGIC_TRACE(
+					DSTATE_CHANGED, vic, vcpu,
+					"deactivate {:d}: already listed {:#x}",
+					virq,
+					vgic_delivery_state_raw(old_dstate));
 				goto out;
 			}
 			if (!vgic_delivery_state_get_active(&old_dstate)) {
 				// Interrupt is already inactive; we have
 				// nothing to do.
+				VGIC_TRACE(
+					DSTATE_CHANGED, vic, vcpu,
+					"deactivate {:d}: already inactive {:#x}",
+					virq,
+					vgic_delivery_state_raw(old_dstate));
 				goto out;
 			}
 			assert(!set_edge && !hw_active);
@@ -2155,12 +2511,9 @@ vgic_deactivate(vic_t *vic, thread_t *vcpu, virq_t virq,
 		// If level_src is set, check that the source is still pending
 		// before we try to deliver it.
 		if (vgic_delivery_state_get_level_src(&old_dstate)) {
-			// Order the check_pending event after the dstate read.
-			atomic_thread_fence(memory_order_acquire);
-			if (compiler_unexpected(source == NULL) ||
-			    !trigger_virq_check_pending_event(
-				    source->trigger, source,
-				    vgic_delivery_state_get_edge(&new_dstate))) {
+			if (!vgic_virq_check_pending(
+				    source, vgic_delivery_state_get_edge(
+						    &new_dstate))) {
 				vgic_delivery_state_set_level_src(&new_dstate,
 								  false);
 			}
@@ -2216,6 +2569,9 @@ vgic_deactivate_unlisted(vic_t *vic, thread_t *vcpu, virq_t virq)
 	if (vgic_delivery_state_get_listed(&old_dstate)) {
 		// Somebody else must have deactivated it already, so ignore the
 		// deactivate.
+		VGIC_TRACE(DSTATE_CHANGED, vic, vcpu,
+			   "deactivate {:d}: already re-listed ({:#x})", virq,
+			   vgic_delivery_state_raw(old_dstate));
 	} else {
 		vgic_deactivate(vic, vcpu, virq, dstate, old_dstate, false,
 				false);
@@ -2362,7 +2718,7 @@ vgic_find_pending_and_list(vic_t *vic, thread_t *vcpu, uint8_t priority_mask,
 	REQUIRE_PREEMPT_DISABLED
 {
 	bool	listed		= false;
-	index_t prio_mask_index = priority_mask >> VGIC_PRIO_SHIFT;
+	index_t prio_mask_index = (index_t)priority_mask >> VGIC_PRIO_SHIFT;
 
 	_Atomic BITMAP_DECLARE_PTR(VGIC_PRIORITIES, prios) =
 		&vcpu->vgic_search_prios;
@@ -2374,6 +2730,9 @@ vgic_find_pending_and_list(vic_t *vic, thread_t *vcpu, uint8_t priority_mask,
 
 		bool	reset_prio = false;
 		uint8_t priority   = (uint8_t)(prio_index << VGIC_PRIO_SHIFT);
+#if !GICV3_HAS_VLPI && VGIC_HAS_LPI
+#error lpi search ranges not implemented
+#endif
 		_Atomic BITMAP_DECLARE_PTR(VGIC_LOW_RANGES, ranges) =
 			&vcpu->vgic_search_ranges_low[prio_index];
 		BITMAP_ATOMIC_FOREACH_SET_BEGIN(range, *ranges, VGIC_LOW_RANGES)
@@ -2383,7 +2742,8 @@ vgic_find_pending_and_list(vic_t *vic, thread_t *vcpu, uint8_t priority_mask,
 			}
 
 			bool reset_range = false;
-			for (index_t i = 0; i < VGIC_LOW_RANGE_SIZE; i++) {
+			for (index_t i = 0; i < vgic_low_range_size(range);
+			     i++) {
 				virq_t virq =
 					(virq_t)((range * VGIC_LOW_RANGE_SIZE) +
 						 i);
@@ -2396,6 +2756,8 @@ vgic_find_pending_and_list(vic_t *vic, thread_t *vcpu, uint8_t priority_mask,
 				} else if (err == ERROR_DENIED) {
 					reset_range = true;
 					reset_prio  = true;
+				} else {
+					// Unable to list
 				}
 			}
 
@@ -2444,9 +2806,10 @@ vgic_handle_irq_received_maintenance(void)
 	assert_preempt_disabled();
 
 	thread_t *vcpu = thread_get_self();
-	vic_t    *vic  = vcpu->vgic_vic;
+	vic_t	 *vic  = vcpu->vgic_vic;
 
-	if ((vcpu->kind != THREAD_KIND_VCPU) || (vic == NULL)) {
+	if (compiler_unexpected((vcpu->kind != THREAD_KIND_VCPU) ||
+				(vic == NULL))) {
 		// Spurious IRQ; this can happen if a maintenance interrupt
 		// is asserted shortly before a context switch, and the GICR
 		// hasn't yet that it is no longer asserted by the time we
@@ -2487,18 +2850,29 @@ vgic_handle_irq_received_maintenance(void)
 		register_ICH_HCR_EL2_write(vcpu->vgic_ich_hcr);
 	}
 
-	// Check for enable bit changes. This will clear out all of the LRs
-	// and redo any deliveries, so we can skip the none-pending handling.
-	if (ICH_MISR_EL2_get_VGrp0D(&misr) || ICH_MISR_EL2_get_VGrp1D(&misr) ||
-	    ICH_MISR_EL2_get_VGrp0E(&misr) || ICH_MISR_EL2_get_VGrp1E(&misr)) {
-		GICD_CTLR_DS_t gicd_ctlr = atomic_load_acquire(&vic->gicd_ctlr);
-		cpu_index_t    lr_owner	 = vgic_lr_owner_lock_nopreempt(vcpu);
-		assert(lr_owner == CPU_INDEX_INVALID);
-		if (vgic_gicr_update_group_enables(vic, vcpu, gicd_ctlr)) {
-			vcpu_wakeup_self();
+	if (!vgic_fgt_allowed()) {
+		// Check for enable bit changes. This will clear out all of the
+		// LRs and redo any deliveries, so we can skip the none-pending
+		// handling.
+		if (ICH_MISR_EL2_get_VGrp0D(&misr) ||
+		    ICH_MISR_EL2_get_VGrp1D(&misr) ||
+		    ICH_MISR_EL2_get_VGrp0E(&misr) ||
+		    ICH_MISR_EL2_get_VGrp1E(&misr)) {
+			GICD_CTLR_DS_t gicd_ctlr =
+				atomic_load_acquire(&vic->gicd_ctlr);
+			cpu_index_t lr_owner =
+				vgic_lr_owner_lock_nopreempt(vcpu);
+			assert(lr_owner == CPU_INDEX_INVALID);
+			VGIC_TRACE(ASYNC_EVENT, vic, vcpu,
+				   "group enable maintenance: {:#x}",
+				   ICH_MISR_EL2_raw(misr));
+			if (vgic_gicr_update_group_enables(vic, vcpu,
+							   gicd_ctlr)) {
+				vcpu_wakeup_self();
+			}
+			vgic_lr_owner_unlock_nopreempt(vcpu);
+			goto out;
 		}
-		vgic_lr_owner_unlock_nopreempt(vcpu);
-		goto out;
 	}
 
 	// Always try to deliver more interrupts if the NP interrupt is enabled,
@@ -2529,6 +2903,8 @@ vgic_handle_irq_received_maintenance(void)
 		while (elrsr != 0U) {
 			index_t lr = compiler_ctz(elrsr);
 			elrsr &= ~util_bit(lr);
+
+			assert_debug(lr < CPU_GICH_LR_COUNT);
 
 			if (vgic_find_pending_and_list(
 				    vic, vcpu, GIC_PRIORITY_LOWEST, lr)) {
@@ -2562,7 +2938,7 @@ vgic_sync_one(vic_t *vic, thread_t *vcpu, index_t lr)
 	REQUIRE_LOCK(vcpu->vgic_lr_owner_lock)
 		REQUIRE_PREEMPT_DISABLED EXCLUDE_SCHEDULER_LOCK(vcpu)
 {
-	assert(lr < CPU_GICH_LR_COUNT);
+	assert_debug(lr < CPU_GICH_LR_COUNT);
 	vgic_lr_status_t *status = &vcpu->vgic_lrs[lr];
 	assert(status->dstate != NULL);
 	bool need_update = false;
@@ -2692,10 +3068,14 @@ vgic_do_delivery_check(vic_t *vic, thread_t *vcpu)
 			}
 		}
 
-		if ((lowest_prio > GIC_PRIORITY_HIGHEST) &&
-		    vgic_find_pending_and_list(vic, vcpu, lowest_prio,
-					       lowest_prio_lr)) {
-			wakeup = true;
+		if (lowest_prio > GIC_PRIORITY_HIGHEST) {
+			if (vgic_find_pending_and_list(vic, vcpu, lowest_prio,
+						       lowest_prio_lr)) {
+				wakeup = true;
+			} else {
+				break;
+			}
+
 		} else {
 			break;
 		}
@@ -2703,7 +3083,7 @@ vgic_do_delivery_check(vic_t *vic, thread_t *vcpu)
 		// We can't deliver IRQs that are equal or lower (numerically
 		// greater) priority than the lowest-priority pending LR, so
 		// exclude them from the next vgic_search_prios check.
-		prio_index_cutoff = lowest_prio >> VGIC_PRIO_SHIFT;
+		prio_index_cutoff = (index_t)lowest_prio >> VGIC_PRIO_SHIFT;
 	}
 
 	ICH_HCR_EL2_set_NPIE(&vcpu->vgic_ich_hcr,
@@ -2715,7 +3095,7 @@ out:
 }
 
 static bool
-vgic_retry_unrouted_virq(vic_t *vic, virq_t virq)
+vgic_retry_unrouted_virq(vic_t *vic, virq_t virq) REQUIRE_PREEMPT_DISABLED
 {
 	assert(vic != NULL);
 	// Only SPIs can be unrouted
@@ -2757,7 +3137,7 @@ vgic_retry_unrouted(vic_t *vic)
 				 range);
 
 		bool unclaimed = false;
-		for (index_t i = 0; i < VGIC_LOW_RANGE_SIZE; i++) {
+		for (index_t i = 0; i < vgic_low_range_size(range); i++) {
 			virq_t virq =
 				(virq_t)((range * VGIC_LOW_RANGE_SIZE) + i);
 			if (vgic_retry_unrouted_virq(vic, virq)) {
@@ -2804,7 +3184,8 @@ vgic_undeliver_all(vic_t *vic, thread_t *vcpu)
 		BITMAP_ATOMIC_FOREACH_SET_BEGIN(
 			range, vcpu->vgic_search_ranges_low[prio],
 			VGIC_LOW_RANGES)
-			for (index_t i = 0; i < VGIC_LOW_RANGE_SIZE; i++) {
+			for (index_t i = 0; i < vgic_low_range_size(range);
+			     i++) {
 				virq_t virq =
 					(virq_t)((range * VGIC_LOW_RANGE_SIZE) +
 						 i);
@@ -2861,7 +3242,8 @@ vgic_reroute_all(vic_t *vic, thread_t *vcpu)
 		BITMAP_ATOMIC_FOREACH_SET_BEGIN(
 			range, vcpu->vgic_search_ranges_low[prio_index],
 			VGIC_LOW_RANGES)
-			for (index_t i = 0; i < VGIC_LOW_RANGE_SIZE; i++) {
+			for (index_t i = 0; i < vgic_low_range_size(range);
+			     i++) {
 				virq_t virq =
 					(virq_t)((range * VGIC_LOW_RANGE_SIZE) +
 						 i);
@@ -2931,7 +3313,7 @@ vgic_reroute_all(vic_t *vic, thread_t *vcpu)
 // before acquiring the LR lock; any subsequent change to the GICD_CTLR by
 // another CPU must trigger another call to this function, typically by sending
 // an IPI.
-bool
+static bool
 vgic_gicr_update_group_enables(vic_t *vic, thread_t *gicr_vcpu,
 			       GICD_CTLR_DS_t gicd_ctlr)
 {
@@ -2974,15 +3356,26 @@ vgic_gicr_update_group_enables(vic_t *vic, thread_t *gicr_vcpu,
 		gicr_vcpu->vgic_ich_hcr = register_ICH_HCR_EL2_read();
 	}
 
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	// The vSGIEOICount flag is set for every VCPU based on the nASSGIreq
+	// flag in GICD_CTLR, which the VM can only update while the groups
+	// are disabled in GICD_CTLR. Updating it unconditionally here is
+	// probably faster than checking whether we need to update it.
+	ICH_HCR_EL2_set_vSGIEOICount(&gicr_vcpu->vgic_ich_hcr,
+				     vic->vsgis_enabled);
+#endif
+
 	// Update the group enable / disable traps. This isn't needed if we have
 	// ARMv8.6-FGT, because we can unconditionally trap all ICC_IGRPENn_EL1
 	// writes in that case.
-#if !defined(ARCH_ARM_8_6_FGT) || !ARCH_ARM_8_6_FGT
-	ICH_HCR_EL2_set_TALL0(&gicr_vcpu->vgic_ich_hcr, !group0_enable);
-	ICH_HCR_EL2_set_TALL1(&gicr_vcpu->vgic_ich_hcr, !group1_enable);
-	ICH_HCR_EL2_set_VGrp0DIE(&gicr_vcpu->vgic_ich_hcr, group0_enable);
-	ICH_HCR_EL2_set_VGrp1DIE(&gicr_vcpu->vgic_ich_hcr, group1_enable);
-#endif
+	if (!vgic_fgt_allowed()) {
+		ICH_HCR_EL2_set_TALL0(&gicr_vcpu->vgic_ich_hcr, !group0_enable);
+		ICH_HCR_EL2_set_TALL1(&gicr_vcpu->vgic_ich_hcr, !group1_enable);
+		ICH_HCR_EL2_set_VGrp0DIE(&gicr_vcpu->vgic_ich_hcr,
+					 group0_enable);
+		ICH_HCR_EL2_set_VGrp1DIE(&gicr_vcpu->vgic_ich_hcr,
+					 group1_enable);
+	}
 
 	// Now search for and list all deliverable VIRQs.
 	if (group0_enable || group1_enable) {
@@ -3038,14 +3431,18 @@ vgic_handle_thread_context_switch_post(thread_t *prev)
 
 		cpu_index_t lr_owner = vgic_lr_owner_lock(prev);
 		assert(lr_owner == cpulocal_get_index());
-		if (ipi_clear(IPI_REASON_VGIC_SYNC) &&
-		    vgic_sync_vcpu(prev, false)) {
-			wakeup_prev = true;
+		if (ipi_clear(IPI_REASON_VGIC_SYNC)) {
+			if (vgic_sync_vcpu(prev, false)) {
+				wakeup_prev = true;
+			}
 		}
-		if (ipi_clear(IPI_REASON_VGIC_ENABLE) &&
-		    vgic_gicr_update_group_enables(
-			    vic, prev, atomic_load_acquire(&vic->gicd_ctlr))) {
-			wakeup_prev = true;
+
+		if (ipi_clear(IPI_REASON_VGIC_ENABLE)) {
+			if (vgic_gicr_update_group_enables(
+				    vic, prev,
+				    atomic_load_acquire(&vic->gicd_ctlr))) {
+				wakeup_prev = true;
+			}
 		}
 		atomic_store_relaxed(&prev->vgic_lr_owner_lock.owner,
 				     CPU_INDEX_INVALID);
@@ -3126,24 +3523,36 @@ vgic_gicr_rd_check_sleep(thread_t *gicr_vcpu)
 	bool is_asleep;
 
 	if (atomic_load_relaxed(&gicr_vcpu->vgic_sleep)) {
-#if !defined(ARCH_ARM_8_6_FGT) || !ARCH_ARM_8_6_FGT
-		cpu_index_t lr_owner = vgic_lr_owner_lock(gicr_vcpu);
-		// We might not have received the maintenance interrupt yet
-		// after the VM cleared the group enable bits. Synchronise the
-		// group enables before checking them.
-		if (lr_owner == CPU_INDEX_INVALID) {
-			(void)vgic_gicr_update_group_enables(
-				gicr_vcpu->vgic_vic, gicr_vcpu,
-				atomic_load_acquire(
-					&gicr_vcpu->vgic_vic->gicd_ctlr));
+		if (!vgic_fgt_allowed()) {
+			cpu_index_t lr_owner = vgic_lr_owner_lock(gicr_vcpu);
+			// We might not have received the maintenance interrupt
+			// yet after the VM cleared the group enable bits.
+			// Synchronise the group enables before checking them.
+			if (lr_owner == CPU_INDEX_INVALID) {
+				(void)vgic_gicr_update_group_enables(
+					gicr_vcpu->vgic_vic, gicr_vcpu,
+					atomic_load_acquire(
+						&gicr_vcpu->vgic_vic
+							 ->gicd_ctlr));
+			}
+			vgic_lr_owner_unlock(gicr_vcpu);
 		}
-		vgic_lr_owner_unlock(gicr_vcpu);
-#endif
 		// We can only sleep if the groups are disabled.
 		is_asleep = !gicr_vcpu->vgic_group0_enabled &&
 			    !gicr_vcpu->vgic_group1_enabled;
 	} else {
 		is_asleep = false;
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+		if (gicv3_vpe_check_wakeup(false)) {
+			// The GICR hasn't finished scheduling the vPE yet.
+			// Returning true here means that the GICR_WAKER poll
+			// on VCPU resume will effectively prevent the VCPU
+			// entering its idle loop (and maybe suspending again)
+			// until the GICR has had an opportunity to forward any
+			// pending SGIs and LPIs.
+			is_asleep = true;
+		}
+#endif
 	}
 
 	return is_asleep;
@@ -3183,7 +3592,7 @@ vgic_handle_vcpu_pending_wakeup(void)
 }
 
 void
-vgic_handle_vcpu_poweredoff(void)
+vgic_handle_vcpu_stopped(void)
 {
 	thread_t *vcpu = thread_get_self();
 
@@ -3214,7 +3623,7 @@ vgic_handle_vcpu_trap_wfi(void)
 	assert(vcpu != NULL);
 
 	if (vcpu->vgic_vic != NULL) {
-		vgic_lr_owner_lock(vcpu);
+		(void)vgic_lr_owner_lock(vcpu);
 
 #if VGIC_HAS_1N
 		// Eagerly release invalid LRs. This increases the likelihood
@@ -3225,6 +3634,8 @@ vgic_handle_vcpu_trap_wfi(void)
 		while (elrsr != 0U) {
 			index_t lr = compiler_ctz(elrsr);
 			elrsr &= ~util_bit(lr);
+
+			assert_debug(lr < CPU_GICH_LR_COUNT);
 
 			vgic_lr_status_t *status = &vcpu->vgic_lrs[lr];
 			if (status->dstate != NULL) {
@@ -3257,7 +3668,7 @@ vgic_handle_ipi_received_enable(void)
 {
 	thread_t *current = thread_get_self();
 	assert(current->vgic_vic != NULL);
-	vgic_lr_owner_lock_nopreempt(current);
+	(void)vgic_lr_owner_lock_nopreempt(current);
 	bool wakeup = vgic_gicr_update_group_enables(
 		current->vgic_vic, current,
 		atomic_load_acquire(&current->vgic_vic->gicd_ctlr));
@@ -3269,7 +3680,7 @@ bool
 vgic_handle_ipi_received_sync(void)
 {
 	thread_t *current = thread_get_self();
-	vgic_lr_owner_lock_nopreempt(current);
+	(void)vgic_lr_owner_lock_nopreempt(current);
 	bool wakeup = vgic_sync_vcpu(current, true);
 	vgic_lr_owner_unlock_nopreempt(current);
 	return wakeup;
@@ -3283,7 +3694,7 @@ vgic_handle_ipi_received_deliver(void)
 	vic_t *vic = current->vgic_vic;
 
 	if (vic != NULL) {
-		vgic_lr_owner_lock_nopreempt(current);
+		(void)vgic_lr_owner_lock_nopreempt(current);
 		current->vgic_ich_hcr = register_ICH_HCR_EL2_read();
 
 		for (index_t i = 0; i < CPU_GICH_LR_COUNT; i++) {
@@ -3335,12 +3746,14 @@ vgic_icc_set_group_enable(bool is_group_1, ICC_IGRPEN_EL1_t igrpen)
 	assert(remote_cpu == CPU_INDEX_INVALID);
 
 	current->vgic_ich_vmcr = register_ICH_VMCR_EL2_read();
+	bool enabled	       = ICC_IGRPEN_EL1_get_Enable(&igrpen);
+	VGIC_TRACE(ICC_WRITE, vic, current, "group {:d} {:s}",
+		   (register_t)is_group_1,
+		   (uintptr_t)(enabled ? "enabled" : "disabled"));
 	if (is_group_1) {
-		ICH_VMCR_EL2_set_VENG1(&current->vgic_ich_vmcr,
-				       ICC_IGRPEN_EL1_get_Enable(&igrpen));
+		ICH_VMCR_EL2_set_VENG1(&current->vgic_ich_vmcr, enabled);
 	} else {
-		ICH_VMCR_EL2_set_VENG0(&current->vgic_ich_vmcr,
-				       ICC_IGRPEN_EL1_get_Enable(&igrpen));
+		ICH_VMCR_EL2_set_VENG0(&current->vgic_ich_vmcr, enabled);
 	}
 	register_ICH_VMCR_EL2_write_ordered(current->vgic_ich_vmcr,
 					    &asm_ordering);
@@ -3356,7 +3769,7 @@ vgic_icc_set_group_enable(bool is_group_1, ICC_IGRPEN_EL1_t igrpen)
 void
 vgic_icc_irq_deactivate(vic_t *vic, irq_t irq_num)
 {
-	thread_t			 *vcpu = thread_get_self();
+	thread_t		      *vcpu = thread_get_self();
 	_Atomic vgic_delivery_state_t *dstate =
 		vgic_find_dstate(vic, vcpu, irq_num);
 	assert(dstate != NULL);
@@ -3427,6 +3840,7 @@ vgic_icc_irq_deactivate(vic_t *vic, irq_t irq_num)
 	// work for this. However, few VMs will use EOImode=1 so we don't care
 	// very much just yet. For now, warn and do nothing.
 	//
+	// FIXME:
 #if !defined(NDEBUG)
 	static _Thread_local bool warned_about_ignored_dir = false;
 	if (!warned_about_ignored_dir) {
@@ -3443,94 +3857,115 @@ out:
 	preempt_enable();
 }
 
+static void
+vgic_send_sgi(vic_t *vic, thread_t *vcpu, virq_t virq, bool is_group_1)
+	REQUIRE_RCU_READ
+{
+	_Atomic vgic_delivery_state_t *dstate =
+		&vcpu->vgic_private_states[virq];
+	vgic_delivery_state_t old_dstate = atomic_load_relaxed(dstate);
+
+	if (!is_group_1 && vgic_delivery_state_get_group1(&old_dstate)) {
+		// SGI0R & ASGI1R do not generate group 1 SGIs
+		goto out;
+	}
+
+#if GICV3_HAS_VLPI_V4_1 && VGIC_HAS_LPI
+	// Raise SGI using direct injection through the ITS if possible.
+	//
+	// We can only use direct injection if:
+	// - The SGI is not listed in an LR (which has unpredictable behaviour
+	//   when combined with direct injection of the same SGI)
+	// - The VM has permitted vSGI delivery with no active state, by setting
+	//   GICD_CTLR.nASSGIreq (cached in vic->vsgis_enabled)
+	// - The VCPU has enabled vLPIs, and the ITS commands to sync the SGI
+	//   configuration into the LPI tables have completed
+	if (!vgic_delivery_state_get_listed(&old_dstate) &&
+	    vic->vsgis_enabled && (vgic_vsgi_assert(vcpu, virq) == OK)) {
+		goto out;
+	}
+#endif
+
+	if ((vcpu != thread_get_self()) &&
+	    vgic_delivery_state_get_enabled(&old_dstate)) {
+		VGIC_TRACE(SGI, vic, vcpu, "sgi fast: {:d}", virq);
+
+		// Mark the SGI as pending delivery, and wake
+		// the target VCPU for delivery.
+		bitmap_atomic_set(vcpu->vgic_pending_sgis, virq,
+				  memory_order_relaxed);
+
+		// Match the seq_cst fences when the owner is changed
+		// during the context switch.
+		atomic_thread_fence(memory_order_seq_cst);
+
+		cpu_index_t lr_owner =
+			atomic_load_relaxed(&vcpu->vgic_lr_owner_lock.owner);
+
+		if (cpulocal_index_valid(lr_owner)) {
+			ipi_one(IPI_REASON_VGIC_SGI, lr_owner);
+		} else {
+			scheduler_lock(vcpu);
+			vcpu_wakeup(vcpu);
+			scheduler_unlock(vcpu);
+		}
+	} else {
+		// Deliver the interrupt to the target
+		vgic_delivery_state_t assert_dstate =
+			vgic_delivery_state_default();
+		vgic_delivery_state_set_edge(&assert_dstate, true);
+
+		(void)vgic_deliver(virq, vic, vcpu, NULL, dstate, assert_dstate,
+				   true);
+	}
+
+out:
+	return;
+}
+
 void
 vgic_icc_generate_sgi(vic_t *vic, ICC_SGIR_EL1_t sgir, bool is_group_1)
 {
 	register_t target_list	 = ICC_SGIR_EL1_get_TargetList(&sgir);
-	index_t	   target_offset = 16U * ICC_SGIR_EL1_get_RS(&sgir);
+	index_t	   target_offset = 16U * (index_t)ICC_SGIR_EL1_get_RS(&sgir);
 	virq_t	   virq		 = ICC_SGIR_EL1_get_INTID(&sgir);
 
 	assert(virq < GIC_SGI_NUM);
 
 	if (compiler_unexpected(ICC_SGIR_EL1_get_IRM(&sgir))) {
-		TRACE_AND_LOG(DEBUG, WARN,
-			      "vcpu {:#x}: SGIR write with IRM set ignored",
-			      (uintptr_t)(thread_t *)thread_get_self());
-		goto out;
-	}
-
-	psci_mpidr_t route_id = psci_mpidr_default();
-	psci_mpidr_set_Aff1(&route_id, ICC_SGIR_EL1_get_Aff1(&sgir));
-	psci_mpidr_set_Aff2(&route_id, ICC_SGIR_EL1_get_Aff2(&sgir));
-	psci_mpidr_set_Aff3(&route_id, ICC_SGIR_EL1_get_Aff3(&sgir));
-
-	rcu_read_start();
-
-	while (target_list != 0U) {
-		index_t target_bit = compiler_ctz(target_list);
-		target_list &= ~util_bit(target_bit);
-
-		index_t target = target_bit + target_offset;
-		psci_mpidr_set_Aff0(&route_id, (uint8_t)target);
-
-		cpu_index_result_t cpu_r =
-			platform_cpu_mpidr_to_index(route_id);
-		if ((cpu_r.e != OK) || (cpu_r.r >= vic->gicr_count)) {
-			// ignore invalid target
-			continue;
-		}
-
-		thread_t *vcpu = atomic_load_consume(&vic->gicr_vcpus[cpu_r.r]);
-		if (vcpu == NULL) {
-			// ignore missing target
-			continue;
-		}
-
-		_Atomic vgic_delivery_state_t *dstate =
-			&vcpu->vgic_private_states[virq];
-		vgic_delivery_state_t old_dstate = atomic_load_relaxed(dstate);
-
-		if (!is_group_1 &&
-		    vgic_delivery_state_get_group1(&old_dstate)) {
-			// SGI0R & ASGI1R do not generate group 1 SGIs
-			continue;
-		}
-
-		if ((vcpu != thread_get_self()) &&
-		    vgic_delivery_state_get_enabled(&old_dstate)) {
-			VGIC_TRACE(SGI, vic, vcpu, "sgi fast: {:d}", virq);
-
-			// Mark the SGI as pending delivery, and wake
-			// the target VCPU for delivery.
-			bitmap_atomic_set(vcpu->vgic_pending_sgis, virq,
-					  memory_order_relaxed);
-
-			// Match the seq_cst fences when the owner is changed
-			// during the context switch.
-			atomic_thread_fence(memory_order_seq_cst);
-
-			cpu_index_t lr_owner = atomic_load_relaxed(
-				&vcpu->vgic_lr_owner_lock.owner);
-
-			if (cpulocal_index_valid(lr_owner)) {
-				ipi_one(IPI_REASON_VGIC_SGI, lr_owner);
-			} else {
-				scheduler_lock(vcpu);
-				vcpu_wakeup(vcpu);
-				scheduler_unlock(vcpu);
+		thread_t *current = thread_get_self();
+		for (index_t i = 0U; i < vic->gicr_count; i++) {
+			rcu_read_start();
+			thread_t *vcpu =
+				atomic_load_consume(&vic->gicr_vcpus[i]);
+			if ((vcpu != NULL) && (vcpu != current)) {
+				vgic_send_sgi(vic, vcpu, virq, is_group_1);
 			}
-		} else {
-			// Deliver the interrupt to the target
-			vgic_delivery_state_t assert_dstate =
-				vgic_delivery_state_default();
-			vgic_delivery_state_set_edge(&assert_dstate, true);
+			rcu_read_finish();
+		}
+	} else {
+		while (target_list != 0U) {
+			index_t target_bit = compiler_ctz(target_list);
+			target_list &= ~util_bit(target_bit);
 
-			(void)vgic_deliver(virq, vic, vcpu, NULL, dstate,
-					   assert_dstate, true);
+			index_result_t cpu_r = vgic_get_index_for_mpidr(
+				vic, (uint8_t)(target_bit + target_offset),
+				ICC_SGIR_EL1_get_Aff1(&sgir),
+				ICC_SGIR_EL1_get_Aff2(&sgir),
+				ICC_SGIR_EL1_get_Aff3(&sgir));
+			if (cpu_r.e != OK) {
+				// ignore invalid target
+				continue;
+			}
+			assert(cpu_r.r < vic->gicr_count);
+
+			rcu_read_start();
+			thread_t *vcpu =
+				atomic_load_consume(&vic->gicr_vcpus[cpu_r.r]);
+			if (vcpu != NULL) {
+				vgic_send_sgi(vic, vcpu, virq, is_group_1);
+			}
+			rcu_read_finish();
 		}
 	}
-
-	rcu_read_finish();
-out:
-	return;
 }

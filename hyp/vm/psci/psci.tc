@@ -1,0 +1,106 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+
+// PSCI 1.1 implemented
+#define PSCI_VER 0x10001
+
+define PSCI_VERSION constant uint32 = PSCI_VER;
+
+// We need only 3 bits to encode the cpu level state of a vcpu
+define PSCI_VCPUS_STATE_PER_VCPU_BITS constant type count_t = 3;
+define PSCI_PER_CLUSTER_STATE_BITS constant type count_t = 3;
+define PSCI_VCPUS_STATE_PER_VCPU_MASK constant uint8 = 0x7;
+define PSCI_PER_CLUSTER_STATE_BITS_MASK constant uint8 = 0x7;
+define PSCI_VCPUS_STATE_BITS constant type count_t = (PLATFORM_MAX_CORES * PSCI_VCPUS_STATE_PER_VCPU_BITS);
+define PSCI_CLUSTER_STATE_BITS constant type count_t = (PLATFORM_MAX_CLUSTERS * PSCI_PER_CLUSTER_STATE_BITS);
+define PSCI_SYSTEM_STATE_BITS constant type count_t = 8;
+define PSCI_CLUSTER_STATE_SUSPEND_BITS constant type count_t = PLATFORM_MAX_CLUSTERS;
+define PSCI_VCPUS_STATE_MAX_VCPUS constant type count_t = PSCI_VCPUS_STATE_BITS/PSCI_VCPUS_STATE_PER_VCPU_BITS;
+define PSCI_VCPUS_STATE_MAX_INDEX constant type count_t = PLATFORM_MAX_CORES*PSCI_VCPUS_STATE_PER_VCPU_BITS;
+
+define vpm_group_suspend_state bitfield<128> {
+	auto<PSCI_VCPUS_STATE_BITS>	vcpus_state	uint64;
+	auto<PSCI_CLUSTER_STATE_BITS>	cluster_state	uint16;
+	auto<PSCI_SYSTEM_STATE_BITS>	system_state	uint8;
+	auto<PSCI_CLUSTER_STATE_SUSPEND_BITS> is_cluster_suspended uint16;
+	others	unknown=0;
+};
+
+// FIXME:
+extend vpm_group object module psci {
+	cpus			array(PLATFORM_MAX_CORES) pointer(atomic) object thread;
+	online_count		type count_t(atomic);
+	mode			enumeration psci_mode;
+	vm_suspend_state	bitfield vpm_group_suspend_state(atomic, aligned(16));
+	system_suspend_virq	structure virq_source(contained);
+	virq_task		structure task_queue_entry(contained);
+	lock			structure spinlock;
+	system_suspend_count	sint8;
+};
+
+extend task_queue_class enumeration {
+	vpm_group_virq;
+};
+
+extend vpm_mode enumeration {
+	PSCI;
+};
+
+extend thread object module psci {
+	// Reference-counted virtual PM group pointer
+	group pointer object vpm_group;
+
+	// Attachment index for the PSCI group. This is a CPU index because
+	// the PSCI implementation currently assumes that the set of valid
+	// virtual MPIDRs is the same as the valid physical MPIDRs, even if
+	// there is no strict CPU affinity.
+	index type cpu_index_t;
+
+	// PSCI suspend state requested by this VCPU; valid only for a VCPU
+	// blocked by SCHEDULER_BLOCK_VCPU_SUSPEND.
+	suspend_state bitfield psci_suspend_powerstate;
+
+	pm_list_node structure list_node(contained);
+
+	// True if the VCPU is being migrated between PM lists.
+	migrate bool;
+
+#if defined(INTERFACE_VCPU_RUN)
+	// True if the VCPU has called PSCI_SYSTEM_RESET.
+	system_reset bool;
+	// PSCI_SYSTEM_RESET2 parameters, returned in state data.
+	system_reset_type uint64;
+	system_reset_cookie uint64;
+#endif
+
+	// Tracks when the VCPU becomes inactive due to being off, suspended
+	// or migrating. When zero, the VCPU is considered active and will be
+	// accounted for in vpm_active_vcpus.
+	inactive_count type count_t;
+};
+
+extend virq_trigger enumeration {
+	vpm_group;
+};
+
+extend trace_ids bitfield {
+	23:16	vcpu_index	type cpu_index_t;
+};
+
+extend trace_class enumeration {
+	PSCI = 16;
+};
+
+extend trace_id enumeration {
+	PSCI_PSTATE_VALIDATION = 0x30;
+	PSCI_VPM_STATE_CHANGED = 0x31;
+	PSCI_VPM_SYSTEM_SUSPEND = 0x32;
+	PSCI_VPM_SYSTEM_RESUME = 0x33;
+	PSCI_VPM_VCPU_SUSPEND = 0x34;
+	PSCI_VPM_VCPU_RESUME = 0x35;
+	PSCI_SYSTEM_SUSPEND = 0x36;
+	PSCI_SYSTEM_RESUME = 0x37;
+};

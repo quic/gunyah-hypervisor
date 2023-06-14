@@ -6,3 +6,4 @@ module partition_standard
 
 subscribe boot_cpu_warm_init
 	handler partition_phys_access_cpu_warm_init()
+	priority 10

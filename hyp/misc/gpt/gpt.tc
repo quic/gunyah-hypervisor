@@ -1,0 +1,119 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define GPT_MAX_SIZE_BITS constant type count_t = 52;
+define GPT_MAX_SIZE constant size = 1 << GPT_MAX_SIZE_BITS;
+
+define GPT_LEVEL_LOG2_BITS constant type count_t = 2;
+define GPT_LEVEL_BITS constant type count_t = 1 << GPT_LEVEL_LOG2_BITS;
+define GPT_LEVEL_ENTRIES constant type count_t = 1 << GPT_LEVEL_BITS;
+
+define GPT_MAX_LEVELS constant type count_t =
+		(GPT_MAX_SIZE_BITS + GPT_LEVEL_BITS - 1) / GPT_LEVEL_BITS;
+
+define GPT_SHIFT_BITS constant type count_t = 6 - GPT_LEVEL_LOG2_BITS;
+define GPT_TYPE_BITS constant type count_t =
+		64 - GPT_MAX_SIZE_BITS - GPT_SHIFT_BITS;
+
+extend gpt_type enumeration {
+	level;
+};
+
+extend rcu_update_class enumeration {
+	gpt_free_level;
+};
+
+define gpt_pte_info bitfield<64> {
+	auto<GPT_MAX_SIZE_BITS>	guard	size;
+	auto<GPT_SHIFT_BITS>	shifts	type count_t lsl(GPT_LEVEL_LOG2_BITS);
+	auto<GPT_TYPE_BITS>	type	enumeration gpt_type;
+};
+
+define gpt_pte structure {
+	info	bitfield gpt_pte_info;
+	value	union gpt_value;
+};
+
+define gpt_level_non_atomic structure {
+	entries		array(GPT_LEVEL_ENTRIES) structure gpt_pte;
+};
+
+// FIXME:
+define gpt_level_atomic structure(aligned(16)) {
+	entries		array(GPT_LEVEL_ENTRIES) structure gpt_pte(atomic);
+	rcu_entry	structure rcu_entry(contained);
+	partition	pointer object partition;
+};
+
+define gpt_level union {
+	raw		uintptr;
+	non_atomic	pointer structure gpt_level_non_atomic;
+	atomic		pointer structure gpt_level_atomic;
+};
+
+extend gpt_value union {
+	raw	uint64;
+	level	union gpt_level;
+};
+
+// FIXME:
+define gpt_root union(aligned(16)) {
+	non_atomic	structure gpt_pte;
+	atomic		structure gpt_pte(atomic);
+};
+
+extend gpt structure {
+	root		union gpt_root;
+	partition	pointer object partition;
+	config		bitfield gpt_config;
+	allowed_types	uregister;
+};
+
+define gpt_read_op enumeration {
+	lookup;
+	is_contiguous;
+	walk;
+	dump_range;
+};
+
+define gpt_read_data structure {
+	entry	structure gpt_entry;
+	base	size;
+	size	size;
+	cb	enumeration gpt_callback;
+	arg	union gpt_arg;
+};
+
+define gpt_frame_info bitfield<64> {
+	auto<GPT_MAX_SIZE_BITS>	addr	size;
+	auto<GPT_SHIFT_BITS>	shifts	type count_t lsl(GPT_LEVEL_LOG2_BITS);
+	auto<GPT_LEVEL_BITS>	index	type index_t;
+	auto			dirty	bool;
+};
+
+define gpt_stack_frame structure {
+	level	union gpt_level;
+	info	bitfield gpt_frame_info;
+};
+
+define gpt_stack structure {
+	depth	type count_t;
+	frame	array(GPT_MAX_LEVELS) structure gpt_stack_frame;
+};
+
+#if defined(UNIT_TESTS)
+extend gpt_type enumeration {
+	test_a;
+	test_b;
+	test_c;
+};
+
+extend gpt_callback enumeration {
+	test;
+};
+
+extend gpt_arg union {
+	test	uregister;
+};
+#endif

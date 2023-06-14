@@ -65,3 +65,8 @@ define spsr_32bit_mode enumeration {
 	Undefined	= 0b11011;
 	System		= 0b11111;
 };
+
+define iss_wfx_ti enumeration {
+	WFI		= 0b00;
+	WFE		= 0b01;
+};

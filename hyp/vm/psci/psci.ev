@@ -1,0 +1,94 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module psci
+
+#include "psci_events.h"
+
+PSCI_FUNCTION32(PSCI_VERSION, 0U, version, ret0)
+PSCI_FUNCTION_PERVM(CPU_SUSPEND, cpu_suspend, arg1, arg2, arg3, ret0)
+PSCI_FUNCTION32(CPU_OFF, 0U, cpu_off, ret0)
+PSCI_FUNCTION(CPU_ON, 0U, cpu_on, arg1, arg2, arg3, ret0)
+PSCI_FUNCTION(AFFINITY_INFO, 0U, affinity_info, arg1, arg2, ret0)
+//PSCI_FUNCTION32(MIGRATE, 0U, migrate, arg1, ret0)
+//PSCI_FUNCTION32(MIGRATE_INFO_TYPE, 0U, migrate_info_type, ret0)
+//PSCI_FUNCTION(MIGRATE_INFO_UP_CPU, 0U, migrate_info_up_cpu, ret0)
+PSCI_FUNCTION32(SYSTEM_OFF, 0U, system_off)
+PSCI_FUNCTION32(SYSTEM_RESET, 0U, system_reset)
+PSCI_FUNCTION32(PSCI_FEATURES, 0U, features, arg1, ret0)
+//PSCI_FUNCTION32(CPU_FREEZE, 0U, cpu_freeze, ret0)
+PSCI_FUNCTION(CPU_DEFAULT_SUSPEND, 0U, cpu_default_suspend, arg1, arg2, ret0)
+//PSCI_FUNCTION(NODE_HW_STATE, 0U, node_hw_state, arg1, arg2, ret0)
+//PSCI_FUNCTION(SYSTEM_SUSPEND, 0U, system_suspend, arg1, arg2, ret0)
+//PSCI_FUNCTION32(PSCI_SET_SUSPEND_MODE, 0U, set_suspend_mode, arg1, ret0)
+//PSCI_FUNCTION(PSCI_STAT_RESIDENCY, 0U, stat_residency, arg1, arg2, ret0)
+//PSCI_FUNCTION(PSCI_STAT_COUNT, 0U, stat_count, arg1, arg2, ret0)
+PSCI_FUNCTION(SYSTEM_RESET2, 0U, system_reset2, arg1, arg2, ret0)
+//PSCI_FUNCTION32(MEM_PROTECT, 0U, mem_protect, arg1, ret0)
+//PSCI_FUNCTION(MEM_PROTECT_CHECK_RANGE, 0U, mem_protect_check_range, arg1, arg2, ret0)
+
+subscribe object_create_thread
+
+subscribe object_activate_thread
+	// Run early to ensure that MPIDR is set correctly, since other
+	// modules may rely on it (especially VGIC, which is priority 1)
+	priority 50
+
+subscribe object_deactivate_thread
+
+subscribe object_deactivate_vpm_group
+
+subscribe vcpu_suspend
+	unwinder(current)
+	require_preempt_disabled
+
+subscribe vcpu_started
+
+subscribe vcpu_wakeup
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_wakeup_self
+
+subscribe vcpu_expects_wakeup
+
+#if defined(INTERFACE_VCPU_RUN)
+subscribe vcpu_run_check(vcpu, state_data_0, state_data_1)
+#endif
+
+subscribe vcpu_poweron
+	priority last
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_resume
+	require_preempt_disabled
+
+subscribe vcpu_poweroff
+	// First so it can deny poweroff without unwinding other modules.
+	priority first
+	require_scheduler_lock(current)
+
+subscribe vcpu_stopped
+
+subscribe vcpu_activate_thread(thread)
+	unwinder psci_handle_object_deactivate_thread(thread)
+	// Run after the scheduler handler
+	priority -100
+
+subscribe boot_cold_init()
+
+subscribe boot_cpu_cold_init
+
+subscribe scheduler_affinity_changed(thread, prev_cpu, next_cpu, need_sync)
+	require_scheduler_lock(thread)
+
+subscribe scheduler_affinity_changed_sync(thread, next_cpu)
+	require_preempt_disabled
+
+subscribe task_queue_execute[TASK_QUEUE_CLASS_VPM_GROUP_VIRQ](entry)
+
+subscribe power_cpu_online()
+	require_preempt_disabled
+
+subscribe power_cpu_offline()
+	require_preempt_disabled

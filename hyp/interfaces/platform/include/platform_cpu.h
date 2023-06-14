@@ -4,6 +4,11 @@
 
 // Platform wrappers for SMP support.
 
+// Check whether a cpu_index maps to cpu that exists. Note however, a CPU that
+// exists may not be functional.
+bool
+platform_cpu_exists(cpu_index_t cpu);
+
 // Power on the specified CPU.
 error_t
 platform_cpu_on(cpu_index_t cpu);
@@ -54,14 +59,35 @@ platform_cpu_default_suspend(void) REQUIRE_PREEMPT_DISABLED;
 #endif
 
 #if defined(ARCH_ARM)
-psci_mpidr_t
-platform_cpu_index_to_mpidr(cpu_index_t cpu);
+platform_mpidr_mapping_t
+platform_cpu_get_mpidr_mapping(void);
 
-cpu_index_result_t
-platform_cpu_mpidr_to_index(psci_mpidr_t mpidr);
+MPIDR_EL1_t
+platform_cpu_map_index_to_mpidr(const platform_mpidr_mapping_t *mapping,
+				index_t				index);
+
+index_t
+platform_cpu_map_mpidr_to_index(const platform_mpidr_mapping_t *mapping,
+				MPIDR_EL1_t			mpidr);
+
+bool
+platform_cpu_map_mpidr_valid(const platform_mpidr_mapping_t *mapping,
+			     MPIDR_EL1_t		     mpidr);
+
+MPIDR_EL1_t
+platform_cpu_index_to_mpidr(index_t index);
+
+index_t
+platform_cpu_mpidr_to_index(MPIDR_EL1_t mpidr);
+
+bool
+platform_cpu_mpidr_valid(MPIDR_EL1_t mpidr);
+
+core_id_t
+platform_cpu_get_coreid(MIDR_EL1_t midr);
 #endif
 
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 bool
 platform_cpu_bti_enabled(void);
 #endif

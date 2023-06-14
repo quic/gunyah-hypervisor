@@ -1,0 +1,80 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// register offset
+
+define ETM_TRCLAR_UNLOCK constant = 0xC5ACCE55;
+define ETM_TRCLAR_LOCK constant = 0x0;
+
+define ETM_TRCOSLAR_UNLOCK constant = 0x0;
+define ETM_TRCOSLAR_LOCK constant = 0x1;
+
+define ETM_TRCPRGCTLR_ENABLE constant = 0x1;
+
+define etm_trcdv structure(aligned(16)) {
+	value	uint64;
+};
+
+define etm structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	// main control & configuration regsters
+	trcprgctlr @ 0x4	uint32(atomic);
+	trcprocselr @ 0x8	uint32(atomic);
+	trcstatr @ 0xC		bitfield ETM_TRCSTATR(atomic);
+	trcconfigr @ 0x10	uint32(atomic);
+	trcauxctlr @ 0x18	uint32(atomic);
+	trceventctl0r @ 0x20	uint32(atomic);
+	trceventctl1r @ 0x24	uint32(atomic);
+	trcstallctlr @ 0x2c	uint32(atomic);
+	trctsctlr @ 0x30	uint32(atomic);
+	trcsyncpr @ 0x34	uint32(atomic);
+	trcccctlr @ 0x38	uint32(atomic);
+	trcbbctlr @ 0x3c	uint32(atomic);
+	trctraceidr @ 0x40	uint32(atomic);
+	trcqctlr @ 0x44		uint32(atomic);
+
+	// filtering control registers
+	trcvictlr @ 0x80	uint32(atomic);
+	trcviiectlr @ 0x84	uint32(atomic);
+	trcvissctlr @ 0x88	uint32(atomic);
+	trcvipcssctlr @ 0x8c	uint32(atomic);
+	trcvdctlr @ 0xa0	uint32(atomic);
+	trcvdsacctlr @ 0xa4	uint32(atomic);
+	trcvdarcctlr @ 0xa8	uint32(atomic);
+
+	// derived resources registers
+	trcseqevr @ 0x100	array(3) uint32(atomic);
+	trcseqrstevr @ 0x118	uint32(atomic);
+	trcseqstr @ 0x11c	uint32(atomic);
+	trcextinselr @ 0x120	uint32(atomic);
+	trccntrldvr @ 0x140	array(4) uint32(atomic);
+	trccntctlr @ 0x150	array(4) uint32(atomic);
+	trccntvr @ 0x160	array(4) uint32(atomic);
+
+	// resource selection registers (note: elements 0 and 1 are reserved)
+	trcrsctlr2 @ 0x208	array(30) uint32(atomic);
+
+	// single shot comparator registers
+	trcssccr @ 0x280	array(8) uint32(atomic);
+	trcsscsr @ 0x2a0	array(8) uint32(atomic);
+	trcsspcicr @ 0x2c0	array(8) uint32(atomic);
+
+	// OS lock registers
+	trcoslar @ 0x0300	uint32(atomic);
+	trcoslsr @ 0x0304	bitfield ETM_TRCOSLSR(atomic);
+
+	// comparator registers
+	trcacvr @ 0x400		array(16) uint64(atomic);
+	trcacatr @ 0x480	array(16) uint64(atomic);
+	trcdvcvr @ 0x500	array(8) structure etm_trcdv;
+	trcdvcmr @ 0x580	array(8) structure etm_trcdv;
+	trccidcvr @ 0x600	array(8) uint64(atomic);
+	trcvmidcvr @ 0x640	array(8) uint64(atomic);
+	trccidcctlr @ 0x680	array(2) uint32(atomic);
+	trcvmidcctlr @ 0x688	array(2) uint32(atomic);
+
+	// Software lock and claim tag registers
+	trcclaimset @ 0xfa0	uint32(atomic);
+	trcclaimclr @ 0xfa4	uint32(atomic);
+	trclar @ 0x0FB0		uint32(atomic);
+};

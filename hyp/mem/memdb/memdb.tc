@@ -55,5 +55,5 @@ define memdb_op enumeration {
 };
 
 extend trace_class enumeration {
-	MEMDB;
+	MEMDB = 7;
 };

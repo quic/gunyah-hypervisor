@@ -49,7 +49,7 @@
 .endm
 
 // Branch target identification helpers
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 #define BRANCH_TARGET(type, ...)	\
 	bti	type;			\
 	__VA_ARGS__

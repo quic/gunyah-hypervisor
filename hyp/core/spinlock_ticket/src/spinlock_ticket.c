@@ -105,7 +105,7 @@ spinlock_release_nopreempt(spinlock_t *lock) LOCK_IMPL
 }
 
 void
-assert_spinlock_held(spinlock_t *lock)
+assert_spinlock_held(const spinlock_t *lock)
 {
 	assert_preempt_disabled();
 	trigger_spinlock_assert_held_event(lock);

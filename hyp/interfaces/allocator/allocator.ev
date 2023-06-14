@@ -1,0 +1,16 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface allocator
+
+// Add normal memory from the partition to its allocator.
+//
+// The specified partition is the partition that we expect owns the memory.
+setup_event allocator_add_ram_range
+	param owner: partition_t *
+	param phys_base: paddr_t
+	param virt_base: uintptr_t
+	param size: size_t
+	return: error_t = ERROR_FAILURE
+	success: OK

@@ -1,0 +1,30 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vcpu_power
+
+subscribe vcpu_poweron(vcpu)
+	priority first
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_poweroff(current)
+	require_scheduler_lock(current)
+
+subscribe vcpu_stopped()
+	require_preempt_disabled
+
+#if defined(INTERFACE_VCPU_RUN)
+
+subscribe vcpu_run_enabled
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_run_disabled
+	require_scheduler_lock(vcpu)
+
+#endif
+
+subscribe scheduler_set_affinity_prepare(thread, prev_cpu, next_cpu)
+	// Run late to avoid unwinding.
+	priority last
+	require_scheduler_lock(thread)

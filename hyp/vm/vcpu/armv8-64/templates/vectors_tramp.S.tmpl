@@ -1,0 +1,81 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <hypconstants.h>
+
+\#include <asm/asm_defs.inc>
+\#include <asm/panic.inc>
+
+\#include "vectors_el2.inc"
+
+.macro mitigate_spectre_bhb_loop count:req
+	stp	x18, xzr, [sp, #-16]!
+	mov	x18, #\count
+
+local bhb_flush_loop\@:
+	b	LOCAL(bhb_flush_forward_jump\@)
+local bhb_flush_forward_jump\@:
+	subs	x18, x18, #1
+	b.ne	LOCAL(bhb_flush_loop\@)
+
+\#if defined(ARCH_ARM_FEAT_SB)
+	sb
+\#else
+	dsb	nsh
+	isb
+\#endif
+	ldp	x18, xzr, [sp], #16
+.endm
+
+.macro mitigate_spectre_bhb_clrbhb
+	hint	#22
+	isb
+.endm
+
+.macro vector_tramp name:req label:req content:req content_args:vararg
+vector vector_\name\()_vcpu_tramp_\label
+	\content \content_args
+	b	vector_\name
+vector_end vector_\name\()_vcpu_tramp_\label
+.endm
+
+.macro vcpu_vector name:req content:req content_args:vararg
+	.section	.text.vectors;
+	.balign		2048;
+.global vcpu_aarch64_vectors_tramp_\name
+vcpu_aarch64_vectors_tramp_\name:
+
+	el2_vectors vcpu_tramp_\name 1
+
+	vector_tramp guest64_sync \name \content \content_args
+	vector_tramp guest64_irq \name \content \content_args
+	vector_tramp guest64_fiq \name \content \content_args
+	vector_tramp guest64_serror \name \content \content_args
+
+	vector_tramp guest32_sync \name \content \content_args
+	vector_tramp guest32_irq \name \content \content_args
+	vector_tramp guest32_fiq \name \content \content_args
+	vector_tramp guest32_serror \name \content \content_args
+.endm
+
+\#if defined(ARCH_ARM_FEAT_CLRBHB)
+vcpu_vector clrbhb mitigate_spectre_bhb_clrbhb
+\#endif
+##
+#set loop_counts = set()
+#set target_cpu_ids = $ARCH_CORE_IDS.split(',')
+##
+#for cpu_id in $ARCH_CORE_IDS.split(',')
+#set _loops = 'SPECTRE_{:s}_BHB_LOOP_FLUSH'.format(cpu_id)
+#if self.varExists($_loops)
+#set loops=int(self.getVar($_loops))
+#silent loop_counts.add($loops)
+#end if
+#end for
+##
+#for loop_count in sorted(loop_counts)
+#if loop_count > 0
+vcpu_vector bhb_loop_${loop_count} mitigate_spectre_bhb_loop ${loop_count}
+#end if
+#end for

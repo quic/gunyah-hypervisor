@@ -5,3 +5,5 @@
 // Second Level Address Translation (SLAT) Base Module
 
 define vmaddr_t public newtype uint64;
+
+define VMADDR_INVALID constant type vmaddr_t = -1;

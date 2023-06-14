@@ -5,14 +5,17 @@
 #include <assert.h>
 #include <hyptypes.h>
 
+#include <compiler.h>
 #include <cpulocal.h>
 #include <idle.h>
 #include <panic.h>
 #include <partition.h>
 #include <platform_cpu.h>
 #include <platform_psci.h>
+#include <preempt.h>
 #include <psci.h>
 #include <thread.h>
+#include <util.h>
 
 #include "event_handlers.h"
 #include "psci_smc.h"
@@ -31,43 +34,29 @@ soc_qemu_handle_boot_cpu_cold_init(cpu_index_t cpu)
 	CPULOCAL_BY_INDEX(cpu_started, cpu) = true;
 }
 
-psci_mpidr_t
-platform_cpu_index_to_mpidr(cpu_index_t cpu)
+bool
+platform_cpu_exists(cpu_index_t cpu)
 {
-	psci_mpidr_t ret = psci_mpidr_default();
-	assert(cpulocal_index_valid(cpu));
-	psci_mpidr_set_Aff0(&ret, (uint8_t)cpu);
-	return ret;
-}
+	assert(cpu < PLATFORM_MAX_CORES);
 
-cpu_index_result_t
-platform_cpu_mpidr_to_index(psci_mpidr_t mpidr)
-{
-	cpu_index_result_t result =
-		cpu_index_result_error(ERROR_ARGUMENT_INVALID);
-
-	if ((psci_mpidr_get_Aff1(&mpidr) == 0U) &&
-	    (psci_mpidr_get_Aff2(&mpidr) == 0U) &&
-	    (psci_mpidr_get_Aff3(&mpidr) == 0U)) {
-		cpu_index_t index = (cpu_index_t)psci_mpidr_get_Aff0(&mpidr);
-		if (cpulocal_index_valid(index)) {
-			result = cpu_index_result_ok(index);
-		}
-	}
-
-	return result;
+	return compiler_expected((util_bit(cpu) & PLATFORM_USABLE_CORES) != 0U);
 }
 
 error_t
 platform_cpu_on(cpu_index_t cpu)
 {
-	psci_mpidr_t mpidr  = platform_cpu_index_to_mpidr(cpu);
-	thread_t	 *thread = idle_thread_for(cpu);
-	uintptr_t    entry_virt =
-		   CPULOCAL_BY_INDEX(cpu_started, cpu)
-			   ? (uintptr_t)&soc_qemu_entry_warm
-			   : (uintptr_t)&soc_qemu_entry_cold_secondary;
-	return psci_smc_cpu_on(mpidr,
+	MPIDR_EL1_t mpidr  = platform_cpu_index_to_mpidr(cpu);
+	thread_t   *thread = idle_thread_for(cpu);
+	uintptr_t   entry_virt =
+		  CPULOCAL_BY_INDEX(cpu_started, cpu)
+			  ? (uintptr_t)&soc_qemu_entry_warm
+			  : (uintptr_t)&soc_qemu_entry_cold_secondary;
+	psci_mpidr_t psci_mpidr = psci_mpidr_default();
+	psci_mpidr_set_Aff0(&psci_mpidr, MPIDR_EL1_get_Aff0(&mpidr));
+	psci_mpidr_set_Aff1(&psci_mpidr, MPIDR_EL1_get_Aff1(&mpidr));
+	psci_mpidr_set_Aff2(&psci_mpidr, MPIDR_EL1_get_Aff2(&mpidr));
+	psci_mpidr_set_Aff3(&psci_mpidr, MPIDR_EL1_get_Aff3(&mpidr));
+	return psci_smc_cpu_on(psci_mpidr,
 			       partition_virt_to_phys(partition_get_private(),
 						      entry_virt),
 			       (uintptr_t)thread);
@@ -108,7 +97,7 @@ platform_cpu_off(void)
 }
 
 static register_t
-psci_smc_cpu_suspend_arg(register_t power_state)
+psci_smc_cpu_suspend_arg(register_t power_state) REQUIRE_PREEMPT_DISABLED
 {
 	thread_t *idle = idle_thread();
 
@@ -129,11 +118,11 @@ platform_cpu_suspend(psci_suspend_powerstate_t power_state)
 	assert(idle_is_current());
 
 	ret = thread_freeze(psci_smc_cpu_suspend_arg,
-			    psci_suspend_powerstate_raw(power_state), ~0U);
+			    psci_suspend_powerstate_raw(power_state), ~0UL);
 
-	return (ret == 0U)    ? bool_result_ok(false)
-	       : (ret == ~0U) ? bool_result_ok(true)
-			      : bool_result_error((error_t)ret);
+	return (ret == 0UL)    ? bool_result_ok(false)
+	       : (ret == ~0UL) ? bool_result_ok(true)
+			       : bool_result_error((error_t)ret);
 }
 
 error_t
@@ -165,27 +154,10 @@ platform_cpu_default_suspend(void)
 	register_t ret;
 
 	assert(idle_is_current());
-	ret = thread_freeze(psci_smc_cpu_default_suspend_arg, 0U, ~0U);
+	ret = thread_freeze(psci_smc_cpu_default_suspend_arg, 0UL, ~0UL);
 
-	return (ret == 0U)    ? bool_result_ok(false)
-	       : (ret == ~0U) ? bool_result_ok(true)
-			      : bool_result_error((error_t)ret);
-}
-#endif
-
-#if defined(SOC_QEMU_START_ALL_CORES)
-void
-soc_qemu_start_all_cores(void)
-{
-	cpu_index_t boot_cpu = cpulocal_get_index();
-
-	// Temporary for debugging: power on all CPUs
-	for (cpu_index_t cpu = 0U; cpulocal_index_valid(cpu); cpu++) {
-		if (cpu == boot_cpu) {
-			continue;
-		}
-
-		platform_cpu_on(cpu);
-	}
+	return (ret == 0UL)    ? bool_result_ok(false)
+	       : (ret == ~0UL) ? bool_result_ok(true)
+			       : bool_result_error((error_t)ret);
 }
 #endif

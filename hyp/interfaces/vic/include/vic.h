@@ -41,6 +41,10 @@
 // the object that contains the VIRQ source structure), or else be in an RCU
 // read-side critical section.
 
+// Get a pointer to a thread's vic
+vic_t *
+vic_get_vic(const thread_t *vcpu);
+
 // Exclusively claim a shared VIRQ on the specified VIC.
 //
 // This prevents the VIRQ being claimed by any other source, and allows calls

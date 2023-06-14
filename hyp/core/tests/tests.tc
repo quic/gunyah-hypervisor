@@ -1,0 +1,24 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define test_info structure {
+	count type count_t;
+	lock structure spinlock;
+};
+
+extend thread_kind enumeration {
+	test;
+};
+
+extend scheduler_block enumeration {
+	test;
+};
+
+extend tests_run_id enumeration {
+	SMC_0 = 0x0;
+};
+
+extend trace_id enumeration {
+	TEST = 4;
+};

@@ -16,6 +16,12 @@ from functools import wraps
 
 from lark import Transformer, Tree, Token, Discard
 
+import tempfile
+import Cheetah.ImportHooks
+
+td = tempfile.TemporaryDirectory()
+Cheetah.ImportHooks.setCacheDir(td.name)
+
 """
 The classes in the module represent the features of the DSL language.  They
 form an intermediate representation and are used to generate the output.  An
@@ -114,6 +120,17 @@ class TopLevel:
         output += ' '.join(footer)
 
         return output
+
+    def get_output_templates(self):
+        templates = set()
+
+        # Sort, ensuring that dependencies come before dependent definitions
+        for d in self.definitions:
+            deps = d.get_template_deps()
+            for t in deps:
+                templates.add(t)
+
+        return list(templates)
 
     def apply_template(self, template_file, public_only=False):
         ns = [{
@@ -602,6 +619,14 @@ class IType(metaclass=abc.ABCMeta):
         return any(q.is_contained for q in self.qualifiers)
 
     @property
+    def is_ordered(self):
+        """
+        Return True if the type should be generated exactly as ordered in its
+        definition.
+        """
+        raise NotImplementedError
+
+    @property
     def is_signed(self):
         """
         For scalar types, returns whether the type is signed.
@@ -765,6 +790,9 @@ class IGenCode(metaclass=abc.ABCMeta):
     def gen_code(self):
         return ([], [])
 
+    def get_template_deps(self):
+        return []
+
 
 class IAggregation:
     """
@@ -875,7 +903,7 @@ class IDeclaration(IUpdate):
         self.owner = None
 
     def set_ignored(self):
-        assert(not self.is_ignore)
+        assert (not self.is_ignore)
         self.is_ignore = True
 
     def set_const(self):
@@ -1101,7 +1129,7 @@ class BitFieldMemberMapping:
         self.field_signed = signed
 
     def add_bit_range(self, field_bit, mapped_bit, length):
-        assert field_bit >= 0
+        assert int(field_bit) >= 0
         fmap = FieldMap(field_bit, mapped_bit, length)
         self.field_maps.append(fmap)
 
@@ -1151,21 +1179,21 @@ class BitFieldSpecifier:
         self.mapping = None
 
     def add_bit_range(self, bit_range):
-        assert(self.specifier_type in (self.NONE, self.RANGE))
+        assert (self.specifier_type in (self.NONE, self.RANGE))
         self.specifier_type = self.RANGE
         self._bit_ranges.append(bit_range)
 
     def set_type_shift(self, shift):
-        assert(self.specifier_type in (self.RANGE, self.AUTO))
+        assert (self.specifier_type in (self.RANGE, self.AUTO))
         self.shift = shift
 
     def set_type_auto(self, width=None):
-        assert(self.specifier_type is self.NONE)
+        assert (self.specifier_type is self.NONE)
         self.specifier_type = self.AUTO
         self.auto_width = width
 
     def set_type_others(self):
-        assert(self.specifier_type is self.NONE)
+        assert (self.specifier_type is self.NONE)
         self.specifier_type = self.OTHERS
 
     @property
@@ -1449,9 +1477,9 @@ class ObjectDeclaration(PrimitiveDeclaration):
 templates = {}
 
 
-class BitFieldDeclaration(IDeclaration):
+class BitFieldDeclaration(IGenCode, IDeclaration):
     """
-    Declaration of a field in a BitfieldDefinition.
+    Declaration of a field in a BitFieldDefinition.
     """
 
     ACCESSOR_TEMPLATE = "templates/bitfield-generic-accessor.tmpl"
@@ -1461,12 +1489,12 @@ class BitFieldDeclaration(IDeclaration):
         self.category = self.BITFIELD
         self.prefix = None
         self.bitfield_specifier = None
-        self.template = None
         self.bf_type_name = None
         self.unit_type = None
         self.unit_size = -1
         self.ranges = None
         self.default = None
+        self._template = None
 
     def gen_code(self):
         # validate parameters
@@ -1482,12 +1510,12 @@ class BitFieldDeclaration(IDeclaration):
         # generate code to extra
 
         # FIXME: should be a list of templates (header, c, etc.) ?
-        assert self.template is not None
+        assert self._template is not None
 
         if 'bitfield' in templates:
             template = templates['bitfield']
         else:
-            template = Template.compile(file=open(self.template, 'r',
+            template = Template.compile(file=open(self._template, 'r',
                                                   encoding='utf-8'))
             templates['bitfield'] = template
 
@@ -1504,6 +1532,9 @@ class BitFieldDeclaration(IDeclaration):
         flatten anything.
         """
         raise NotImplementedError
+
+    def get_template_deps(self):
+        return [os.path.join(__loc__, self.ACCESSOR_TEMPLATE)]
 
     def update(self):
         super().update()
@@ -1534,7 +1565,7 @@ class BitFieldDeclaration(IDeclaration):
                     "unable to allocate {:d} bits from {:s}".format(
                         width, repr(self.ranges)),
                     self.member_name)
-            assert(r[1] == width)
+            assert (r[1] == width)
 
             b.bit_length = width
             range_shift = b.shift
@@ -1550,7 +1581,7 @@ class BitFieldDeclaration(IDeclaration):
                 range_shift += split_width
             b.mapping.add_bit_range(range_shift, bit, width)
 
-        assert(b.bit_length is not None)
+        assert (b.bit_length is not None)
 
         b.set_signed(self.compound_type.is_signed)
 
@@ -1576,7 +1607,7 @@ class BitFieldDeclaration(IDeclaration):
                     b.bit_length, member_bitsize),
                 self.member_name)
 
-        self.template = os.path.join(__loc__, self.ACCESSOR_TEMPLATE)
+        self._template = os.path.join(__loc__, self.ACCESSOR_TEMPLATE)
 
     @property
     def indicator(self):
@@ -1666,6 +1697,7 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         self._size = None
         self._alignment = None
         self._layout = None
+        self._ordered = True
 
     def set_abi(self, abi):
         """
@@ -1673,12 +1705,47 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         """
         self._abi = abi
 
+    def set_ordered(self, ordered):
+        """
+        Set the structure layout rules.
+        """
+        self._ordered = ordered
+
     def _update_layout(self):
         """
         Determine the layout of the structure.
         """
+        for q in self.qualifiers:
+            if q.is_optimized:
+                self.set_ordered(False)
+
+        if self.is_ordered:
+            member_list = iter(self._members())
+        else:
+            # Sort members by group, module and alignment
+            member_list = list(self._members())
+
+            def member_key(member):
+                member_type = member[1]
+                member_decl = member[2]
+
+                default_group = chr(0xff)
+                if hasattr(member_decl, "module_name"):
+                    if member_decl.module_name:
+                        default_group = '~' + member_decl.module_name
+
+                key = (default_group, -member_type.alignment)
+                for q in member_type.qualifiers:
+                    if q.is_group:
+                        key = tuple(['/'.join(q.group),
+                                     -member_type.alignment])
+                        break
+                return key
+
+            # list of lists, sort by group and alignment
+            member_list = sorted(self._members(), key=member_key)
+
         packed = self.is_packed
-        member_list = iter(self._members())
         layout = []
 
         abi = self._abi
@@ -1688,7 +1755,12 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         offset = 0
         max_alignment = 1
 
+        members = set()
         for member_name, member_type, member_decl in member_list:
+            if member_name in members:
+                raise DSLError("structure {}: duplicated members".format(
+                               self.type_name), member_decl.member_name)
+            members.add(member_name)
             if member_decl.offset is not None:
                 member_pos = int(member_decl.offset)
                 if member_pos < offset:
@@ -1723,24 +1795,23 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
             offset += member_type.size
             max_alignment = max(max_alignment, member_type.alignment)
 
-        if offset == 0:
-            raise DSLError("Structure has no members", self.type_name)
+        if offset != 0:
+            # update max_alignment for end padding
+            for q in self.qualifiers:
+                if q.is_aligned:
+                    max_alignment = max(max_alignment, q.align_bytes)
 
-        # update max_alignment for end padding
-        for q in self.qualifiers:
-            if q.is_aligned:
-                max_alignment = max(max_alignment, q.align_bytes)
-
-        if not packed:
-            # Pad the structure at the end
-            end = abi.layout_struct_member(offset, max_alignment, None, None)
-            if end > offset:
-                layout.append(('pad_end_', StructurePadding(end - offset),
-                               offset))
-                offset = end
+            if not packed:
+                # Pad the structure at the end
+                end = abi.layout_struct_member(
+                    offset, max_alignment, None, None)
+                if end > offset:
+                    layout.append(('pad_end_', StructurePadding(end - offset),
+                                   offset))
+                    offset = end
+            self._alignment = max_alignment
 
         self._size = offset
-        self._alignment = max_alignment
         self._layout = tuple(layout)
 
     def gen_forward_decl(self):
@@ -1755,8 +1826,8 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
                 pass
             elif q.is_atomic or q.is_const:
                 code.extend(q.gen_qualifier())
-        code.append("struct " + self.type_name + ' ' + self.type_name + '_t'
-                    ";\n")
+        code.append("struct " + self.type_name + '_s' + ' ' +
+                    self.type_name + '_t'";\n")
 
         return (code)
 
@@ -1767,27 +1838,28 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         code = []
         extra = []
 
-        code.append("struct ")
-        for q in self.qualifiers:
-            if q.is_aligned or q.is_atomic or q.is_const:
-                pass
-            elif q.is_packed or q.is_lockable:
-                code.extend(q.gen_qualifier())
-            else:
-                raise DSLError("Invalid qualifier for structure", q.name)
+        if self._size != 0:
+            code.append("struct ")
+            for q in self.qualifiers:
+                if q.is_aligned or q.is_atomic or q.is_const or q.is_optimized:
+                    pass
+                elif q.is_packed or q.is_lockable:
+                    code.extend(q.gen_qualifier())
+                else:
+                    raise DSLError("Invalid qualifier for structure", q.name)
 
-        code.append(" " + self.type_name + " {\n")
+            code.append(" " + self.type_name + '_s' " {\n")
 
-        for q in self.qualifiers:
-            if q.is_aligned:
-                code.extend(q.gen_qualifier())
+            for q in self.qualifiers:
+                if q.is_aligned:
+                    code.extend(q.gen_qualifier())
 
-        for member_name, member_type, member_offset in self._layout:
-            code.append(member_type.gen_declaration(member_name) + ';\n')
+            for member_name, member_type, member_offset in self._layout:
+                code.append(member_type.gen_declaration(member_name) + ';\n')
 
-        code.append("} ")
+            code.append("} ")
 
-        code.append(';\n\n')
+            code.append(';\n\n')
 
         return (code, extra)
 
@@ -1814,6 +1886,10 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
         return True
 
     @property
+    def is_ordered(self):
+        return self._ordered
+
+    @property
     def default_alignment(self):
         if self._alignment is None:
             self._update_layout()
@@ -1824,6 +1900,18 @@ class StructureDefinition(IGenCode, ICustomizedDefinition):
             yield from d.get_members(prefix=prefix)
         for e in self.extensions:
             yield from e._members(prefix=prefix)
+
+    def update(self):
+        """
+        Update internal data, prepare to generate code
+        """
+        used_names = set()
+        for member_name, member_type, _ in self._members():
+            if member_name in used_names:
+                raise DSLError("'structure {:s}': each member needs to have a"
+                               " unique name".format(self.type_name),
+                               member_type.type_name)
+            used_names.add(member_name)
 
     @property
     def dependencies(self):
@@ -1845,6 +1933,7 @@ class ObjectDefinition(StructureDefinition):
         # embedded in any other object.
         # FIXME: this should be explicit in the language
         self.need_export = True
+        self.set_ordered(False)
 
     def gen_code(self):
         if self.need_export:
@@ -1890,13 +1979,14 @@ class UnionDefinition(IGenCode, ICustomizedDefinition):
         code.append("typedef")
 
         for q in self.qualifiers:
-            if q.is_aligned:
+            if q.is_aligned or q.is_lockable:
                 pass
             elif q.is_atomic or q.is_const:
                 code.extend(q.gen_qualifier())
             else:
                 raise DSLError("Invalid qualifier for union", q.name)
-        code.append("union " + self.type_name + ' ' + self.type_name + '_t;\n')
+        code.append("union " + self.type_name + '_u' +
+                    ' ' + self.type_name + '_t;\n')
 
         return code
 
@@ -1907,10 +1997,12 @@ class UnionDefinition(IGenCode, ICustomizedDefinition):
         for q in self.qualifiers:
             if q.is_aligned or q.is_atomic or q.is_const:
                 pass
+            elif q.is_lockable:
+                code.extend(q.gen_qualifier())
             else:
                 raise DSLError("Invalid qualifier for union", q.name)
 
-        code.append(" " + self.type_name + " {\n")
+        code.append(" " + self.type_name + '_u' + " {\n")
 
         align_qualifiers = tuple(q for q in self.qualifiers if q.is_aligned)
 
@@ -1953,6 +2045,18 @@ class UnionDefinition(IGenCode, ICustomizedDefinition):
             yield from members
         for e in self.extensions:
             yield from e._members(prefix=prefix)
+
+    def update(self):
+        """
+        Update internal data, prepare to generate code
+        """
+        used_names = set()
+        for member_name, member_type, _ in self._members():
+            if member_name in used_names:
+                raise DSLError("'union {:s}': each member needs to have a"
+                               " unique name".format(self.type_name),
+                               member_type.type_name)
+            used_names.add(member_name)
 
     @property
     def dependencies(self):
@@ -1997,8 +2101,8 @@ class EnumerationDefinition(IGenCode, ICustomizedDefinition):
 
     def __getstate__(self):
         """
-        Temporary workaround to ensure types are updated before pickling.  Auto
-        update should be removed entirely.
+        Temporary workaround to ensure types are updated before pickling. Auto
+        update should be removed entirely when issue is resolved.
         """
         if not self._updated:
             self._autoupdate()
@@ -2034,12 +2138,19 @@ class EnumerationDefinition(IGenCode, ICustomizedDefinition):
         Update internal data, prepare to generate code
         """
         def _check_enumerator(e):
-            if e.value in used_values:
-                raise DSLError("each enumerator needs to have a unique value",
+            if e.name in used_names:
+                raise DSLError("'enumeration {:s}': each enumerator needs to"
+                               " have a unique name".format(self.type_name),
                                e.name)
+            if e.value in used_values:
+                raise DSLError("'enumeration {:s}': each enumerator needs to"
+                               " have a unique value".format(self.type_name),
+                               e.name)
+            used_names.add(e.name)
             used_values.add(e.value)
 
         # Ensure constant values are resolved and not duplicates
+        used_names = set()
         used_values = set()
         for e in self._enumerators:
             if e.value is not None:
@@ -2126,7 +2237,7 @@ class EnumerationDefinition(IGenCode, ICustomizedDefinition):
         extra = []
 
         # generate code now
-        code = ['typedef', 'enum', self.type_name, '{\n']
+        code = ['typedef', 'enum', self.type_name + '_e', '{\n']
 
         sorted_enumerators = sorted(self._enumerators, key=lambda x: x.value)
 
@@ -2140,13 +2251,16 @@ class EnumerationDefinition(IGenCode, ICustomizedDefinition):
 
         code.append(';\n\n')
 
-        suffix = '' if self.is_signed else 'U'
-        code.append('#define {:s}__MAX ({:s})({:d}{:s})\n'.format(
-            self.type_name.upper(), self.type_name + '_t', self.maximum_value,
-            suffix))
-        code.append('#define {:s}__MIN ({:s})({:d}{:s})\n'.format(
-            self.type_name.upper(), self.type_name + '_t', self.minimum_value,
-            suffix))
+        for e in self._enumerators:
+            if e.value == self.minimum_value:
+                e_min = e.prefix + self.get_enum_name(e)
+            if e.value == self.maximum_value:
+                e_max = e.prefix + self.get_enum_name(e)
+
+        code.append('#define {:s}__MAX {:s}\n'.format(
+            self.type_name.upper(), e_max))
+        code.append('#define {:s}__MIN {:s}\n'.format(
+            self.type_name.upper(), e_min))
         code.append('\n')
 
         return (code, extra)
@@ -2278,6 +2392,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
         self.const = False
         self._signed = False
         self._has_set_ops = None
+        self._template = None
 
     def update_unit_info(self):
         if self.length <= 8:
@@ -2328,9 +2443,12 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
 
     @property
     def fields(self):
+        items = []
         for d in self._all_declarations:
             if d.compound_type is not None:
-                yield d
+                items.append(d)
+        items = sorted(items, key=lambda x: x.field_maps[0].mapped_bit)
+        return tuple(items)
 
     @property
     def all_fields_boolean(self):
@@ -2359,6 +2477,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
         ns = {
             "type_name": self.type_name,
             "unit_type": self.unit_type,
+            "unit_size": self.unit_size,
             "unit_cnt": self.unit_count,
             "declarations": self._all_declarations,
             "init_values": self.init_values,
@@ -2367,8 +2486,15 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
             "all_fields_boolean": self.all_fields_boolean,
             "has_set_ops": self.has_set_ops,
         }
-        fn = os.path.join(__loc__, self.TYPE_TEMPLATE)
-        t = Template(file=open(fn, 'r', encoding='utf-8'), searchList=ns)
+
+        if 'bitfield-type' in templates:
+            template = templates['bitfield-type']
+        else:
+            template = Template.compile(file=open(self._template, 'r',
+                                                  encoding='utf-8'))
+            templates['bitfield-type'] = template
+
+        t = template(namespaces=(ns))
         return str(t)
 
     @property
@@ -2445,6 +2571,8 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
         code = []
         extra = []
 
+        assert self._template is not None
+
         code.append(self._gen_definition_code())
 
         # generate getters and setters for all declarations
@@ -2461,10 +2589,21 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
 
         return (code, extra)
 
+    def get_template_deps(self):
+        templates = []
+        for d in self._all_declarations:
+            if d.compound_type is None:
+                continue
+            else:
+                templates += d.get_template_deps()
+        return templates + [os.path.join(__loc__, self.TYPE_TEMPLATE)]
+
     def update(self):
         super().update()
         if self._ranges is None:
             self._update_layout()
+
+        self._template = os.path.join(__loc__, self.TYPE_TEMPLATE)
 
     def _update_layout(self):
         """
@@ -2476,19 +2615,28 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
                 found = False
                 for i, d in enumerate(self.declarations):
                     if str(d.member_name) == name:
-                        del(self.declarations[i])
+                        del (self.declarations[i])
                         found = True
                         break
                 if not found:
                     raise DSLError("can't delete unknown member", name)
 
         self._ranges = BitFieldRangeCollector(self.length)
+
         for d in self._all_declarations:
             d.update_ranges(self._ranges, self.unit_size)
 
+        used_names = set()
         for d in self._all_declarations:
             if d.is_ignore:
                 continue
+
+            if d.member_name in used_names:
+                raise DSLError("'bitfield {:s}': each member needs to"
+                               " have a unique name".format(self.type_name),
+                               d.member_name)
+            used_names.add(d.member_name)
+
             # if bitfield is constant, update all members
             if self.const:
                 d.set_const()
@@ -2524,6 +2672,9 @@ class StructureExtension(IExtension):
     def link(self, definition):
         self.prefix = self.module_name
         definition.extensions.append(self)
+
+        for d in self.declarations:
+            d.module_name = self.prefix
 
     def _members(self, prefix=None):
         if prefix is not None and self.prefix is not None:
@@ -2674,6 +2825,14 @@ class Qualifier:
     def is_lockable(self):
         return False
 
+    @property
+    def is_optimized(self):
+        return False
+
+    @property
+    def is_group(self):
+        return False
+
     def gen_qualifier(self):
         return [self.name]
 
@@ -2715,6 +2874,19 @@ class AlignedQualifier(Qualifier):
 
     def __hash__(self):
         return hash(id(self))
+
+
+class GroupQualifier(Qualifier):
+    def __init__(self, name, group):
+        super().__init__(name)
+        self.group = group
+
+    def gen_qualifier(self):
+        return [""]
+
+    @property
+    def is_group(self):
+        return True
 
 
 class AtomicQualifier(Qualifier):
@@ -2761,13 +2933,30 @@ class LockableQualifier(Qualifier):
     def gen_qualifier(self):
         if self.resource_name is None:
             raise DSLError(
-                "Only structure and object definitions may be lockable",
+                "Only structure, object and union definitions may be lockable",
                 self.name)
         return ['__attribute__((capability("{:s}")))'
                 .format(self.resource_name)]
 
     @property
     def is_lockable(self):
+        return True
+
+
+class OptimizeQualifier(Qualifier):
+    def __init__(self, name):
+        super().__init__(name)
+        self.category = None
+
+    def gen_qualifier(self):
+        if self.category is None:
+            raise DSLError(
+                "Only structure and object definitions may be optimized",
+                self.name)
+        return [""]
+
+    @property
+    def is_optimized(self):
         return True
 
 

@@ -1,0 +1,37 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define partition_create_vrtc hypercall {
+	vendor_hyp_call;
+	src_partition	input type cap_id_t;
+	cspace		input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+	new_cap		output type cap_id_t;
+};
+
+define vrtc_configure hypercall {
+	vendor_hyp_call;
+	vrtc		input type cap_id_t;
+	ipa		input type vmaddr_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define vrtc_set_time_base hypercall {
+	vendor_hyp_call;
+	vrtc		input type cap_id_t;
+	time_base	input type nanoseconds_t;
+	sys_timer_ref	input type ticks_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define vrtc_attach_addrspace hypercall {
+	vendor_hyp_call;
+	vrtc		input type cap_id_t;
+	addrspace	input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+};

@@ -49,6 +49,7 @@ define cap_data structure {
 	info bitfield cap_info;
 };
 
+// FIXME:
 define cap structure(aligned(16)) {
 	data		structure cap_data(atomic);
 	cap_list_node	structure list_node(contained);
@@ -84,6 +85,7 @@ define CAP_TABLE_NUM_CAP_SLOTS constant type index_t =
 			sizeof(structure cap)) *
 			sizeof(type register_t))) / sizeof(structure cap);
 
+// FIXME:
 define CSPACE__CAP_TABLE_MEM_AVAIL constant size =
 		CSPACE_ALLOC_SIZE - sizeof(object cspace_inner) -
 		sizeof(structure object_header) - sizeof(structure list_node);

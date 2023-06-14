@@ -22,7 +22,7 @@ scheduler_schedule(void);
 // The scheduler run is not guaranteed to until the next return to userspace or
 // the idle thread.
 void
-scheduler_trigger(void);
+scheduler_trigger(void) REQUIRE_PREEMPT_DISABLED;
 
 // Run the scheduler and possibly switch to a different thread, with a hint
 // that the current thread wants to yield the CPU even if it is still
@@ -140,18 +140,15 @@ scheduler_unblock(thread_t *thread, scheduler_block_t block)
 bool
 scheduler_is_blocked(const thread_t *thread, scheduler_block_t block);
 
-// Return true if a thread is not blocked for any reason.
+// Return true if a thread is available for scheduling.
 //
 // The caller must either be the specified thread, or hold a reference to the
-// specified thread, or be in an RCU read-side critical section.
+// specified thread, or be in an RCU read-side critical section. The caller must
+// also hold the scheduling lock for the thread (see scheduler_lock()).
 //
-// Note that this function is inherently racy: if the specified thread might
-// be blocked for any reason by a third party, or if all current blocks might be
-// removed by third parties, then it may return an incorrect value. It is the
-// caller's responsibility to guarantee that such races do not occur, typically
-// by calling scheduler_lock().
+// This function may ignore some block flags if the thread has been killed.
 bool
-scheduler_is_runnable(const thread_t *thread);
+scheduler_is_runnable(const thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
 // Wait until a specified thread is not running.
 //
@@ -204,7 +201,7 @@ scheduler_unpin(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 // This function does not take a reference to the returned thread, so it must be
 // called from an RCU read-side critical section.
 thread_t *
-scheduler_get_primary_vcpu(cpu_index_t cpu);
+scheduler_get_primary_vcpu(cpu_index_t cpu) REQUIRE_RCU_READ;
 
 // Returns the configured affinity of a thread.
 //

@@ -13,8 +13,8 @@ typedef uint64_t Elf_Xword;
 typedef uint64_t Elf_Addr;
 typedef uint64_t Elf_Off;
 
-#define R_TYPE(r_info) ((r_info)&0x7fffffff)
-#define R_SYM(r_info)  ((r_info) >> 32)
+#define R_TYPE(r_info) ((r_info)&0x7fffffffU)
+#define R_SYM(r_info)  ((r_info) >> 32U)
 
 #define ELF_CLASS ELF_CLASS_64
 
@@ -40,38 +40,38 @@ typedef uint64_t Elf_Off;
 #define EI_ABIVERSION 8
 #define EI_PAD	      9
 
-#define ELF_CLASS_NONE 0
-#define ELF_CLASS_32   1
-#define ELF_CLASS_64   2
+#define ELF_CLASS_NONE 0U
+#define ELF_CLASS_32   1U
+#define ELF_CLASS_64   2U
 
-#define ELF_DATA_NONE 0
-#define ELF_DATA_2LSB 1
-#define ELF_DATA_2MSB 2
+#define ELF_DATA_NONE 0U
+#define ELF_DATA_2LSB 1U
+#define ELF_DATA_2MSB 2U
 
-#define EV_NONE	   0
-#define EV_CURRENT 1
+#define EV_NONE	   0U
+#define EV_CURRENT 1U
 
-#define ET_NONE 0
-#define ET_REL	1
-#define ET_EXEC 2
-#define ET_DYN	3
-#define ET_CORE 4
+#define ET_NONE 0U
+#define ET_REL	1U
+#define ET_EXEC 2U
+#define ET_DYN	3U
+#define ET_CORE 4U
 
-#define EM_AARCH64 183
+#define EM_AARCH64 183U
 
-#define PT_NULL	   0
-#define PT_LOAD	   1
-#define PT_DYNAMIC 2
-#define PT_INTERP  3
-#define PT_NOTE	   4
-#define PT_SHLIB   5
-#define PT_PHDR	   6
-#define PT_TLS	   7
-#define PT_NUM	   8
+#define PT_NULL	   0U
+#define PT_LOAD	   1U
+#define PT_DYNAMIC 2U
+#define PT_INTERP  3U
+#define PT_NOTE	   4U
+#define PT_SHLIB   5U
+#define PT_PHDR	   6U
+#define PT_TLS	   7U
+#define PT_NUM	   8U
 
-#define PF_X 1
-#define PF_W 2
-#define PF_R 4
+#define PF_X 1U
+#define PF_W 2U
+#define PF_R 4U
 
 #define DT_NULL	  0
 #define DT_REL	  17
@@ -81,12 +81,13 @@ typedef uint64_t Elf_Off;
 #define DT_CNT	  19
 
 // Architecture relocation types
-#define R_AARCH64_NONE	   0
-#define R_AARCH64_NULL	   256
-#define R_AARCH64_RELATIVE 1027
+#define R_AARCH64_NONE	   0U
+#define R_AARCH64_NULL	   256U
+#define R_AARCH64_RELATIVE 1027U
 
 typedef struct {
 	Elf_Sxword d_tag;
+
 	union {
 		Elf_Xword d_val;
 		Elf_Addr  d_ptr;

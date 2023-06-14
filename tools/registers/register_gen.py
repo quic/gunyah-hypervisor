@@ -138,7 +138,7 @@ def main():
                       default=sys.stdout, help="Write output to file")
     args.add_argument("-f", "--formatter",
                       help="specify clang-format to format the code")
-    args.add_argument("input", metavar='INPUT', nargs=1,
+    args.add_argument("input", metavar='INPUT', nargs='*',
                       help="Input type register file to process",
                       type=argparse.FileType('r', encoding="utf-8"))
     options = args.parse_args()

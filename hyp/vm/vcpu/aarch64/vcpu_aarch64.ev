@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Add the events for the traps coming from AArch32
+// FIXME:
 
 module vcpu
 
@@ -13,8 +14,16 @@ subscribe boot_runtime_first_init
 subscribe boot_runtime_warm_init
 	handler vcpu_handle_boot_runtime_init()
 subscribe boot_cpu_warm_init()
+#if defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_1p2) || \
+	defined(ARCH_ARM_FEAT_CSV2_3)
+subscribe boot_cold_init()
+#endif
 
 // new vcpu handlers
+
+subscribe object_deactivate_thread
+
+subscribe vcpu_activate_thread
 
 subscribe thread_get_entry_fn[THREAD_KIND_VCPU] ()
 
@@ -30,15 +39,19 @@ subscribe thread_start
 
 subscribe thread_save_state
 	handler vcpu_context_switch_save()
+	require_preempt_disabled
 
 subscribe thread_save_state
 	handler vcpu_context_switch_cpu_save()
+	require_preempt_disabled
 
 subscribe thread_load_state
 	handler vcpu_context_switch_load()
+	require_preempt_disabled
 
 subscribe thread_load_state
 	handler vcpu_context_switch_cpu_load()
+	require_preempt_disabled
 
 // vcpu register trap handlers
 
@@ -47,6 +60,7 @@ subscribe vcpu_trap_sysreg_read
 
 subscribe vcpu_trap_sysreg_read
 	handler sysreg_read_cpu
+	priority 1
 
 subscribe vcpu_trap_sysreg_read
 	handler sysreg_read_fallback
@@ -58,6 +72,7 @@ subscribe vcpu_trap_sysreg_write
 
 subscribe vcpu_trap_sysreg_write
 	handler sysreg_write_cpu
+	priority 1
 
 subscribe vcpu_trap_sysreg_write
 	handler sysreg_write_fallback
@@ -70,7 +85,7 @@ subscribe vcpu_trap_brk_instruction_guest
 
 subscribe scheduler_selected_thread(thread, can_idle)
 
-subscribe vcpu_trap_wfi()
+subscribe vcpu_trap_wfi
 	priority last
 	exclude_preempt_disabled
 
@@ -82,12 +97,11 @@ subscribe scheduler_quiescent()
 subscribe thread_context_switch_post()
 #endif
 
+#if defined(MODULE_VM_VCPU_RUN)
+subscribe vcpu_run_check
+	handler vcpu_arch_handle_vcpu_run_check(vcpu)
+#endif
+
 // VCPU lifecycle and power management
 
 subscribe rootvm_init(root_thread)
-
-subscribe vcpu_poweron
-	handler vcpu_reset_execution_context(vcpu)
-
-subscribe vcpu_warm_reset
-	handler vcpu_reset_execution_context(vcpu)

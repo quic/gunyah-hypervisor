@@ -2,10 +2,51 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-extend boot_env_data structure {
-	partition_capid		type cap_id_t;
-	cspace_capid		type cap_id_t;
+// Place the root VM at the default scheduling priority. This will typically
+// be shared with most HLOS VMs.
+//
+// Note: VMs with higher priority than this must perform directed yields to
+// the root VM while waiting for it to complete an operation. VMs with lower
+// priority than this may be blocked by long-running root VM operations.
+define ROOTVM_PRIORITY public constant type priority_t =
+	SCHEDULER_DEFAULT_PRIORITY;
+
+extend hyp_env_data structure {
 	vcpu_capid		type cap_id_t;
 	entry_ipa		type vmaddr_t;
 	env_ipa			type vmaddr_t;
+	env_data_size		size;
+};
+
+define ROOTVM_ENV_DATA_SIGNATURE public constant = 0x454D5652;
+define ROOTVM_ENV_DATA_VERSION public constant = 0x1000;
+
+// Do NOT extend this structure, since its cross image interface
+define rt_env_data public structure {
+	signature	uint32;
+	version	uint16;
+
+	runtime_ipa	type vmaddr_t;
+	app_ipa		type vmaddr_t;
+	app_heap_ipa	type vmaddr_t;
+	app_heap_size	size;
+
+	vcpu_capid	type cap_id_t;
+	timer_freq	uint64;
+	gicd_base	type paddr_t;
+	gicr_base	type paddr_t;
+
+	rm_config_offset	size;
+	rm_config_size	size;
+};
+
+define RM_ENV_DATA_SIGNATURE public constant = 0x524D4544;
+define RM_ENV_DATA_VERSION public constant = 0x1000;
+
+// Do NOT extend this structure, since its cross image interface
+define rm_env_data_hdr public structure {
+	signature	uint32;
+	version	uint16;
+	data_payload_offset	uint32;
+	data_payload_size	uint32;
 };

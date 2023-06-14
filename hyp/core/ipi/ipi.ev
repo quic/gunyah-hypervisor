@@ -19,7 +19,9 @@ subscribe thread_exit_to_user
 	require_preempt_disabled
 
 subscribe optional preempt_interrupt
+	require_preempt_disabled
 
 // This handler IPIs all cores to stop, it has high priority
 subscribe scheduler_stop()
 	priority 1000
+	require_preempt_disabled

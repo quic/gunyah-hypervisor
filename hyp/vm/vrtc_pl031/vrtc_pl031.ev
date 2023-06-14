@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vrtc_pl031
+
+subscribe object_create_vrtc(vrtc_create)
+
+subscribe object_activate_vrtc
+
+subscribe object_deactivate_addrspace
+
+subscribe vdevice_access_fixed_addr

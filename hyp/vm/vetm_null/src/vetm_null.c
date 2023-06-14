@@ -11,14 +11,13 @@
 #include <trace.h>
 #include <trace_helpers.h>
 
-#include "etm.h"
 #include "event_handlers.h"
 
-bool
+vcpu_trap_result_t
 vetm_null_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 					   register_t *value, bool is_write)
 {
-	bool ret;
+	vcpu_trap_result_t ret = VCPU_TRAP_RESULT_UNHANDLED;
 	(void)access_size;
 
 	thread_t *vcpu = thread_get_self();
@@ -30,14 +29,13 @@ vetm_null_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 	}
 
 	if ((ipa >= PLATFORM_ETM_BASE) &&
-	    (ipa < (PLATFORM_ETM_BASE + (ETM_STRIDE * PLATFORM_MAX_CORES)))) {
+	    (ipa < (PLATFORM_ETM_BASE +
+		    (PLATFORM_ETM_STRIDE * PLATFORM_MAX_CORES)))) {
 		// Treat the entire ETM region as RAZ/WI
 		if (!is_write) {
 			*value = 0U;
 		}
-		ret = true;
-	} else {
-		ret = false;
+		ret = VCPU_TRAP_RESULT_EMULATED;
 	}
 
 out:

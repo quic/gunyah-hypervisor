@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 extend thread_kind enumeration {
-	idle;
+	idle = 1;
 };
 
 extend scheduler_block enumeration {

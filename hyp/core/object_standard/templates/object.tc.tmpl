@@ -6,8 +6,8 @@ define object_header structure {
 	type		enumeration object_type;
 	state		enumeration object_state(atomic);
 	refcount	structure refcount;
-	rcu_entry	structure rcu_entry(contained);
 	lock		structure spinlock;
+	rcu_entry	structure rcu_entry(contained);
 };
 
 #for obj in $object_list
@@ -17,7 +17,7 @@ define object_header structure {
 //       at the start of the object, needed for partition_revoke
 //	"	header structure object_header priority=first;"
 extend $o object {
-	header structure object_header(contained);
+	header structure object_header(contained, group(__object_header));
 };
 #end for
 

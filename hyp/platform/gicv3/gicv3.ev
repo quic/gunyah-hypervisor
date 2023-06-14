@@ -13,6 +13,7 @@ subscribe boot_cpu_cold_init
 	priority 10
 
 subscribe boot_cpu_warm_init
+	require_preempt_disabled
 
 subscribe power_cpu_suspend()
 	unwinder gicv3_handle_power_cpu_resume()
@@ -32,3 +33,28 @@ subscribe vcpu_poweroff(current)
 	require_scheduler_lock(current)
 
 #endif // INTERFACE_VCPU && GICV3_HAS_1N
+
+#if defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE
+subscribe scheduler_affinity_changed(thread, prev_cpu, next_cpu)
+	require_scheduler_lock(thread)
+
+#if GICV3_HAS_VLPI_V4_1
+subscribe object_create_thread
+
+subscribe irq_received[HWIRQ_ACTION_GICV3_ITS_DOORBELL]
+	handler gicv3_vpe_handle_irq_received_doorbell(hwirq)
+#endif
+#endif
+
+#if GICV3_HAS_ITS
+subscribe abort_kernel()
+#endif
+
+subscribe boot_hypervisor_handover
+	require_preempt_disabled
+
+subscribe power_cpu_online()
+	require_preempt_disabled
+
+subscribe power_cpu_offline()
+	require_preempt_disabled

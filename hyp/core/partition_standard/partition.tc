@@ -23,6 +23,7 @@ extend partition object {
 
 extend cap_rights_partition bitfield {
 	0	object_create	bool;
+	1	donate		bool;
 };
 
 define partition_option_flags bitfield<64> {

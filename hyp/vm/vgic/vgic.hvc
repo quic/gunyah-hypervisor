@@ -1,0 +1,15 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vgic_set_mpidr_mapping hypercall {
+	call_num 0x67;
+	vic		input type cap_id_t;
+	mask		input uint64;
+	aff0_shift	input type count_t;
+	aff1_shift	input type count_t;
+	aff2_shift	input type count_t;
+	aff3_shift	input type count_t;
+	mt		input bool;
+	error		output enumeration error;
+};

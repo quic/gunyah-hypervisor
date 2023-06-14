@@ -4,17 +4,17 @@
 
 #define sysreg64_read(reg, val)                                                \
 	do {                                                                   \
-		register_t _val;                                               \
-		__asm__ volatile("mrs %0, " #reg ";" : "=r"(_val));            \
-		val = (__typeof__(val))_val;                                   \
+		register_t val_;                                               \
+		__asm__ volatile("mrs %0, " #reg ";" : "=r"(val_));            \
+		val = (__typeof__(val))val_;                                   \
 	} while (0)
 
 #define sysreg64_read_ordered(reg, val, ordering_var)                          \
 	do {                                                                   \
-		register_t _val;                                               \
+		register_t val_;                                               \
 		__asm__ volatile("mrs %0, " #reg ";"                           \
-				 : "=r"(_val), "+m"(ordering_var));            \
-		val = (__typeof__(val))_val;                                   \
+				 : "=r"(val_), "+m"(ordering_var));            \
+		val = (__typeof__(val))val_;                                   \
 	} while (0)
 
 #define sysreg64_write(reg, val)                                               \

@@ -1,0 +1,145 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+
+define ETE_TRCLAR_UNLOCK constant = 0xC5ACCE55;
+define ETE_TRCLAR_LOCK constant = 0x0;
+
+define TRCSTATR bitfield<64> {
+	0	idle		bool;
+	1	pmstable	bool;
+	others	unknown = 0;
+};
+
+define TRCPRGCTLR bitfield<64> {
+	0	EN		bool;
+	others	unknown = 0;
+};
+
+define TRCIDR5 bitfield<64> {
+	11:9		NUMEXTINSEL	uint8;
+	27:25		NUMSEQSTATE	uint8;
+	30:28		NUMCNTR	uint8;
+	others		unknown = 0;
+};
+
+define TRCIDR4 bitfield<64> {
+	3:0		NUMACPAIRS	uint8;
+	7:4		NUMDVC		uint8;
+	8		SUPPDAC	uint8;
+	15:12		NUMPC		uint8;
+	19:16		NUMRSPAIR	uint8;
+	23:20		NUMSSCC	uint8;
+	27:24		NUMCIDC	uint8;
+	31:28		NUMVMIDC	uint8;
+	others		unknown = 0;
+};
+
+define TRCIDR3 bitfield<64> {
+	26		STALLCTL	bool;
+	others		unknown = 0;
+};
+
+define TRCIDR2 bitfield<64> {
+	9:5		CIDSIZE	uint8;
+	14:10		VMIDSIZE	uint8;
+	others		unknown = 0;
+};
+
+define TRCIDR0 bitfield<64> {
+	14		QFILT		uint8;
+	others		unknown = 0;
+};
+
+define ete_context structure {
+	TRCPRGCTLR	uint64;
+	TRCCONFIGR	uint64;
+	TRCAUXCTLR	uint64;
+	TRCEVENTCTL0R	uint64;
+	TRCEVENTCTL1R	uint64;
+	TRCRSR		uint64;
+
+	TRCSTALLCTLR	uint64;
+
+	TRCTSCTLR	uint64;
+	TRCSYNCPR	uint64;
+	TRCCCCTLR	uint64;
+	TRCBBCTLR	uint64;
+	TRCTRACEIDR	uint64;
+	TRCQCTLR	uint64;
+	TRCVICTLR	uint64;
+	TRCVIIECTLR	uint64;
+	TRCVISSCTLR	uint64;
+
+#if TRCIDR4_NUMPC > 0
+	TRCVIPCSSCTLR	uint64;
+#endif
+
+#if TRCIDR5_NUMSEQSTATE > 0
+	TRCSEQEVR	array(3) uint64;
+#endif
+
+	TRCSEQRSTEVR	uint64;
+	TRCSEQSTR	uint64;
+
+	TRCEXTINSELR	array(TRCIDR5_NUMEXTINSEL) uint64;
+
+	TRCCNTRLDVR	array(TRCIDR5_NUMCNTR) uint64;
+
+	TRCCNTCTLR	array(TRCIDR5_NUMCNTR) uint64;
+
+	TRCCNTVR	array(TRCIDR5_NUMCNTR) uint64;
+
+	// following are optional
+	// TRCIMSPEC1	uint64;
+	// TRCIMSPEC2	uint64;
+	// TRCIMSPEC3	uint64;
+	// TRCIMSPEC4	uint64;
+	// TRCIMSPEC5	uint64;
+	// TRCIMSPEC6	uint64;
+	// TRCIMSPEC7	uint64;
+
+	// special case
+	// ((TRCIDR4.NUMRSPAIR + 1) * 2) > n
+	// range 2 - 31
+	TRCRSCTLR	array(TRCRSCTLR_CNT) uint64;
+
+	TRCSSCCR	array(TRCIDR4_NUMSSCC) uint64;
+
+	TRCSSCSR	array(TRCIDR4_NUMSSCC) uint64;
+
+#if TRCIDR4_NUMPC > 0
+	// special case
+	// TRCSSCSR<n>.PC == 0b1
+	TRCSSPCICR	array(TRCIDR4_NUMPC) uint64;
+#endif
+
+
+	// TRCIDR4.NUMACPAIRS * 2 > n
+	TRCACVR	array(TRCACVR_CNT) uint64;
+
+	// TRCIDR4.NUMACPAIRS * 2 > n
+	TRCACATR	array(TRCACATR_CNT) uint64;
+
+	TRCCIDCVR	array(TRCIDR4_NUMCIDC) uint64;
+
+	TRCVMIDCVR	array(TRCIDR4_NUMVMIDC) uint64;
+
+#if (TRCIDR4_NUMCIDC > 0x0) && (TRCIDR2_CIDSIZE > 0)
+	TRCCIDCCTLR0	uint64;
+#endif
+
+#if (TRCIDR4_NUMCIDC > 0x4) && (TRCIDR2_CIDSIZE > 0)
+	TRCCIDCCTLR1	uint64;
+#endif
+
+#if (TRCIDR4_NUMVMIDC > 0x0) && (TRCIDR2_VMIDSIZE > 0)
+	TRCVMIDCCTLR0	uint64;
+#endif
+
+#if (TRCIDR4_NUMVMIDC > 0x4) && (TRCIDR2_VMIDSIZE > 0)
+	TRCVMIDCCTLR1	uint64;
+#endif
+	TRFCR_EL1	bitfield TRFCR_EL1;
+};

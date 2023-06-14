@@ -11,7 +11,7 @@
 #set unit_postfix=' x{:d}'.format($unit_cnt)
 #end if
 // Bitfield: $type_name <${unit_type}${unit_postfix}>
-typedef struct ${type_name} {
+typedef struct ${type_name}_b {
 #set decs = []
 #for $d in $declarations:
 #if $d.field_maps
@@ -42,7 +42,7 @@ typedef struct ${type_name} {
 ## in contexts that require constant expressions, e.g. in case labels.
 #define ${type_name}_default() \
 	(${type_name}_t){ .bf = { #slurp
-${', '.join(str(v) for v in $init_values)} } }
+${', '.join(hex(v) for v in $init_values)} } }
 
 #define ${type_name}_cast(#slurp
 #for i in range($unit_cnt)
@@ -71,11 +71,22 @@ ${type_name}_atomic_ptr_raw(_Atomic ${type_name}_t *ptr);
 void
 ${type_name}_init(${type_name}_t *bit_field);
 
+// Set all unknown/unnamed fields to their expected default values.
+// Note, this does NOT clean const named fields to default values.
 ${type_name}_t
-${type_name}_clean(${type_name}_t val);
+${type_name}_clean(${type_name}_t bit_field);
 
 bool
 ${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2);
+
+bool
+${type_name}_is_empty(${type_name}_t bit_field);
+
+// Check all unknown/unnamed fields have expected default values.
+// Note, this does NOT check whether const named fields have their default
+// values.
+bool
+${type_name}_is_clean(${type_name}_t bit_field);
 
 #if $has_set_ops
 // Union of boolean fields of two ${type_name}_t values

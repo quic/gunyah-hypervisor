@@ -5,7 +5,7 @@
 \#if defined(MODULE_CORE_DEBUG)
 static inline bool
 debug_save_common(debug_common_registers_t *regs,
-		  struct asm_ordering_dummy *order)
+		  asm_ordering_dummy_t *order)
 {
 	bool in_use = false;
 
@@ -28,12 +28,16 @@ debug_save_common(debug_common_registers_t *regs,
         in_use = in_use || MDSCR_EL1_get_TDCC(&regs->mdscr);
         in_use = in_use || MDSCR_EL1_get_SS(&regs->mdscr);
 
+\#if ARCH_AARCH64_32BIT_EL1
+	regs->dbgvcr = register_DBGVCR32_EL2_read_ordered(order);
+\#endif
+
 	return in_use;
 }
 
 static inline void
 debug_load_common(const debug_common_registers_t *regs,
-		  struct asm_ordering_dummy *order)
+		  asm_ordering_dummy_t *order)
 {
 #for bp in range(0, $CPU_DEBUG_BP_COUNT)
 	register_DBGBVR${bp}_EL1_write_ordered(regs->bvrs[${bp}], order);
@@ -49,5 +53,9 @@ debug_load_common(const debug_common_registers_t *regs,
 #end for
 
 	register_MDSCR_EL1_write_ordered(regs->mdscr, order);
+
+\#if ARCH_AARCH64_32BIT_EL1
+	register_DBGVCR32_EL2_write_ordered(regs->dbgvcr, order);
+\#endif
 }
 \#endif

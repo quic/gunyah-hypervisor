@@ -2,17 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-extend boot_env_data structure {
+extend hyp_env_data structure {
 	device_me_capid		type cap_id_t;
-	device_me_base		type vmaddr_t;
 	entry_hlos		type vmaddr_t;
-	hlos_vm_base		type vmaddr_t;
-	hlos_vm_size		size;
-	hlos_dt_base		type vmaddr_t;
-	hlos_ramfs_base		type vmaddr_t;
-	watchdog_supported	bool;
-	uart_me_capid		type cap_id_t;
-	uart_address		type paddr_t;
 };
 
 #if defined (PLATFORM_PSCI_USE_ORIGINAL_POWERSTATE_FORMAT)
@@ -23,11 +15,13 @@ extend psci_suspend_powerstate bitfield {
 
 define psci_suspend_powerstate_stateid bitfield<16> {
 	3:0	cpu	type psci_cpu_state_t;
+	7:4	cluster	type psci_cluster_state_L3_t;
 		others	unknown=0;
 };
 #endif
 
-define psci_cpu_state_t newtype uint8;
+define psci_cpu_state_t newtype uint32;
+define psci_cluster_state_L3_t newtype uint32;
 
 define CLIENT_ID_HYP constant uint32 = 0;
 

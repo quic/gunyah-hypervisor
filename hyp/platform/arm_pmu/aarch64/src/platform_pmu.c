@@ -30,10 +30,10 @@ static hwirq_t *pmu_hwirq;
 CPULOCAL_DECLARE_STATIC(bool, pmu_irq_active);
 
 void
-platform_pmu_handle_boot_cpu_cold_init()
+platform_pmu_handle_boot_cpu_cold_init(void)
 {
 	// Disable all the interrupts at the startup
-	sysreg64_write(PMINTENCLR_EL1, ~0U);
+	sysreg64_write(PMINTENCLR_EL1, ~0UL);
 	CPULOCAL(pmu_irq_active) = false;
 
 	if (pmu_hwirq != NULL) {
@@ -42,7 +42,7 @@ platform_pmu_handle_boot_cpu_cold_init()
 }
 
 void
-platform_pmu_handle_boot_hypervisor_start()
+platform_pmu_handle_boot_hypervisor_start(void)
 {
 	// Create the PMU IRQ
 	hwirq_create_t params = {
@@ -67,18 +67,18 @@ platform_pmu_handle_boot_hypervisor_start()
 }
 
 bool
-platform_pmu_is_hw_irq_pending()
+platform_pmu_is_hw_irq_pending(void)
 {
 	uint64_t pmovsset, pmintenset;
 
 	sysreg64_read_ordered(PMINTENSET_EL1, pmintenset, asm_ordering);
 	sysreg64_read_ordered(PMOVSSET_EL0, pmovsset, asm_ordering);
 
-	return ((pmovsset & pmintenset) != 0);
+	return (pmovsset & pmintenset) != 0U;
 }
 
 void
-platform_pmu_hw_irq_deactivate()
+platform_pmu_hw_irq_deactivate(void)
 {
 	if (CPULOCAL(pmu_irq_active)) {
 		CPULOCAL(pmu_irq_active) = false;
@@ -87,7 +87,7 @@ platform_pmu_hw_irq_deactivate()
 }
 
 error_t
-arm_pmu_handle_power_cpu_suspend()
+arm_pmu_handle_power_cpu_suspend(void)
 {
 	platform_pmu_hw_irq_deactivate();
 

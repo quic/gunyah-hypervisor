@@ -8,6 +8,7 @@ subscribe object_create_thread
 
 subscribe boot_hypervisor_start
 	handler idle_thread_init()
+	require_preempt_disabled
 
 subscribe thread_get_entry_fn[THREAD_KIND_IDLE]
 

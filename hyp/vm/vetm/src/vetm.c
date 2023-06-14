@@ -88,7 +88,7 @@ vetm_protect_trcvi_ctlr(ETM_TRCVI_CTLR_t trcvi_ctlr)
 	return trcvi_ctlr;
 }
 
-static bool
+static vcpu_trap_result_t
 vetm_vdevice_write(thread_t *vcpu, cpu_index_t pcpu, size_t offset,
 		   register_t val, size_t access_size)
 {
@@ -107,10 +107,10 @@ vetm_vdevice_write(thread_t *vcpu, cpu_index_t pcpu, size_t offset,
 
 	etm_set_reg(pcpu, offset, write_val, access_size);
 
-	return true;
+	return VCPU_TRAP_RESULT_EMULATED;
 }
 
-static bool
+static vcpu_trap_result_t
 vetm_vdevice_read(thread_t *vcpu, cpu_index_t pcpu, size_t offset,
 		  register_t *val, size_t access_size)
 {
@@ -118,14 +118,14 @@ vetm_vdevice_read(thread_t *vcpu, cpu_index_t pcpu, size_t offset,
 
 	etm_get_reg(pcpu, offset, val, access_size);
 
-	return true;
+	return VCPU_TRAP_RESULT_EMULATED;
 }
 
-bool
+vcpu_trap_result_t
 vetm_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 				      register_t *value, bool is_write)
 {
-	bool ret;
+	vcpu_trap_result_t ret = VCPU_TRAP_RESULT_UNHANDLED;
 
 	cpulocal_begin();
 
@@ -133,16 +133,17 @@ vetm_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 	assert(vcpu != NULL);
 
 	if (!vcpu_option_flags_get_hlos_vm(&vcpu->vcpu_options)) {
-		ret = false;
 		goto out;
 	}
 
 	if ((ipa >= PLATFORM_ETM_BASE) &&
-	    (ipa < PLATFORM_ETM_BASE + ETM_STRIDE * PLATFORM_MAX_CORES)) {
+	    (ipa <
+	     PLATFORM_ETM_BASE + PLATFORM_ETM_STRIDE * PLATFORM_MAX_CORES)) {
 		size_t	    base_offset = (size_t)(ipa - PLATFORM_ETM_BASE);
 		cpu_index_t access_pcpu =
-			(cpu_index_t)(base_offset / ETM_STRIDE);
-		size_t offset = ipa - PLATFORM_ETM_BASE - pcpu * ETM_STRIDE;
+			(cpu_index_t)(base_offset / PLATFORM_ETM_STRIDE);
+		size_t offset =
+			ipa - PLATFORM_ETM_BASE - pcpu * PLATFORM_ETM_STRIDE;
 
 		if ((pcpu == access_pcpu) &&
 		    vetm_access_allowed(access_size, offset)) {
@@ -153,11 +154,7 @@ vetm_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 				ret = vetm_vdevice_read(vcpu, pcpu, offset,
 							value, access_size);
 			}
-		} else {
-			ret = false;
 		}
-	} else {
-		ret = false;
 	}
 out:
 	cpulocal_end();

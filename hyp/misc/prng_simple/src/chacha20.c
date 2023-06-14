@@ -56,15 +56,15 @@ chacha20_block(const uint32_t (*key)[8], uint32_t counter,
 	count_t i;
 
 	// Setup output with input
-	for (i = 0U; i < 4; i++) {
+	for (i = 0U; i < 4U; i++) {
 		(*out)[i] = chacha20_const[i];
 	}
-	for (i = 0U; i < 8; i++) {
-		(*out)[i + 4] = (*key)[i];
+	for (i = 0U; i < 8U; i++) {
+		(*out)[i + 4U] = (*key)[i];
 	}
 	(*out)[12] = counter;
-	for (i = 0U; i < 3; i++) {
-		(*out)[i + 13] = (*nonce)[i];
+	for (i = 0U; i < 3U; i++) {
+		(*out)[i + 13U] = (*nonce)[i];
 	}
 
 	// Run 20 rounds (10 column interleaved with 10 diagonal rounds)
@@ -73,14 +73,14 @@ chacha20_block(const uint32_t (*key)[8], uint32_t counter,
 	}
 
 	// Add the original state to the result
-	for (i = 0U; i < 4; i++) {
+	for (i = 0U; i < 4U; i++) {
 		(*out)[i] += chacha20_const[i];
 	}
-	for (i = 0U; i < 8; i++) {
-		(*out)[4 + i] += (*key)[i];
+	for (i = 0U; i < 8U; i++) {
+		(*out)[4U + i] += (*key)[i];
 	}
 	(*out)[12] += counter;
-	for (i = 0U; i < 3; i++) {
-		(*out)[13 + i] += (*nonce)[i];
+	for (i = 0U; i < 3U; i++) {
+		(*out)[13U + i] += (*nonce)[i];
 	}
 }

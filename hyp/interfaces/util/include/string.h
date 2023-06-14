@@ -29,12 +29,13 @@ _Static_assert(__STDC_HOSTED__ == 0,
 // Define size_t and NULL
 #include <stddef.h>
 
+#define memscpy(s1, s1_size, s2, s2_size)                                      \
+	((void)memcpy(s1, s2,                                                  \
+		      ((s1_size) < (s2_size)) ? (s1_size) : (s2_size)),        \
+	 ((s1_size) < (s2_size)) ? (s1_size) : (s2_size))
+
 extern void *
 memcpy(void *restrict s1, const void *restrict s2, size_t n);
-
-extern size_t
-memscpy(void *restrict s1, size_t s1_size, const void *restrict s2,
-	size_t s2_size);
 
 extern void *
 memmove(void *s1, const void *s2, size_t n);
@@ -47,7 +48,7 @@ typedef size_t rsize_t;
 
 // A secure memset, guaranteed not to be optimized out
 extern errno_t
-memset_s(void *dest, rsize_t destsz, int c, rsize_t n);
+memset_s(void *s, rsize_t smax, int c, rsize_t n);
 
 extern size_t
 strlen(const char *str);

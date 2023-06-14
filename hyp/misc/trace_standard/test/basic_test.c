@@ -38,8 +38,9 @@ cpulocal_get_index(void)
 	int	  i  = 0;
 
 	for (i = 0; i < THREAD_CNT; ++i) {
-		if (pthread_equal(tid[i], id))
+		if (pthread_equal(tid[i], id)) {
 			break;
+		}
 	}
 
 	return i;
@@ -83,7 +84,7 @@ void *
 thread_run(void *val)
 {
 	int	      i		= 0;
-	int	    *tid	= (int *)val;
+	int	     *tid	= (int *)val;
 	trace_class_t class_map = 0L;
 	trace_id_t    id	= 0;
 

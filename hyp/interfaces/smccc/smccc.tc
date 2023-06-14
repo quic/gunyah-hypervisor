@@ -10,9 +10,9 @@
 // Note that the new features in v1.3 relative to v1.1 are all optional
 // (extra arg / return registers, the SMCCC_ARCH_SOC_ID function, and
 // the sve_not_live hint bit in the function ID).
-define SMCCC_VERSION constant uint32 = 0x10003;
+define SMCCC_VERSION public constant uint32 = 0x10003;
 
-define smccc_interface_id enumeration(explicit) {
+define smccc_interface_id public enumeration(explicit) {
 	ARCH = 0;
 	CPU = 1;
 	SIP = 2;
@@ -22,9 +22,9 @@ define smccc_interface_id enumeration(explicit) {
 	VENDOR_HYP = 6;
 };
 
-define smccc_function_t newtype uint16;
+define smccc_function_t public newtype uint16;
 
-define smccc_function_id bitfield<32> {
+define smccc_function_id public bitfield<32> {
 	15:0	function type smccc_function_t;
 	16	sve_live_state_hint bool;	// from SMCCC v1.3+
 	23:17	res0 uint32(const);
@@ -33,15 +33,26 @@ define smccc_function_id bitfield<32> {
 	31	is_fast bool;
 };
 
+define smccc_vendor_hyp_function_class public enumeration(explicit) {
+	PLATFORM_CALL	= 0b00;
+	HYPERCALL	= 0b10;
+	SERVICE		= 0b11;
+};
+
+define smccc_vendor_hyp_function_id public bitfield<16> {
+	15:14	call_class	enumeration smccc_vendor_hyp_function_class;
+	13:0	function	uint16;
+};
+
 define smccc_client_id bitfield<32> {
 	15:0	client_id uint16;
 	31:16	secure_os_id uint16;
 };
 
-define SMCCC_UNKNOWN_FUNCTION64 constant uint64 = -1;
-define SMCCC_UNKNOWN_FUNCTION32 constant uint32 = -1;
+define SMCCC_UNKNOWN_FUNCTION64 public constant uint64 = -1;
+define SMCCC_UNKNOWN_FUNCTION32 public constant uint32 = -1;
 
-define smccc_arch_function enumeration(explicit) {
+define smccc_arch_function public enumeration(explicit) {
 	VERSION = 0;
 	ARCH_FEATURES = 1;
 	ARCH_SOC_ID = 2;
@@ -49,7 +60,21 @@ define smccc_arch_function enumeration(explicit) {
 	ARCH_WORKAROUND_1 = 0x8000;
 };
 
-define smccc_standard_hyp_function enumeration(explicit) {
+define smccc_standard_hyp_function public enumeration(explicit) {
+	CALL_COUNT = 0xff00;
 	CALL_UID = 0xff01;
 	REVISION = 0xff03;
+};
+
+// Gunyah SMCCC UUID: c1d58fcd-a453-5fdb-9265-ce36673d5f14
+define SMCCC_GUNYAH_UID0 public constant uregister = 0xcd8fd5c1U;
+define SMCCC_GUNYAH_UID1 public constant uregister = 0xdb5f53a4U;
+define SMCCC_GUNYAH_UID2 public constant uregister = 0x36ce6592U;
+define SMCCC_GUNYAH_UID3 public constant uregister = 0x145f3d67U;
+
+// function id bits 13:0
+define smccc_vendor_hyp_function public enumeration(explicit) {
+	CALL_COUNT = 0x3f00;
+	CALL_UID = 0x3f01;
+	REVISION = 0x3f03;
 };

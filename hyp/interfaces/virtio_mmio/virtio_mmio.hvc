@@ -1,0 +1,116 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define virtio_mmio_configure hypercall {
+	call_num	0x49;
+	virtio_mmio	input type cap_id_t;
+	memextent	input type cap_id_t;
+	vqs_num		input type count_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_bind_virq hypercall {
+	call_num	0x4a;
+	virtio_mmio	input type cap_id_t;
+	vic		input type cap_id_t;
+	virq		input type virq_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_unbind_virq hypercall {
+	call_num	0x4b;
+	virtio_mmio	input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_frontend_bind_virq hypercall {
+	call_num	0x4c;
+	virtio_mmio	input type cap_id_t;
+	vic		input type cap_id_t;
+	virq		input type virq_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_frontend_unbind_virq hypercall {
+	call_num	0x4d;
+	virtio_mmio	input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_assert_virq hypercall {
+	call_num		0x4e;
+	virtio_mmio		input type cap_id_t;
+	interrupt_status	input uint32;
+	res0			input uregister;
+	error			output enumeration error;
+};
+
+define virtio_mmio_backend_set_dev_features hypercall {
+	call_num	0x4f;
+	virtio_mmio	input type cap_id_t;
+	sel		input uint32;
+	dev_feat	input uint32;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_set_queue_num_max hypercall {
+	call_num	0x50;
+	virtio_mmio	input type cap_id_t;
+	sel		input uint32;
+	queue_num_max	input uint32;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_get_drv_features hypercall {
+	call_num	0x51;
+	virtio_mmio	input type cap_id_t;
+	sel		input uint32;
+	res0		input uregister;
+	error		output enumeration error;
+	drv_feat	output uint32;
+};
+
+define virtio_mmio_backend_get_queue_info hypercall {
+	call_num	0x52;
+	virtio_mmio	input type cap_id_t;
+	sel		input uint32;
+	res0		input uregister;
+	error		output enumeration error;
+	queue_num	output uint32;
+	queue_ready	output uint32;
+	queue_desc	output uint64;
+	queue_drv	output uint64;
+	queue_dev	output uint64;
+};
+
+define virtio_mmio_backend_get_notification hypercall {
+	call_num	0x53;
+	virtio_mmio	input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+	vqs_bitmap	output type register_t;
+	reason		output bitfield virtio_mmio_notify_reason;
+};
+
+define virtio_mmio_backend_acknowledge_reset hypercall {
+	call_num	0x54;
+	virtio_mmio	input type cap_id_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define virtio_mmio_backend_update_status hypercall {
+	call_num	0x55;
+	virtio_mmio	input type cap_id_t;
+	val		input uint32;
+	res0		input uregister;
+	error		output enumeration error;
+};

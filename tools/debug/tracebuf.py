@@ -39,6 +39,8 @@ TRACE_IDS = {
     38: "VGIC_SGI",
     39: "VGIC_ITS_COMMAND",
     40: "VGIC_ROUTE",
+    41: "VGIC_ICC_WRITE",
+    42: "VGIC_ASYNC_EVENT",
     48: "PSCI_PSTATE_VALIDATION",
     49: "PSCI_VPM_STATE_CHANGED",
     50: "PSCI_VPM_SYSTEM_SUSPEND",
@@ -245,6 +247,23 @@ def read_entries(args):
 
     cpu_mask = struct.unpack(endian + 'QQQQ', header[8:40])
 
+    cpu_mask = cpu_mask[0] | (cpu_mask[1] << 64) | (cpu_mask[2] << 128) | \
+        (cpu_mask[2] << 192)
+    global_buffer = cpu_mask == 0
+
+    cpus = ''
+    while cpu_mask != 0:
+        msb = cpu_mask.bit_length() - 1
+        cpus += '{:d}'.format(msb)
+        cpu_mask &= ~(1 << msb)
+        if cpu_mask != 0:
+            cpus += ','
+
+    if global_buffer:
+        print("Processing global buffer...")
+    else:
+        print("Processing CPU {:s} buffer...".format(cpus))
+
     entries_max = struct.unpack(endian + 'L', header[4:8])[0]
     head_index = struct.unpack(endian + 'L', header[40:44])[0]
 
@@ -258,30 +277,29 @@ def read_entries(args):
 
     if entry_count == 0:
         # Empty buffer, skip over the unused bytes
-        print("Empty buffer")
+        print("  Empty buffer")
         args.input.seek(entries_max * 64, 1)
         return iter(())
+    else:
+        print("  Found {:d} entries. Wrapped: {}".format(entry_count, wrapped))
 
+    warn = True
     entries = []
     for i in range(entry_count):
         trace = args.input.read(64)
+        if len(trace) < 64:
+            print("  Warning, log truncated. Read {:d} of {:d} entries".format(
+                i, entry_count))
+            break
         try:
             entries.append(Event(args, *struct.unpack(endian + "QQQQQQQQ",
                                                       trace)))
         except ValueError:
+            if warn:
+                print("  Warning, bad input. Read {:d} of {:d} entries".format(
+                    i, entry_count))
+                warn = False
             pass
-
-    cpu_mask = cpu_mask[0] | (cpu_mask[1] << 64) | (cpu_mask[2] << 128) | \
-        (cpu_mask[2] << 192)
-    global_buffer = cpu_mask == 0
-
-    cpus = ''
-    while cpu_mask != 0:
-        msb = cpu_mask.bit_length() - 1
-        cpus += '{:d}'.format(msb)
-        cpu_mask &= ~(1 << msb)
-        if cpu_mask != 0:
-            cpus += ','
 
     if args.sort == 'm':
         if global_buffer:
@@ -294,7 +312,7 @@ def read_entries(args):
         else:
             header_string = "=== CPU {:s} TRACE ===\n".format(cpus)
 
-    if not wrapped:
+    if not wrapped or (head_index == entries_max):
         first_index = 0
     else:
         first_index = head_index
@@ -311,7 +329,10 @@ def read_entries(args):
 
     if not wrapped:
         # Skip over the unused bytes
-        args.input.seek((entries_max - head_index) * 64, 1)
+        if args.input.seekable():
+            args.input.seek((entries_max - head_index) * 64, 1)
+        else:
+            args.input.read((entries_max - head_index) * 64)
 
     return entry_iter
 

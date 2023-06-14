@@ -55,6 +55,11 @@ vgic_sync_all(vic_t *vic, bool wakeup);
 void
 vgic_update_enables(vic_t *vic, GICD_CTLR_DS_t gicd_ctlr);
 
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI
+void
+vgic_vpe_schedule_current(void);
+#endif
+
 void
 vgic_retry_unrouted(vic_t *vic);
 
@@ -73,6 +78,10 @@ vgic_lr_owner_unlock(thread_t *vcpu) RELEASE_LOCK(vcpu->vgic_lr_owner_lock)
 void
 vgic_lr_owner_unlock_nopreempt(thread_t *vcpu)
 	RELEASE_LOCK(vcpu->vgic_lr_owner_lock) REQUIRE_PREEMPT_DISABLED;
+
+index_result_t
+vgic_get_index_for_mpidr(vic_t *vic, uint8_t aff0, uint8_t aff1, uint8_t aff2,
+			 uint8_t aff3);
 
 //
 // Utility functions (IRQ types, bit manipulations etc)
@@ -172,6 +181,17 @@ vgic_gicr_rd_set_statusr(thread_t *gicr_vcpu, GICR_STATUSR_t statusr, bool set);
 bool
 vgic_gicr_rd_check_sleep(thread_t *gicr_vcpu);
 
+#if VGIC_HAS_LPI
+// Note: the GICR_PROPBASER is shared between all VCPUs (as permitted by the
+// GICv3 spec) so there is no gicr_vcpu argument here
+void
+vgic_gicr_rd_set_propbase(vic_t *vic, GICR_PROPBASER_t propbase);
+
+void
+vgic_gicr_rd_set_pendbase(vic_t *vic, thread_t *gicr_vcpu,
+			  GICR_PENDBASER_t pendbase);
+#endif
+
 void
 vgic_gicr_sgi_change_sgi_ppi_enable(vic_t *vic, thread_t *gicr_vcpu,
 				    irq_t irq_num, bool set);
@@ -205,3 +225,6 @@ vgic_icc_irq_deactivate(vic_t *vic, irq_t irq_num);
 
 void
 vgic_icc_generate_sgi(vic_t *vic, ICC_SGIR_EL1_t sgir, bool is_group_1);
+
+error_t
+vgic_vsgi_assert(thread_t *gicr_vcpu, irq_t irq_num);

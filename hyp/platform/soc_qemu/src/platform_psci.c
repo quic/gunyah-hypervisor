@@ -28,6 +28,13 @@ platform_psci_is_cpu_poweroff(psci_cpu_state_t cpu_state)
 	return false;
 }
 
+bool
+platform_psci_is_cluster_active(psci_cluster_state_L3_t cluster_state)
+{
+	(void)cluster_state;
+	return true;
+}
+
 psci_cpu_state_t
 platform_psci_get_cpu_state(psci_suspend_powerstate_t suspend_state)
 {
@@ -85,4 +92,25 @@ platform_psci_suspend_state_validation(psci_suspend_powerstate_t suspend_state,
 	// QEMU does not care about suspend states since it only goes to WFI.
 	return PSCI_RET_SUCCESS;
 }
+
+// Returns the cluster indices
+uint32_t
+platform_psci_get_cluster_index(cpu_index_t cpu)
+{
+	(void)cpu;
+	return 0U;
+}
+
+error_t
+platform_psci_get_index_by_level(cpu_index_t cpu, uint32_t *start_idx,
+				 uint32_t *children_counts, uint32_t level)
+{
+	(void)cpu;
+	(void)level;
+	*start_idx	 = 0U;
+	*children_counts = PLATFORM_MAX_CORES;
+
+	return OK;
+}
+
 #endif

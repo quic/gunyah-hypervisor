@@ -1,0 +1,21 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(INTERFACE_VCPU_RUN)
+extend scheduler_block enumeration {
+	addrspace_vmmio_access;
+};
+
+extend vcpu_run_state enumeration {
+	addrspace_vmmio_read = 4;
+	addrspace_vmmio_write = 5;
+};
+
+extend thread object module addrspace {
+	vmmio_access_ipa	type vmaddr_t;
+	vmmio_access_size	size;
+	vmmio_access_value	uregister;
+	vmmio_access_write	bool;
+};
+#endif

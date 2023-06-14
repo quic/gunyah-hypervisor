@@ -36,6 +36,7 @@
 
 extend rcu_entry structure {
 	// We should pack the class in here so we can use a unified queue.
+	// FIXME:
 	next pointer structure rcu_entry;
 };
 
@@ -61,6 +62,7 @@ extend ipi_reason enumeration {
 // A batch of RCU updates, from one grace period on one CPU.
 define rcu_batch structure {
 	// We have a list head for each update class.
+	// FIXME:
 	heads array(maxof(enumeration rcu_update_class) + 1) pointer
 		structure rcu_entry;
 };
@@ -69,6 +71,7 @@ define rcu_batch structure {
 // Note that we use a uint32 bitmap here rather than the generic bitmap type
 // because we want to be able to pack this into 64 bits, so that 64-bit
 // machines can access it with atomic load and store accesses.
+// FIXME:
 define rcu_grace_period structure(aligned(8)) {
 	generation type count_t;
 	cpu_bitmap uint32;

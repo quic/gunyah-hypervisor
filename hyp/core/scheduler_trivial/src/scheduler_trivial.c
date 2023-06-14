@@ -205,6 +205,13 @@ scheduler_block(thread_t *thread, scheduler_block_t block)
 
 	assert_preempt_disabled();
 	assert(block <= SCHEDULER_BLOCK__MAX);
+	bool block_was_set = bitmap_isset(thread->scheduler_block_bits, block);
+
+	if (!bitmap_isset(thread->scheduler_block_bits, block)) {
+		trigger_scheduler_blocked_event(thread, block,
+						scheduler_is_runnable(thread));
+	}
+
 	bitmap_set(thread->scheduler_block_bits, block);
 }
 
@@ -226,9 +233,10 @@ scheduler_unblock(thread_t *thread, scheduler_block_t block)
 {
 	assert_preempt_disabled();
 	assert(block <= SCHEDULER_BLOCK__MAX);
-	bool was_blocked = bitmap_isset(thread->scheduler_block_bits, block);
+	bool block_was_set = bitmap_isset(thread->scheduler_block_bits, block);
 	bitmap_clear(thread->scheduler_block_bits, block);
-	bool need_schedule = was_blocked && scheduler_is_runnable(thread);
+	bool now_runnable  = scheduler_is_runnable(thread);
+	bool need_schedule = block_was_set && now_runnable;
 
 	if (need_schedule) {
 		cpu_index_t cpu = cpulocal_get_index();
@@ -243,6 +251,10 @@ scheduler_unblock(thread_t *thread, scheduler_block_t block)
 	      "scheduler: unblock {:#x}, reason: {:d}, others: {:#x}, local run: {:d}",
 	      (uintptr_t)thread, block, thread->scheduler_block_bits[0],
 	      need_schedule);
+
+	if (block_was_set) {
+		trigger_scheduler_unblocked_event(thread, block, now_runnable);
+	}
 
 	return need_schedule;
 }
@@ -294,8 +306,9 @@ scheduler_set_affinity(thread_t *thread, cpu_index_t target_cpu)
 {
 	assert_preempt_disabled();
 
-	error_t	    err	     = OK;
-	cpu_index_t prev_cpu = thread->scheduler_affinity;
+	error_t	    err	      = OK;
+	bool	    need_sync = false;
+	cpu_index_t prev_cpu  = thread->scheduler_affinity;
 
 	if (prev_cpu == target_cpu) {
 		goto out;
@@ -307,7 +320,13 @@ scheduler_set_affinity(thread_t *thread, cpu_index_t target_cpu)
 	}
 
 	thread->scheduler_affinity = target_cpu;
-	trigger_scheduler_affinity_changed_event(thread, prev_cpu, target_cpu);
+	err = trigger_scheduler_set_affinity_prepare_event(thread, prev_cpu,
+							   target_cpu);
+	if (err != OK) {
+		goto out;
+	}
+	trigger_scheduler_affinity_changed_event(thread, prev_cpu, target_cpu,
+						 &need_sync);
 
 out:
 	return err;

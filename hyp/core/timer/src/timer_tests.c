@@ -12,12 +12,17 @@
 #include <cpulocal.h>
 #include <log.h>
 #include <panic.h>
+#include <preempt.h>
 #include <timer_queue.h>
 #include <trace.h>
 
 #include "event_handlers.h"
 
+#if defined(PLATFORM_QEMU)
+#define MAX_TICKS_DIFFERENCE 0x500000
+#else
 #define MAX_TICKS_DIFFERENCE 0x100
+#endif
 
 CPULOCAL_DECLARE_STATIC(timer_t, timer1);
 CPULOCAL_DECLARE_STATIC(timer_t, timer2);
@@ -26,12 +31,14 @@ CPULOCAL_DECLARE_STATIC(_Atomic bool, in_progress);
 CPULOCAL_DECLARE_STATIC(ticks_t, expected_timeout);
 
 bool
-tests_timer()
+tests_timer(void)
 {
 	ticks_t	 current_ticks;
 	timer_t *timer1		  = &CPULOCAL(timer1);
 	timer_t *timer2		  = &CPULOCAL(timer2);
 	ticks_t *expected_timeout = &CPULOCAL(expected_timeout);
+
+	_Atomic bool *in_progress = &CPULOCAL(in_progress);
 
 	// Test 1
 	// Enqueue a timer and make sure its expiry is received
@@ -44,8 +51,10 @@ tests_timer()
 	atomic_store_relaxed(&CPULOCAL(in_progress), true);
 	timer_enqueue(timer1, *expected_timeout);
 
-	while (atomic_load_relaxed(&CPULOCAL(in_progress)))
-		;
+	preempt_enable();
+	while (atomic_load_relaxed(in_progress)) {
+	}
+	preempt_disable();
 
 	// Test 2
 	// Enqueue two timers, dequeue the first one and make sure only the
@@ -64,8 +73,10 @@ tests_timer()
 
 	timer_dequeue(timer1);
 
-	while (atomic_load_relaxed(&CPULOCAL(in_progress)))
-		;
+	preempt_enable();
+	while (atomic_load_relaxed(in_progress)) {
+	}
+	preempt_disable();
 
 	// TODO: Add more tests
 

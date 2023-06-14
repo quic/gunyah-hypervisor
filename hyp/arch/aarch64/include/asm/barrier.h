@@ -21,4 +21,4 @@
 // The asm_ordering variable is used as an artificial dependency to order
 // different individual asm statements with respect to each other in a way that
 // is lighter weight than a full "memory" clobber.
-extern struct asm_ordering_dummy asm_ordering;
+extern asm_ordering_dummy_t asm_ordering;

@@ -32,3 +32,4 @@ subscribe thread_exit_to_user
 
 subscribe scheduler_stop()
 	priority first
+	acquire_preempt_disabled

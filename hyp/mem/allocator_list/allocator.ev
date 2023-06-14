@@ -1,0 +1,8 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module allocator_list
+
+subscribe allocator_add_ram_range
+	priority last

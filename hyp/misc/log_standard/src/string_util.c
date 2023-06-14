@@ -14,8 +14,8 @@
 
 // TODO: Add more failure test cases
 
-#define MAX_TERMINATOR 16
-#define MAX_ARG_CNT    5
+#define MAX_TERMINATOR 16U
+#define MAX_ARG_CNT    5U
 
 // The string formatter processing states, the order of these needs to be
 // preserved.
@@ -46,7 +46,7 @@ typedef enum align {
 	ALIGN_CENTER
 } align_t;
 
-typedef enum sign {
+typedef enum sign_e {
 	// default
 	SIGN_NEG = 0,
 	SIGN_BOTH,
@@ -143,7 +143,7 @@ atodec(const char *c, size_t len)
 	while (len != 0U) {
 		v *= 10U;
 		// TODO: Check if *c is in '0' and '9' for debug
-		v += *c - '0';
+		v += (uint64_t)(*c) - (uint64_t)('0');
 		c++;
 		len--;
 	}
@@ -173,7 +173,7 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 {
 	const char digit[] = { '0', '1', '2', '3', '4', '5', '6', '7',
 			       '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-	char	     *pos = buf, padding_char = ' ', *tail = NULL;
+	char	  *pos = buf, padding_char = ' ', *tail = NULL;
 	size_t	   padding_cnt = 0U, content_cnt = 0U, padding_ret = 0U;
 	size_t	   padding_left_cnt = 0U, padding_right_cnt = 0U;
 	size_t	   padding_after_sign = 0U, padding_after_prefix = 0U;
@@ -202,14 +202,14 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 
 	padding_cnt = util_max(info->min_width, content_cnt) - content_cnt;
 
-	if ((padding_cnt > 0U) && info->alternate_form && (base != 10)) {
+	if ((padding_cnt > 0U) && info->alternate_form && (base != 10U)) {
 		// Remove two chars of prefix
-		padding_cnt -= 2;
+		padding_cnt -= 2U;
 	}
 	if ((padding_cnt > 0U) &&
 	    ((info->sign == SIGN_BOTH) || (info->sign == SIGN_POS_LEADING) ||
 	     ((info->sign == SIGN_NEG) && !positive))) {
-		padding_cnt -= 1;
+		padding_cnt -= 1U;
 	}
 	// Padding left with white space by default
 	padding_left_cnt = padding_cnt;
@@ -248,8 +248,10 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 	} else if (info->alignment == ALIGN_CENTER) {
 		padding_after_prefix = 0U;
 		padding_after_sign   = 0U;
-		padding_left_cnt     = padding_cnt / 2;
+		padding_left_cnt     = padding_cnt / 2U;
 		padding_right_cnt    = padding_cnt - padding_left_cnt;
+	} else {
+		// Nothing to do
 	}
 
 	padding_ret = insert_padding(pos, remaining, padding_char,
@@ -279,6 +281,7 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 			remaining--;
 			break;
 		default:
+			// Unusual base. Nothing to do
 			break;
 		}
 
@@ -296,6 +299,7 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 			remaining--;
 			break;
 		default:
+			// Unusual base. Nothing to do
 			break;
 		}
 
@@ -390,7 +394,7 @@ sitoa(char *buf, size_t *size, int64_t val, uint8_t base, fmt_info_t *info)
 {
 	bool positive = true;
 
-	if (val < 0U) {
+	if (val < 0) {
 		positive = false;
 		val	 = -val;
 	} else {
@@ -434,13 +438,15 @@ stringtoa(char *buf, size_t *size, char *val_str, fmt_info_t *info)
 		padding_left_cnt  = 0U;
 		padding_right_cnt = padding_cnt;
 	} else if (info->alignment == ALIGN_CENTER) {
-		padding_left_cnt  = padding_cnt / 2;
+		padding_left_cnt  = padding_cnt / 2U;
 		padding_right_cnt = padding_cnt - padding_left_cnt;
+	} else {
+		// Nothing to do.
 	}
 
 	p = util_min(padding_left_cnt, remaining);
 	if (p > 0U) {
-		memset(pos, padding_char, p);
+		(void)insert_padding(pos, p, padding_char, p);
 		remaining -= p;
 		pos += p;
 	}
@@ -451,7 +457,7 @@ stringtoa(char *buf, size_t *size, char *val_str, fmt_info_t *info)
 
 	p = util_min(slen, remaining);
 	if (p > 0U) {
-		memcpy(pos, val_str, p);
+		(void)memcpy(pos, val_str, p);
 		remaining -= p;
 		pos += p;
 	}
@@ -462,7 +468,7 @@ stringtoa(char *buf, size_t *size, char *val_str, fmt_info_t *info)
 
 	p = util_min(padding_right_cnt, remaining);
 	if (p > 0U) {
-		memset(pos, padding_char, p);
+		(void)insert_padding(pos, p, padding_char, p);
 		remaining -= p;
 	}
 	if ((remaining + p) < padding_right_cnt) {
@@ -597,14 +603,16 @@ check_minwidth(const char *fmt, fmt_info_t *info)
 		if (in_range(fmt[1], '0', '9')) {
 			ret = RET_TOKEN_NEXT_CHAR;
 		} else {
-			info->min_width = atodec(
-				info->minwidth_start,
-				(size_t)(fmt - info->minwidth_start + 1));
+			ptrdiff_t len = fmt - info->minwidth_start;
+			assert(len >= 0);
+			info->min_width	     = atodec(info->minwidth_start,
+						      ((size_t)len + 1U));
 			info->minwidth_start = NULL;
 			ret		     = RET_TOKEN_FOUND;
 		}
 	} else {
-		ret = RET_TOKEN_NEXT_STAGE;
+		ret		     = RET_TOKEN_NEXT_STAGE;
+		info->minwidth_start = NULL;
 	}
 
 	return ret;
@@ -613,7 +621,7 @@ check_minwidth(const char *fmt, fmt_info_t *info)
 static inline ret_token_t
 check_precise(const char *fmt, fmt_info_t *info)
 {
-	ret_token_t ret = false;
+	ret_token_t ret;
 
 	if ((*fmt == '.') && in_range(fmt[1], '0', '9')) {
 		info->precise_start = NULL;
@@ -629,14 +637,16 @@ check_precise(const char *fmt, fmt_info_t *info)
 		if (in_range(fmt[1], '0', '9')) {
 			ret = RET_TOKEN_NEXT_CHAR;
 		} else {
+			ptrdiff_t len = fmt - info->precise_start;
+			assert(len >= 0);
 			info->precise =
-				atodec(info->precise_start,
-				       (size_t)(fmt - info->precise_start + 1));
+				atodec(info->precise_start, ((size_t)len + 1U));
 			info->precise_start = NULL;
 			ret		    = RET_TOKEN_FOUND;
 		}
 	} else {
-		ret = RET_TOKEN_NEXT_STAGE;
+		ret		    = RET_TOKEN_NEXT_STAGE;
+		info->precise_start = NULL;
 	}
 
 	return ret;
@@ -715,6 +725,7 @@ check_token(count_t stage, const char *fmt, fmt_info_t *info)
 		ret = check_end(fmt, info);
 		break;
 	default:
+		// Nothing to do
 		break;
 	}
 
@@ -747,7 +758,7 @@ get_next_fmt(const char *fmt, fmt_info_t *info, size_t *consumed_len,
 			break;
 
 		case RET_TOKEN_STOP:
-			*consumed_len = idx + 1;
+			*consumed_len = (size_t)idx + 1U;
 			return OK;
 
 		case RET_TOKEN_FOUND:
@@ -769,7 +780,7 @@ get_next_fmt(const char *fmt, fmt_info_t *info, size_t *consumed_len,
 		// Nothing found
 		if (stage == STAGE_START) {
 			*literal_len  = idx;
-			*consumed_len = idx + 1;
+			*consumed_len = (size_t)idx + 1U;
 		}
 		*end = true;
 	}
@@ -819,9 +830,9 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 {
 	const char *fmt = format;
 	// Current buffer pointer, increasing while filling strings into
-	char	     *buf		     = str;
+	char	  *buf		     = str;
 	error_t	   ret		     = OK;
-	size_t	   remaining	     = size - 1; // space for terminating null
+	size_t	   remaining	     = size - 1U; // space for terminating null
 	register_t args[MAX_ARG_CNT] = { arg0, arg1, arg2, arg3, arg4 };
 	index_t	   arg_idx	     = 0U;
 	bool	   end		     = false;
@@ -843,7 +854,7 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 		// Copy literal characters to output buffer
 		p = util_min(literal_len, remaining);
 		if (p > 0U) {
-			memcpy(buf, fmt, p);
+			(void)memcpy(buf, fmt, p);
 		}
 
 		fmt += consumed_len;
@@ -884,8 +895,12 @@ snprint(char *str, size_t size, const char *format, register_t arg0,
 
 	// Add the terminator
 	*buf = '\0';
-	if (ret != ERROR_STRING_TRUNCATED) {
-		size = (size - 1) - remaining;
+
+	size_t written;
+	if (ret == ERROR_STRING_TRUNCATED) {
+		written = size;
+	} else {
+		written = (size - 1U) - remaining;
 	}
-	return (size_result_t){ .e = ret, .r = size };
+	return (size_result_t){ .e = ret, .r = written };
 }

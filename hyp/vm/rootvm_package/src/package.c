@@ -23,6 +23,7 @@
 #include <panic.h>
 #include <partition.h>
 #include <partition_alloc.h>
+#include <pgtable.h>
 #include <prng.h>
 #include <spinlock.h>
 #include <trace.h>
@@ -93,8 +94,7 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 	size_t offset = phys_offset - PLATFORM_ROOTVM_LMA_BASE;
 
 	paddr_t range_start = PLATFORM_ROOTVM_LMA_BASE;
-	paddr_t range_end =
-		(paddr_t)PLATFORM_ROOTVM_LMA_BASE + PLATFORM_ROOTVM_LMA_SIZE;
+	paddr_t range_end = PLATFORM_ROOTVM_LMA_BASE + PLATFORM_ROOTVM_LMA_SIZE;
 
 	for (i = 0; i < elf_get_num_phdrs(elf); i++) {
 		Elf_Phdr *phdr = elf_get_phdr(elf, i);
@@ -123,10 +123,12 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 		pgtable_access_t access = PGTABLE_ACCESS_R;
 		assert((phdr->p_flags & PF_R) != 0U);
 		if ((phdr->p_flags & PF_W) != 0U) {
-			access |= PGTABLE_ACCESS_W;
+			access = pgtable_access_combine(access,
+							PGTABLE_ACCESS_W);
 		}
 		if ((phdr->p_flags & PF_X) != 0U) {
-			access |= PGTABLE_ACCESS_X;
+			access = pgtable_access_combine(access,
+							PGTABLE_ACCESS_X);
 		}
 
 		// Derive extents from RM memory extent
@@ -171,16 +173,25 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 }
 
 static void
-update_cores_info(boot_env_data_t *env_data)
+update_cores_info(qcbor_enc_ctxt_t *qcbor_enc_ctxt) REQUIRE_PREEMPT_DISABLED
 {
-	env_data->boot_core = cpulocal_get_index();
-	assert(PLATFORM_MAX_CORES > env_data->boot_core);
+	cpu_index_t boot_core;
+	uint64_t    usable_cores;
 
-	env_data->usable_cores = PLATFORM_USABLE_CORES;
-	assert((env_data->usable_cores & (1UL << env_data->boot_core)) != 0);
+	assert(qcbor_enc_ctxt != NULL);
 
-	index_t max_idx = ((sizeof(env_data->usable_cores) * 8U) - 1U) -
-			  compiler_clz(env_data->usable_cores);
+	boot_core = cpulocal_get_index();
+	assert(PLATFORM_MAX_CORES > boot_core);
+
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "boot_core", boot_core);
+
+	usable_cores = PLATFORM_USABLE_CORES;
+	assert((usable_cores & util_bit(boot_core)) != 0);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "usable_cores",
+				   usable_cores);
+
+	index_t max_idx = (index_t)((sizeof(usable_cores) * 8U) - 1U) -
+			  compiler_clz(usable_cores);
 	// can be a static assertion
 	assert(max_idx < PLATFORM_MAX_CORES);
 }
@@ -188,9 +199,12 @@ update_cores_info(boot_env_data_t *env_data)
 void
 rootvm_package_handle_rootvm_init(partition_t *root_partition,
 				  thread_t *root_thread, cspace_t *root_cspace,
-				  boot_env_data_t *env_data)
+				  hyp_env_data_t   *hyp_env,
+				  qcbor_enc_ctxt_t *qcbor_enc_ctxt)
 {
 	error_t ret;
+
+	assert(qcbor_enc_ctxt != NULL);
 
 	assert(root_partition != NULL);
 	assert(root_thread != NULL);
@@ -217,7 +231,7 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 		panic("Invalid pkg_hdr");
 	}
 
-	paddr_t load_base = (paddr_t)PLATFORM_ROOTVM_LMA_BASE;
+	paddr_t load_base = PLATFORM_ROOTVM_LMA_BASE;
 	paddr_t load_next = load_base;
 
 	// Create memory extent for the RM with randomized base
@@ -231,9 +245,10 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 #endif
 
 #if 0
+	// FIXME:
 	// Root VM address space could be smaller
 	// Currently limit usable address space to 1GiB
-	vmaddr_t addr_limit = (vmaddr_t)1 << 30;
+	vmaddr_t addr_limit = (vmaddr_t)util_bit(30);
 
 	vmaddr_t ipa = (vmaddr_t)rand % (addr_limit - PLATFORM_ROOTVM_LMA_SIZE -
 					 PGTABLE_VM_PAGE_SIZE);
@@ -282,10 +297,10 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 
 			if (t == ROOTVM_PACKAGE_IMAGE_TYPE_RUNTIME) {
 				runtime_ipa = ipa + offset;
-				if (env_data->entry_ipa != 0U) {
+				if (hyp_env->entry_ipa != 0U) {
 					panic("Multiple RootVM runtime images");
 				}
-				env_data->entry_ipa =
+				hyp_env->entry_ipa =
 					elf_get_entry(elf) + runtime_ipa;
 			} else {
 				app_ipa = ipa + offset;
@@ -315,33 +330,44 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 		panic("Error mapping to root VM address space");
 	}
 
+	assert(util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE));
+
 	vmaddr_t env_data_ipa = ipa + offset;
-	size_t	 env_data_size =
-		util_balign_up(sizeof(boot_env_data_t), PGTABLE_VM_PAGE_SIZE);
-	offset += env_data_size;
+	offset += util_balign_up(hyp_env->env_data_size, PGTABLE_VM_PAGE_SIZE);
 
 	vmaddr_t app_heap_ipa  = ipa + offset;
-	size_t	 app_heap_size = util_balign_down(
-		  PLATFORM_ROOTVM_LMA_SIZE - offset, PGTABLE_VM_PAGE_SIZE);
+	size_t	 app_heap_size = PLATFORM_ROOTVM_LMA_SIZE - offset;
 
-	// Add info of the memory left in RM to boot_env_data, so that it can be
+	// The C runtime expects the heap to be page aligned.
+	assert(util_is_baligned(app_heap_ipa, PGTABLE_VM_PAGE_SIZE));
+	assert(util_is_baligned(app_heap_size, PGTABLE_VM_PAGE_SIZE));
+
+	// Add info of the memory left in RM to hyp_env_data, so that it can be
 	// later used for the boot info structure for example.
-	env_data->me_capid    = me_cap;
-	env_data->me_ipa_base = ipa;
-	env_data->me_size     = PLATFORM_ROOTVM_LMA_SIZE;
-	env_data->env_ipa     = env_data_ipa;
+	hyp_env->me_ipa_base = ipa;
+	hyp_env->env_ipa     = env_data_ipa;
 
-	env_data->app_ipa     = app_ipa;
-	env_data->runtime_ipa = runtime_ipa;
-	env_data->ipa_offset  = ipa - PLATFORM_ROOTVM_LMA_BASE;
+	hyp_env->app_ipa       = app_ipa;
+	hyp_env->runtime_ipa   = runtime_ipa;
+	hyp_env->ipa_offset    = ipa - PLATFORM_ROOTVM_LMA_BASE;
+	hyp_env->app_heap_ipa  = app_heap_ipa;
+	hyp_env->app_heap_size = app_heap_size;
 
-	env_data->app_heap_ipa	= app_heap_ipa;
-	env_data->app_heap_size = app_heap_size;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "me_ipa_base",
+				   hyp_env->me_ipa_base);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "ipa_offset",
+				   hyp_env->ipa_offset);
 
-	update_cores_info(env_data);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "me_capid", me_cap);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "me_size",
+				   PLATFORM_ROOTVM_LMA_SIZE);
+
+	update_cores_info(qcbor_enc_ctxt);
 
 	LOG(DEBUG, INFO, "runtime_ipa: {:#x}", runtime_ipa);
 	LOG(DEBUG, INFO, "app_ipa: {:#x}", app_ipa);
+	LOG(DEBUG, INFO, "env_data_ipa: {:#x}", env_data_ipa);
+	LOG(DEBUG, INFO, "app_heap_ipa: {:#x}", app_heap_ipa);
 
 	ret = hyp_aspace_unmap_direct(map_base, map_size);
 	assert(ret == OK);

@@ -20,6 +20,7 @@ extend hyp_api_flags0 bitfield {
 #endif
 
 define vic_option_flags public bitfield<64> {
-	0	max_msis_valid	bool = 1;
-	63:1	res0_0		uregister = 0;
+	0	max_msis_valid		bool = 1;
+	1	disable_default_addr	bool = 1;
+	63:2	res0_0			uregister = 0;
 };

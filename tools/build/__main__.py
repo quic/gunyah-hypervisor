@@ -51,6 +51,19 @@ class Items(dict):
             raise KeyError("Item duplicate {:s}".format(key))
 
 
+class module_set(set):
+    def __init__(self):
+        self.module_re = re.compile(
+            r'[A-Za-z][A-Za-z0-9_]*([/][A-Za-z][A-Za-z0-9_]*)*')
+        super(module_set, self).__init__()
+
+    def add(self, value):
+        if not self.module_re.fullmatch(value):
+            print("invalid module name:", value)
+            sys.exit(1)
+        super(module_set, self).add(value)
+
+
 build_dir = graph.build_dir
 
 config_base = 'config'
@@ -58,13 +71,17 @@ module_base = 'hyp'
 arch_base = os.path.join(module_base, 'arch')
 interface_base = os.path.join(module_base, 'interfaces')
 
-modules = {'arch'}
+conf_includes = set()
+modules = module_set()
+modules.add('arch')
+
 interfaces = set()
 objects = set()
 external_objects = set()
 guestapis = set()
 types = set()
 hypercalls = set()
+registers = list()
 test_programs = set()
 sa_html = set()
 asts = set()
@@ -98,6 +115,11 @@ hypercalls_templates = list()
 template_engines['hypercalls'] = \
     TemplateEngine(hypercalls_templates, None)
 
+registers_templates = list()
+
+template_engines['registers'] = \
+    TemplateEngine(registers_templates, None)
+
 
 shvars_re = re.compile(r'\$((\w+)\b|{(\w+)})')
 
@@ -128,8 +150,11 @@ def process_variant_conf(variant_key, conf, basename):
 
     platform = variant_key == 'platform'
     featureset = variant_key == 'featureset'
+    allow_arch = variant_key and not platform
 
     if platform:
+        if basename in target_arch_names:
+            logger.error("existing arch: %s", basename)
         target_arch_names.append(basename)
     with open(conf, 'r', encoding='utf-8') as f:
         for s in f.readlines():
@@ -137,6 +162,12 @@ def process_variant_conf(variant_key, conf, basename):
             if not words or words[0].startswith('#'):
                 # Skip comments or blank lines
                 pass
+            elif words[0] == 'include':
+                include_conf = os.path.join(config_base,
+                                            words[1] + '.conf')
+                if include_conf not in conf_includes:
+                    process_variant_conf(None, include_conf, None)
+                    conf_includes.add(include_conf)
             elif featureset and words[0] == 'platforms':
                 global featureset_platforms
                 featureset_platforms = words[1:]
@@ -144,18 +175,17 @@ def process_variant_conf(variant_key, conf, basename):
                 arch_conf = os.path.join(config_base, 'arch',
                                          words[1] + '.conf')
                 process_variant_conf(variant_key, arch_conf, words[1])
+            elif platform and words[0] == 'alias_arch':
+                if words[1] in target_arch_names:
+                    logger.error("Alias existing arch: %s",
+                                 words[1])
+                target_arch_names.append(words[1])
             elif platform and words[0] == 'is_abi':
                 global abi_arch
                 if abi_arch is not None:
                     logger.warning("Duplicate abi definitions: %s and %s",
                                    abi_arch, basename)
                 abi_arch = basename
-            elif platform and words[0] == 'defines_registers':
-                global registers_arch
-                if registers_arch is not None:
-                    logger.warning("Duplicate register definitions: %s and %s",
-                                   registers_arch, basename)
-                registers_arch = basename
             elif platform and words[0] == 'defines_link':
                 global link_arch
                 if link_arch is not None:
@@ -173,21 +203,24 @@ def process_variant_conf(variant_key, conf, basename):
                 modules.add(words[1])
             elif words[0] == 'flags':
                 variant_cflags.extend(map(var_subst, words[1:]))
+            elif words[0] == 'ldflags':
+                variant_ldflags.extend(map(var_subst, words[1:]))
             elif words[0] == 'configs':
                 for c in map(var_subst, words[1:]):
-                    check_global_define(c)
-                    variant_defines.append(c)
-            elif words[0] == 'arch_module':
+                    add_global_define(c)
+            elif allow_arch and words[0] == 'arch_module':
                 if arch_match(words[1]):
                     modules.add(words[2])
-            elif words[0] == 'arch_flags':
+            elif allow_arch and words[0] == 'arch_flags':
                 if arch_match(words[1]):
                     variant_cflags.extend(map(var_subst, words[2:]))
-            elif words[0] == 'arch_configs':
+            elif allow_arch and words[0] == 'arch_ldflags':
+                if arch_match(words[1]):
+                    variant_ldflags.extend(map(var_subst, words[2:]))
+            elif allow_arch and words[0] == 'arch_configs':
                 if arch_match(words[1]):
                     for c in map(var_subst, words[2:]):
-                        check_global_define(c)
-                        variant_defines.append(c)
+                        add_global_define(c)
             else:
                 # TODO: dependencies, configuration variables, etc
                 # Restructure this to use a proper parser first
@@ -208,13 +241,13 @@ else:
 
 missing_variant = False
 abi_arch = None
-registers_arch = None
 link_arch = None
 target_triple = None
 target_arch_names = []
 variant_cflags = []
 variant_cppflags = []
 variant_defines = []
+variant_ldflags = []
 
 featureset_platforms = ['*']
 
@@ -234,10 +267,15 @@ def check_global_define(d):
         if configs[define] == val:
             logger.warning("Duplicate configuration: %s", d)
         else:
-            logger.error("Conficting configuration: %s and %s",
+            logger.error("Conflicting configuration: %s and %s",
                          '='.join([define, configs[define]]), d)
             sys.exit(-1)
     configs[define] = val
+
+
+def add_global_define(d):
+    check_global_define(d)
+    variant_defines.append(d)
 
 
 for variant_key in ('platform', 'featureset', 'quality'):
@@ -362,7 +400,8 @@ graph.add_env('BUILD_DIR', os.path.realpath(build_dir))
 try:
     llvm_root = graph.get_env('LLVM')
 except KeyError:
-    logger.error("Please set $LLVM to the root of the prebuilt LLVM")
+    logger.error(
+        "Please set $LLVM to the root of the prebuilt LLVM")
     sys.exit(1)
 
 # Use a QC prebuilt LLVM
@@ -396,6 +435,8 @@ graph.append_env('CFLAGS', '-Wno-covered-switch-default')
 # No need for C++ compatibility
 graph.append_env('CFLAGS', '-Wno-c++98-compat')
 graph.append_env('CFLAGS', '-Wno-c++-compat')
+# No need for pre-C99 compatibility; we always use C18
+graph.append_env('CFLAGS', '-Wno-declaration-after-statement')
 # No need for GCC compatibility
 graph.append_env('CFLAGS', '-Wno-gcc-compat')
 # Allow GCC's _Alignof(lvalue) as a project deviation from MISRA rule 1.2.
@@ -416,6 +457,9 @@ if not do_partial_link:
 # Ensure that there are no symbol clashes with externally linked objects.
 graph.append_env('CFLAGS', '-fvisibility=hidden')
 
+# Generate DWARF compatible with older T32 releases
+graph.append_env('CFLAGS', '-gdwarf-4')
+
 # Catch undefined switches during type system preprocessing
 graph.append_env('CPPFLAGS', '-Wundef')
 graph.append_env('CPPFLAGS', '-Werror')
@@ -426,6 +470,14 @@ if variant_cflags:
 if variant_cppflags:
     graph.append_env('CPPFLAGS', ' '.join(variant_cppflags))
     graph.append_env('CODEGEN_CONFIGS', ' '.join(variant_cppflags))
+if variant_ldflags:
+    graph.append_env('TARGET_LDFLAGS', ' '.join(variant_ldflags))
+
+# On scons builds, the abs path may be put into the commandline, strip it out
+# of the __FILE__ macro.
+root = os.path.abspath(os.curdir) + os.sep
+graph.append_env('CFLAGS',
+                 '-fmacro-prefix-map={:s}={:s}'.format(root, ''))
 
 graph.append_env('TARGET_CPPFLAGS', '-nostdlibinc')
 graph.append_env('TARGET_LDFLAGS', '-nostdlib')
@@ -485,6 +537,8 @@ graph.add_rule('cc-analyze',
                '-Xanalyzer unroll-loops=true '
                '-Xanalyzer -analyzer-config '
                '-Xanalyzer ctu-dir=$CTU_DIR '
+               '-Xanalyzer -analyzer-disable-checker '
+               '-Xanalyzer alpha.core.FixedAddr '
                '-o ${out} '
                '${in}')
 
@@ -522,6 +576,7 @@ def parse_module_conf(d, f):
     )
     objs = []
     have_events = False
+
     for s in f.readlines():
         words = s.split()
         if not words or words[0].startswith('#'):
@@ -540,6 +595,12 @@ def parse_module_conf(d, f):
             for w in map(var_subst, words[1:]):
                 event_sources.add(add_event_dsl(d, w, local_env))
                 have_events = True
+        elif words[0] == 'registers':
+            for w in map(var_subst, words[1:]):
+                f = os.path.join(d, w)
+                if f in registers:
+                    raise KeyError("duplicate {:s}".format(f))
+                registers.append(f)
         elif words[0] == 'local_include':
             add_include(d, 'include', local_env)
         elif words[0] == 'source':
@@ -573,6 +634,13 @@ def parse_module_conf(d, f):
                     event_sources.add(add_event_dsl(
                         os.path.join(d, words[1]), w, local_env))
                     have_events = True
+        elif words[0] == 'arch_registers':
+            if arch_match(words[1]):
+                for w in map(var_subst, words[2:]):
+                    f = os.path.join(d, words[1], w)
+                    if f in registers:
+                        raise KeyError("duplicate {:s}".format(f))
+                    registers.append(f)
         elif words[0] == 'arch_local_include':
             if arch_match(words[1]):
                 add_include(d, os.path.join(words[1], 'include'), local_env)
@@ -644,6 +712,15 @@ def parse_module_conf(d, f):
                     if add_template(ts, d, words[2], w, src_requires,
                                     local_env, module):
                         have_events = True
+        elif words[0] == 'assert_config':
+            test = ' '.join(words[1:])
+
+            result = eval(test, {}, configs_as_ints)
+            if result is True:
+                continue
+            logger.error('assert_config failed "%s" in module conf for %s',
+                         test, d)
+            sys.exit(1)
         else:
             # TODO: dependencies, configuration variables, etc
             # Restructure this to use a proper parser first
@@ -676,6 +753,12 @@ def parse_interface_conf(d, f):
             for w in map(var_subst, words[1:]):
                 event_sources.add(add_event_dsl(d, w, local_env))
                 have_events = True
+        elif words[0] == 'registers':
+            for w in map(var_subst, words[1:]):
+                f = os.path.join(d, w)
+                if f in registers:
+                    raise KeyError("duplicate {:s}".format(f))
+                registers.append(f)
         elif words[0] == 'macros':
             for w in map(var_subst, words[1:]):
                 add_macro_include(d, 'include', w)
@@ -743,19 +826,13 @@ def add_flags(flags, local_env):
     local_env['LOCAL_CFLAGS'] += ' '.join(flags)
 
 
-def add_global_define(d):
-    check_global_define(d)
-    variant_defines.append(d)
-
-
 def add_source_file(src, obj, requires, local_env):
     file_env = local_env.copy()
-    file_define = '-D__BUILD_FILE__=\\"{:s}\\"'.format(src)
     if 'LOCAL_CPPFLAGS' not in file_env:
         file_env['LOCAL_CPPFLAGS'] = ''
     else:
         file_env['LOCAL_CPPFLAGS'] += ' '
-    file_env['LOCAL_CPPFLAGS'] += file_define
+
     graph.add_target([obj], 'cc', [src], requires=requires,
                      **file_env)
     objects.add(obj)
@@ -858,7 +935,8 @@ def add_simple_template(d, t, requires, local_env, local_headers=False,
     else:
         logger.error("Unsupported template output: %s", out_name)
         sys.exit(1)
-    graph.add_target([o], 'code_gen', [i])
+    graph.add_target([o], 'code_gen_asm' if out_ext == '.S' else 'code_gen',
+                     [i])
 
 
 event_handler_modules = set()
@@ -948,6 +1026,9 @@ graph.add_env('CODEGEN', relpath(codegen_script))
 graph.add_rule('code_gen', '${CODEGEN} ${CODEGEN_ARCHS} ${CODEGEN_CONFIGS} '
                '-f ${FORMATTER} -o ${out} -d ${out}.d ${in}',
                depfile='${out}.d')
+graph.add_rule('code_gen_asm', '${CODEGEN} ${CODEGEN_ARCHS} '
+               '${CODEGEN_CONFIGS} -o ${out} -d ${out}.d ${in}',
+               depfile='${out}.d')
 
 
 #
@@ -955,6 +1036,21 @@ graph.add_rule('code_gen', '${CODEGEN} ${CODEGEN_ARCHS} ${CODEGEN_CONFIGS} '
 #
 defmap = os.path.join(ctu_dir, "externalDefMap.txt")
 ast_gen = graph.future_alias(os.path.join(build_dir, 'ast-gen'))
+
+# Get all configs as Ints or strings
+configs_as_ints = dict()
+
+
+def configs_get_int(c):
+    try:
+        s = configs[c].strip('uU')
+        return int(s, 0)
+    except ValueError:
+        return configs[c]
+
+
+for c in configs:
+    configs_as_ints[c] = configs_get_int(c)
 
 #
 # Collect the lists of objects, modules and interfaces
@@ -1143,7 +1239,7 @@ graph.add_alias(typed_headers_gen, typed_headers)
 
 for module_dir, target, arch, src_requires, is_module, local_env in \
         typed_guestapi_templates:
-    assert(is_module)
+    assert (is_module)
     ext = os.path.splitext(target)[1]
     template = os.path.join(module_dir, arch, 'templates', target + '.tmpl')
     if ext == '.h':
@@ -1176,6 +1272,7 @@ hypercalls_template_path = os.path.join('tools', 'hypercalls', 'templates')
 hypercalls_guest_templates = (('guest_interface.c', hypguest_interface_src),
                               ('guest_interface.h', hypguest_interface_header))
 
+# FIXME:
 # FIXME: upgrade Lark and remove LANG env workaround.
 graph.add_rule('hypercalls_gen', 'LANG=C.UTF-8'
                ' ${HYPERCALLS} -a ${ABI} -f ${FORMATTER}'
@@ -1255,8 +1352,8 @@ for module in sorted(interfaces_with_events | modules_with_events):
     event_out = get_event_src_file(module)
     graph.add_target([event_out], 'event_gen', events_pickle,
                      MODULE=module, TEMPLATE=relpath(event_src_tmpl),
-                     OPTIONS='-f ${FORMATTER}',
                      depends=[event_src_tmpl])
+#                     OPTIONS='-f ${FORMATTER}',
 
 # An alias target is used to order header generation before source compliation
 graph.add_alias(event_headers_gen, event_headers)
@@ -1281,18 +1378,22 @@ graph.add_env('REGISTERS', relpath(registers_script))
 graph.add_rule('registers_gen', '${REGISTERS} -t ${TEMPLATE} -f ${FORMATTER} '
                '-o ${out} ${in}')
 
-# Pre-process the register script
-# FIXME: add build.conf support for more flexible location(s) specification
-registers_base = os.path.join(arch_base, registers_arch)
-registers_in = os.path.join(registers_base, 'registers.reg')
-registers_template = os.path.join(registers_base, 'registers.tmpl')
+registers_pp = list()
 
-registers_pp = os.path.join(build_dir, 'registers.reg.pp')
-graph.add_target([registers_pp], 'cpp-dsl', [registers_in])
+# Pre-process the register scripts
+for f in registers:
+    f_pp = os.path.join(build_dir, f + '.pp')
+    graph.add_target([f_pp], 'cpp-dsl', [f])
+    registers_pp.append(f_pp)
 
-graph.add_target([registers_header], 'registers_gen', [registers_pp],
-                 TEMPLATE=relpath(registers_template),
-                 depends=[registers_template, registers_script])
+for module_dir, target, arch, src_requires, is_module, local_env in \
+        registers_templates:
+    template = os.path.join(module_dir, arch, 'templates', target + '.tmpl')
+
+    header = os.path.join(build_includes, target)
+    graph.add_target([header], 'registers_gen', registers_pp,
+                     TEMPLATE=relpath(template),
+                     depends=[template, registers_script])
 
 #
 # Build version setup

@@ -21,7 +21,8 @@
 #continue
 #end if
 
-$h.return_type
+#set noreturn = 'noreturn ' if $h.noreturn else ''
+$noreturn$h.return_type
 ${h.name}(#slurp
 #set sep = ''
 #for p in $h.params

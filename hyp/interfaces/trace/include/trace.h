@@ -16,9 +16,10 @@
 
 #include <events/trace.h>
 
-#define TRACE_ID(id)		 (TRACE_ID_##id)
-#define TRACE_CLASS(tclass)	 (TRACE_CLASS_##tclass)
-#define TRACE_CLASS_BITS(tclass) (1U << TRACE_CLASS_##tclass)
+#define TRACE_ID(id)	    (TRACE_ID_##id)
+#define TRACE_CLASS(tclass) (TRACE_CLASS_##tclass)
+#define TRACE_CLASS_BITS(tclass)                                               \
+	((register_t)1 << (index_t)TRACE_CLASS_##tclass)
 
 #define TRACE_FUNC_I(id, action, a0, a1, a2, a3, a4, a5, n, ...)               \
 	TRACE_ADD##n(TRACE_ID(id), action, a0, a1, a2, a3, a4, a5, __VA_ARGS__)
@@ -30,17 +31,20 @@ extern register_t      trace_public_class_flags;
 
 #define TRACE_MAYBE(classes, X)                                                \
 	do {                                                                   \
-		register_t enabled_ = atomic_load_explicit(                    \
+		register_t class_enabled_ = atomic_load_explicit(              \
 			&hyp_trace.enabled_class_flags, memory_order_relaxed); \
-		if (compiler_unexpected((enabled_ & classes) != 0)) {          \
+		if (compiler_unexpected((class_enabled_ & classes) != 0U)) {   \
 			X;                                                     \
 		}                                                              \
 	} while (0)
 
 // Used for single class trace
+#if defined(PARASOFT_CYCLO)
+#define TRACE(tclass, id, ...)
+#else
 #define TRACE(tclass, id, ...)                                                 \
 	TRACE_EVENT(tclass, id, TRACE_ACTION_TRACE, __VA_ARGS__)
-
+#endif
 #define TRACE_LOCAL(tclass, id, ...)                                           \
 	TRACE_EVENT(tclass, id, TRACE_ACTION_TRACE_LOCAL, __VA_ARGS__)
 
@@ -99,4 +103,14 @@ trace_get_class_flags(void);
 // It stops using the trace boot buffer and starts using a dynamically allocated
 // trace buffer of bigger size
 void
-trace_init(partition_t *partition, size_t size);
+trace_init(partition_t *partition, size_t size) REQUIRE_PREEMPT_DISABLED;
+
+#if defined(PLATFORM_TRACE_STANDALONE_REGION)
+// Use pre-allocated memory for trace buffer
+//
+// It stops using the trace boot buffer and starts using a pre-allocated
+// trace buffer of bigger size
+void
+trace_single_region_init(partition_t *partition, paddr_t base, size_t size)
+	REQUIRE_PREEMPT_DISABLED;
+#endif

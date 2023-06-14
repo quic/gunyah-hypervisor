@@ -5,7 +5,6 @@
 #include <assert.h>
 #include <hyptypes.h>
 
-#if !defined(UNIT_TESTS)
 #include <cspace.h>
 #include <memdb.h>
 #include <memextent.h>
@@ -29,9 +28,10 @@ platform_ram_probe(void)
 	// system-device-tree approach. We need to make sure that hyp RAM memory
 	// ranges do not overlap with the ranges specified in the QEMU start
 	// command.
-	ram_info.num_ranges	   = 0x1;
-	ram_info.ram_range[0].base = 0x40000000;
-	ram_info.ram_range[0].size = 0x80000000; // 1Gb of RAM
+	ram_info.num_ranges = 0x1;
+	// TODO: Get info from DT
+	ram_info.ram_range[0].base = PLATFORM_DDR_BASE;
+	ram_info.ram_range[0].size = PLATFORM_DDR_SIZE;
 
 	return OK;
 }
@@ -59,7 +59,8 @@ platform_add_root_heap(partition_t *partition)
 	// FIXME: Currently using the end memory of the hardcoded 1Gb hyp RAM
 	// memory size. We need to find a better solution for this, possibly by
 	// dynamically reading the RAM memory end address from a device tree.
-	paddr_t base = PLATFORM_LMA_BASE + 0x40000000 - alloc_size;
+
+	paddr_t base = PLATFORM_DDR_BASE + PLATFORM_DDR_SIZE - alloc_size;
 
 	// Add 1MiB to the hypervisor private partition
 	error_t err = partition_mem_donate(partition, base, priv_size,
@@ -87,6 +88,7 @@ platform_add_root_heap(partition_t *partition)
 	trace_init(partition, trace_size);
 }
 
+#if !defined(UNIT_TESTS)
 static memextent_t *
 create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 		 paddr_t phys_base, size_t size, pgtable_access_t access,
@@ -94,7 +96,7 @@ create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 {
 	bool device_mem = (memtype == MEMEXTENT_MEMTYPE_DEVICE);
 
-	memextent_create_t     params_me = { .memextent		   = NULL,
+	memextent_create_t     params_me = { .memextent = NULL,
 					     .memextent_device_mem = device_mem };
 	memextent_ptr_result_t me_ret;
 	me_ret = partition_allocate_memextent(root_partition, params_me);
@@ -106,6 +108,11 @@ create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 	memextent_attrs_t attrs = memextent_attrs_default();
 	memextent_attrs_set_access(&attrs, access);
 	memextent_attrs_set_memtype(&attrs, memtype);
+#if defined(MODULE_MEM_MEMEXTENT_SPARSE)
+	if (device_mem) {
+		memextent_attrs_set_type(&attrs, MEMEXTENT_TYPE_SPARSE);
+	}
+#endif
 
 	spinlock_acquire(&me->header.lock);
 	error_t ret = memextent_configure(me, phys_base, size, attrs);
@@ -135,7 +142,8 @@ create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 
 void
 soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
-			    boot_env_data_t *env_data)
+			    hyp_env_data_t   *hyp_env,
+			    qcbor_enc_ctxt_t *qcbor_enc_ctxt)
 {
 	// FIXME: The memory layout for QEMU is hardcoded here. We need to find a
 	// better solution for this, possibly by using a system-device-tree
@@ -143,32 +151,30 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 	// device-tree. We will also need to get the addresses such as
 	// hlos-entry from this config such that ultimately these can all be
 	// inputs from QEMU/user.
+	paddr_t hlos_vm_base = HLOS_VM_DDR_BASE;
+	paddr_t hlos_vm_size = HLOS_VM_DDR_SIZE;
+
+	assert(qcbor_enc_ctxt != NULL);
 
 	// VM memory node. Includes entry point, DT, and rootfs
-	env_data->hlos_vm_base	  = 0x40000000;
-	env_data->hlos_vm_size	  = 0x20000000;
-	env_data->entry_hlos	  = 0x41080000;
-	env_data->hlos_dt_base	  = 0x44200000;
-	env_data->hlos_ramfs_base = 0x44400000;
-	env_data->device_me_base  = PLATFORM_DEVICES_BASE;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "hlos_vm_base",
+				   hlos_vm_base);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "hlos_vm_size",
+				   hlos_vm_size);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "entry_hlos",
+				   HLOS_ENTRY_POINT);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "hlos_dt_base",
+				   HLOS_DT_BASE);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "hlos_ramfs_base",
+				   HLOS_RAM_FS_BASE);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "device_me_base",
+				   PLATFORM_DEVICES_BASE);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "device_me_size",
+				   PLATFORM_DEVICES_SIZE);
 
 #if defined(WATCHDOG_DISABLE)
-	env_data->watchdog_supported = false;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "watchdog_supported", false);
 #endif
-
-	// Add memory of VM to memdb first, so that we can use it to create a
-	// non-device memextent
-	//paddr_t phys_start = env_data->hlos_vm_base;
-	//paddr_t phys_end =
-	//	env_data->hlos_vm_base + (env_data->hlos_vm_size - 1U);
-
-	//partition_t *hyp_partition = partition_get_private();
-	//error_t	     err = memdb_insert(hyp_partition, phys_start, phys_end,
-	//				(uintptr_t)root_partition,
-	//				MEMDB_TYPE_PARTITION);
-	//if (err != OK) {
-	//	panic("Error adding VM memory to hyp_partition");
-	//}
 
 	// Create a device memextent to cover the full HW physical address
 	// space reserved for devices, so that the resource manager can derive
@@ -179,7 +185,10 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 	memextent_t *me = create_memextent(
 		root_partition, root_cspace, PLATFORM_DEVICES_BASE,
 		PLATFORM_DEVICES_SIZE, PGTABLE_ACCESS_RW,
-		MEMEXTENT_MEMTYPE_DEVICE, &env_data->device_me_capid);
+		MEMEXTENT_MEMTYPE_DEVICE, &hyp_env->device_me_capid);
+
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "device_me_capid",
+				   hyp_env->device_me_capid);
 
 	// Derive memextents for GICD, GICR and watchdog to effectively remove
 	// them from the device memextent we provide to the rootvm.
@@ -213,7 +222,9 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 		panic("Error create memextent cap id.");
 	}
 
-	env_data->uart_address	= PLATFORM_UART_BASE;
-	env_data->uart_me_capid = capid_ret.r;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "uart_address",
+				   PLATFORM_UART_BASE);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "uart_me_capid",
+				   capid_ret.r);
 }
 #endif

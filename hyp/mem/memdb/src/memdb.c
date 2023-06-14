@@ -81,9 +81,9 @@
 #endif
 
 #define MEMDB_BITS_PER_ENTRY_MASK util_mask(MEMDB_BITS_PER_ENTRY)
-#define ADDR_SIZE		  (sizeof(paddr_t) * CHAR_BIT)
+#define ADDR_SIZE		  (sizeof(paddr_t) * (size_t)CHAR_BIT)
 // levels + 1 for root
-#define MAX_LEVELS (ADDR_SIZE / MEMDB_BITS_PER_ENTRY) + 1
+#define MAX_LEVELS (ADDR_SIZE / MEMDB_BITS_PER_ENTRY) + 1U
 
 #if (defined(VERBOSE) && VERBOSE) || defined(UNIT_TESTS)
 #define MEMDB_DEBUG 1
@@ -97,14 +97,14 @@ extern const char image_phys_last;
 static const paddr_t phys_start = (paddr_t)&image_phys_start;
 static const paddr_t phys_end	= (paddr_t)&image_phys_last;
 
-typedef struct start_path {
+typedef struct start_path_s {
 	memdb_level_t *levels[MAX_LEVELS];
 	index_t	       indexes[MAX_LEVELS];
 	count_t	       count;
 } start_path_t;
 
-typedef struct locked_levels {
-	spinlock_t		   *locks[MAX_LEVELS];
+typedef struct locked_levels_s {
+	spinlock_t	      *locks[MAX_LEVELS];
 	_Atomic memdb_entry_t *entries[MAX_LEVELS];
 	count_t		       count;
 	uint8_t		       pad_end_[4];
@@ -141,7 +141,8 @@ get_next_index(paddr_t addr, count_t *shifts)
 
 	*shifts -= MEMDB_BITS_PER_ENTRY;
 
-	return ((addr >> *shifts) & MEMDB_BITS_PER_ENTRY_MASK);
+	return ((count_t)(addr >> *shifts) &
+		(count_t)MEMDB_BITS_PER_ENTRY_MASK);
 }
 
 static void
@@ -182,7 +183,8 @@ init_level(memdb_level_t *level, allocator_t *allocator, memdb_type_t type,
 	for (index_t i = 0; i < MEMDB_NUM_ENTRIES; i++) {
 		// Guard shifts of 64 (ADDR_SIZE) means there is no guard.
 		atomic_entry_write(&level->level[i], memory_order_relaxed,
-				   MEMDB_TYPE_LEVEL, ADDR_SIZE, type, obj);
+				   (paddr_t)MEMDB_TYPE_LEVEL,
+				   (count_t)ADDR_SIZE, type, obj);
 	}
 }
 
@@ -269,9 +271,9 @@ unlock_levels(locked_levels_t *locked_levels) LOCK_IMPL
 
 	assert(locked_levels->count != 0U);
 
-	for (count_t i = (locked_levels->count - 1); i > 0; i--) {
+	for (count_t i = (locked_levels->count - 1U); i > 0U; i--) {
 		memdb_entry_t entry = atomic_load_explicit(
-			locked_levels->entries[i - 1], memory_order_relaxed);
+			locked_levels->entries[i - 1U], memory_order_relaxed);
 		memdb_level_t *level = (memdb_level_t *)entry.next;
 
 #if defined(MEMDB_DEBUG)
@@ -295,8 +297,8 @@ unlock_levels(locked_levels_t *locked_levels) LOCK_IMPL
 		assert(cont_level);
 #endif
 		if (optimize) {
-			atomic_entry_read(&level->level[0], &guard,
-					  &guard_shifts, &type, &next);
+			(void)atomic_entry_read(&level->level[0], &guard,
+						&guard_shifts, &type, &next);
 
 			res = are_all_entries_same(level, next,
 						   MEMDB_NUM_ENTRIES, type, 0,
@@ -304,7 +306,7 @@ unlock_levels(locked_levels_t *locked_levels) LOCK_IMPL
 			if (res) {
 				// Update parent and deallocate level.
 				atomic_entry_write(
-					locked_levels->entries[i - 1],
+					locked_levels->entries[i - 1U],
 					memory_order_relaxed, guard,
 					guard_shifts, type, next);
 
@@ -331,7 +333,8 @@ unlock_levels(locked_levels_t *locked_levels) LOCK_IMPL
 static paddr_t
 calculate_address(paddr_t addr, count_t shifts, index_t index)
 {
-	paddr_t result = util_p2align_down(addr, shifts + MEMDB_BITS_PER_ENTRY);
+	paddr_t result = util_p2align_down(
+		addr, ((paddr_t)shifts + MEMDB_BITS_PER_ENTRY));
 
 	assert(index < util_bit(MEMDB_BITS_PER_ENTRY));
 
@@ -366,19 +369,19 @@ fill_level_entries(memdb_level_t *level, uintptr_t object, memdb_type_t type,
 			goto end_function;
 		}
 		atomic_entry_write(&level->level[i], memory_order_relaxed, 0,
-				   ADDR_SIZE, type, object);
+				   (count_t)ADDR_SIZE, type, object);
 	}
 
 end_function:
 	if (ret != OK) {
 		if (failed_index > start_index) {
 			*last_success_addr = calculate_address(
-				addr, shifts, failed_index - 1);
+				addr, shifts, failed_index - 1U);
 		}
 	} else {
 		if ((op != MEMDB_OP_ROLLBACK) && (start_index != end_index)) {
 			*last_success_addr =
-				calculate_address(addr, shifts, end_index - 1);
+				calculate_address(addr, shifts, end_index - 1U);
 		}
 	}
 out:
@@ -436,8 +439,8 @@ create_n_levels(allocator_t *allocator, memdb_level_t **level, bool start,
 		comparison = util_mask(*shifts);
 	}
 
-	atomic_entry_read(&(*level)->level[*index], &level_guard,
-			  &level_guard_shifts, &level_type, &level_next);
+	(void)atomic_entry_read(&(*level)->level[*index], &level_guard,
+				&level_guard_shifts, &level_type, &level_next);
 
 	// Create levels and update parent entry to point to new level.
 	while ((*shifts != limit) &&
@@ -456,7 +459,7 @@ create_n_levels(allocator_t *allocator, memdb_level_t **level, bool start,
 		memdb_level_t *next_level = res.r;
 
 		level_guard	   = 0;
-		level_guard_shifts = ADDR_SIZE;
+		level_guard_shifts = (count_t)ADDR_SIZE;
 		level_type	   = MEMDB_TYPE_LEVEL;
 		level_next	   = (uintptr_t)next_level;
 
@@ -474,8 +477,8 @@ create_n_levels(allocator_t *allocator, memdb_level_t **level, bool start,
 				*common_level_shifts = *shifts;
 			}
 
-			if ((start_path->count == 0) ||
-			    (start_path->levels[start_path->count - 1] !=
+			if ((start_path->count == 0U) ||
+			    (start_path->levels[start_path->count - 1U] !=
 			     *level)) {
 				start_path->levels[start_path->count]  = *level;
 				start_path->indexes[start_path->count] = *index;
@@ -523,15 +526,15 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 	uintptr_t    level_next;
 	error_t	     ret = OK;
 
-	atomic_entry_read(&(*level)->level[*index], &level_guard,
-			  &level_guard_shifts, &level_type, &level_next);
+	(void)atomic_entry_read(&(*level)->level[*index], &level_guard,
+				&level_guard_shifts, &level_type, &level_next);
 
 	// We need to go down the levels until we find an empty entry or we run
 	// out of remaining bits. In the former case, return error since the
 	// address already has an owner.
 	while ((level_type == MEMDB_TYPE_LEVEL) && (*shifts != 0U)) {
 		if (start) {
-			paddr_t level_shifts = *shifts + MEMDB_BITS_PER_ENTRY;
+			count_t level_shifts = *shifts + MEMDB_BITS_PER_ENTRY;
 
 			if ((start) && (op == MEMDB_OP_ROLLBACK) &&
 			    (level_shifts != ADDR_SIZE) &&
@@ -541,8 +544,8 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 				*common_level_shifts = *shifts;
 			}
 
-			if ((start_path->count == 0) ||
-			    (start_path->levels[start_path->count - 1] !=
+			if ((start_path->count == 0U) ||
+			    (start_path->levels[start_path->count - 1U] !=
 			     *level)) {
 				start_path->levels[start_path->count]  = *level;
 				start_path->indexes[start_path->count] = *index;
@@ -563,7 +566,7 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 
 				last_shifts		 = level_guard_shifts;
 				level_guard		 = 0;
-				level_guard_shifts	 = ADDR_SIZE;
+				level_guard_shifts	 = (count_t)ADDR_SIZE;
 				memdb_level_t *level_aux = *level;
 
 				ret = create_n_levels(
@@ -585,12 +588,13 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 						   (uintptr_t)last_level);
 
 				if (start && (*level != level_aux)) {
-					paddr_t level_shifts =
+					count_t level_shifts =
 						*shifts + MEMDB_BITS_PER_ENTRY;
 
 					if ((start) &&
 					    (op == MEMDB_OP_ROLLBACK) &&
-					    (level_shifts != ADDR_SIZE) &&
+					    (level_shifts !=
+					     (count_t)ADDR_SIZE) &&
 					    ((*last_success_addr >>
 					      level_shifts) ==
 					     (addr >> level_shifts))) {
@@ -618,7 +622,7 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 								   tmp_cmn);
 
 				if ((aux_shifts + level_guard_shifts) !=
-				    ADDR_SIZE) {
+				    (count_t)ADDR_SIZE) {
 					index_t new_index;
 
 					last_shifts = level_guard_shifts +
@@ -650,14 +654,14 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 						(uintptr_t)last_level);
 
 					if (start && (*level != level_aux)) {
-						paddr_t level_shifts =
+						count_t level_shifts =
 							*shifts +
 							MEMDB_BITS_PER_ENTRY;
 
 						if ((start) &&
 						    (op == MEMDB_OP_ROLLBACK) &&
 						    (level_shifts !=
-						     ADDR_SIZE) &&
+						     (count_t)ADDR_SIZE) &&
 						    ((*last_success_addr >>
 						      level_shifts) ==
 						     (addr >> level_shifts))) {
@@ -708,9 +712,9 @@ go_down_levels(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 		*level = (memdb_level_t *)level_next;
 		*index = get_next_index(addr, shifts);
 
-		atomic_entry_read(&(*level)->level[*index], &level_guard,
-				  &level_guard_shifts, &level_type,
-				  &level_next);
+		(void)atomic_entry_read(&(*level)->level[*index], &level_guard,
+					&level_guard_shifts, &level_type,
+					&level_next);
 	}
 
 	if ((level_type != prev_type) || (level_next != prev_object) ||
@@ -779,7 +783,7 @@ add_address(allocator_t *allocator, uintptr_t object, memdb_type_t type,
 	}
 
 	level_guard	   = 0;
-	level_guard_shifts = ADDR_SIZE;
+	level_guard_shifts = (count_t)ADDR_SIZE;
 	level_type	   = type;
 	level_next	   = object;
 
@@ -805,7 +809,7 @@ add_address(allocator_t *allocator, uintptr_t object, memdb_type_t type,
 	}
 
 	if ((start_path.count == 0U) ||
-	    (start_path.levels[start_path.count - 1] != level)) {
+	    (start_path.levels[start_path.count - 1U] != level)) {
 		start_path.levels[start_path.count]  = level;
 		start_path.indexes[start_path.count] = index;
 		start_path.count++;
@@ -816,12 +820,12 @@ add_address(allocator_t *allocator, uintptr_t object, memdb_type_t type,
 		common_level_shifts = first_level_shifts - MEMDB_BITS_PER_ENTRY;
 	}
 
-	count = start_path.count - 1;
+	count = start_path.count - 1U;
 
 	// Fill entries from start_index+1 to MEMDB_NUM_ENTRIES in start path
 	// levels
 	while (start_path.levels[count] != common_level) {
-		index_t start_index = start_path.indexes[count] + 1;
+		index_t start_index = start_path.indexes[count] + 1U;
 
 		level = start_path.levels[count];
 
@@ -837,11 +841,11 @@ add_address(allocator_t *allocator, uintptr_t object, memdb_type_t type,
 
 	if ((op == MEMDB_OP_ROLLBACK) && (count != 0U)) {
 		level		    = start_path.levels[count];
-		index_t start_index = start_path.indexes[count] + 1;
+		index_t start_index = start_path.indexes[count] + 1U;
 		index_t end_index =
-			((*last_success_addr >> common_level_shifts) &
-			 MEMDB_BITS_PER_ENTRY_MASK) +
-			1;
+			(index_t)(((*last_success_addr >> common_level_shifts) &
+				   MEMDB_BITS_PER_ENTRY_MASK) +
+				  1U);
 
 		// Fill intermediate entries of new common level
 		ret = fill_level_entries(level, object, type, prev_object,
@@ -897,13 +901,13 @@ add_address_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 		memdb_type_t level_type;
 		uintptr_t    level_next;
 
-		atomic_entry_read(&common_level->level[start_index],
-				  &level_guard, &level_guard_shifts,
-				  &level_type, &level_next);
+		(void)atomic_entry_read(&common_level->level[start_index],
+					&level_guard, &level_guard_shifts,
+					&level_type, &level_next);
 		if ((level_type == prev_type) && (level_next == prev_object)) {
 			atomic_entry_write(&common_level->level[start_index],
-					   memory_order_relaxed, 0, ADDR_SIZE,
-					   type, object);
+					   memory_order_relaxed, 0,
+					   (count_t)ADDR_SIZE, type, object);
 		} else {
 			ret = ERROR_MEMDB_NOT_OWNER;
 		}
@@ -934,7 +938,7 @@ add_address_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 
 	// Fill first level intermediate entries between start end end
 	ret = fill_level_entries(common_level, object, type, prev_object,
-				 prev_type, start_index + 1, end_index,
+				 prev_type, start_index + 1U, end_index,
 				 start_addr, last_success_addr, end_shifts, op);
 	if (ret != OK) {
 		goto end_function;
@@ -966,17 +970,20 @@ compare_adjust_bits(count_t guard_shifts, count_t shifts,
 			ret = ERROR_ADDR_INVALID;
 			goto end_function;
 		}
+	} else {
+		// No need to adjust the guard_shifts value
 	}
 
 	if (insert) {
-		if ((guard_shifts + *extra_guard_shifts) != ADDR_SIZE) {
+		if ((guard_shifts + *extra_guard_shifts) !=
+		    (count_t)ADDR_SIZE) {
 			tmp_guard = guard >> *extra_guard_shifts;
 		} else {
 			tmp_guard = 0;
 		}
 	}
 
-	if ((shifts + *extra_shifts) != ADDR_SIZE) {
+	if ((shifts + *extra_shifts) != (count_t)ADDR_SIZE) {
 		tmp_cmn = addr >> (shifts + *extra_shifts);
 	} else {
 		tmp_cmn = 0;
@@ -1010,7 +1017,7 @@ compare_adjust_bits(count_t guard_shifts, count_t shifts,
 		} else {
 			tmp_guard = 0;
 		}
-		if ((shifts + *extra_shifts) != ADDR_SIZE) {
+		if ((shifts + *extra_shifts) != (count_t)ADDR_SIZE) {
 			tmp_cmn = addr >> (shifts + *extra_shifts);
 		} else {
 			tmp_cmn = 0;
@@ -1054,9 +1061,9 @@ add_extra_shifts_update(allocator_t *allocator, count_t *shifts,
 			lock_level(level, index, locked_levels);
 		}
 
-		atomic_entry_read(&level->level[index], &level_guard,
-				  &level_guard_shifts, &level_type,
-				  &level_next);
+		(void)atomic_entry_read(&level->level[index], &level_guard,
+					&level_guard_shifts, &level_type,
+					&level_next);
 
 		// If entry has guard, it must match with common bits.
 		ret = check_guard(level_guard_shifts, level_guard, end_addr,
@@ -1086,13 +1093,16 @@ add_extra_shifts_update(allocator_t *allocator, count_t *shifts,
 					locked_levels->entries[1];
 				locked_levels->locks[0] =
 					locked_levels->locks[1];
-				locked_levels->entries[1] = 0;
-				locked_levels->locks[1]	  = 0;
-				locked_levels->count	  = 1;
+				locked_levels->entries[1] =
+					(_Atomic(memdb_entry_t) *)NULL;
+				locked_levels->locks[1] = (spinlock_t *)NULL;
+				locked_levels->count	= 1;
 			} else if (locking) {
 				// Current level needs to be locked, so all
 				// next levels also need to be.
 				lock_taken = true;
+			} else {
+				// Nothing to do
 			}
 
 			level = (memdb_level_t *)level_next;
@@ -1232,8 +1242,8 @@ create_intermediate_level(allocator_t *allocator, paddr_t start_addr,
 
 	// Set guard equal to common bits and create level.
 
-	atomic_entry_read(&level->level[index], &lower_guard,
-			  &lower_guard_shifts, &lower_type, &lower_next);
+	(void)atomic_entry_read(&level->level[index], &lower_guard,
+				&lower_guard_shifts, &lower_type, &lower_next);
 
 	paddr_t lower_addr = lower_guard << lower_guard_shifts;
 
@@ -1259,7 +1269,7 @@ create_intermediate_level(allocator_t *allocator, paddr_t start_addr,
 
 	if (level_guard_shifts == (level_shifts - MEMDB_BITS_PER_ENTRY)) {
 		// No guard if no levels are skipped.
-		level_guard_shifts = ADDR_SIZE;
+		level_guard_shifts = (count_t)ADDR_SIZE;
 		level_guard	   = 0U;
 	}
 
@@ -1277,7 +1287,7 @@ create_intermediate_level(allocator_t *allocator, paddr_t start_addr,
 
 	if (lower_guard_shifts == (shifts - MEMDB_BITS_PER_ENTRY)) {
 		// No guard if no levels are skipped.
-		lower_guard_shifts = ADDR_SIZE;
+		lower_guard_shifts = (count_t)ADDR_SIZE;
 		lower_guard	   = 0U;
 	}
 
@@ -1306,7 +1316,7 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 	error_t	       ret	      = OK;
 
 	while (rem_cmn_shifts != shifts) {
-		index_t llevel_index = locked_levels->count - 1;
+		index_t llevel_index = locked_levels->count - 1U;
 		count_t level_shifts = rem_cmn_shifts;
 
 		index_t index = get_next_index(start_addr, &rem_cmn_shifts);
@@ -1318,9 +1328,9 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 			lock_level(level, index, locked_levels);
 		}
 
-		atomic_entry_read(&level->level[index], &level_guard,
-				  &level_guard_shifts, &level_type,
-				  &level_next);
+		(void)atomic_entry_read(&level->level[index], &level_guard,
+					&level_guard_shifts, &level_type,
+					&level_next);
 
 		if (level_type != MEMDB_TYPE_NOTYPE) {
 			if ((!lock_taken) &&
@@ -1339,9 +1349,10 @@ add_extra_shifts(allocator_t *allocator, count_t shifts, count_t extra_shifts,
 					locked_levels->entries[1];
 				locked_levels->locks[0] =
 					locked_levels->locks[1];
-				locked_levels->entries[1] = 0;
-				locked_levels->locks[1]	  = 0;
-				locked_levels->count	  = 1;
+				locked_levels->entries[1] =
+					(_Atomic(memdb_entry_t) *)NULL;
+				locked_levels->locks[1] = (spinlock_t *)NULL;
+				locked_levels->count	= 1;
 			} else {
 				// Current level needs to hold lock, so all
 				// next levels also.
@@ -1480,8 +1491,8 @@ find_common_level(paddr_t start_addr, paddr_t end_addr,
 		}
 	}
 
-	atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
-			  &next);
+	(void)atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
+				&next);
 
 	if ((!first) && (root_type == MEMDB_TYPE_NOTYPE)) {
 		ret = ERROR_MEMDB_EMPTY;
@@ -1577,7 +1588,7 @@ add_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 
 	if (init_error != OK) {
 		ret = init_error;
-		goto unlock_levels;
+		goto unlock_levels_l;
 	}
 
 	ret = add_address_range(allocator, start_addr, end_addr, common_level,
@@ -1588,14 +1599,15 @@ add_range(allocator_t *allocator, paddr_t start_addr, paddr_t end_addr,
 	if ((ret != OK) && (start_addr <= last_success_addr) &&
 	    (last_success_addr != (paddr_t)-1)) {
 		// Rolling back the entries to old owner.
-		add_address_range(allocator, start_addr, last_success_addr,
-				  common_level, shifts, prev_object, prev_type,
-				  object, obj_type, end_locked_levels,
-				  &start_locked_levels, &last_success_addr,
-				  MEMDB_OP_ROLLBACK);
+		(void)add_address_range(allocator, start_addr,
+					last_success_addr, common_level, shifts,
+					prev_object, prev_type, object,
+					obj_type, end_locked_levels,
+					&start_locked_levels,
+					&last_success_addr, MEMDB_OP_ROLLBACK);
 	}
 
-unlock_levels:
+unlock_levels_l:
 	if (start_locked_levels.count != 0U) {
 		unlock_levels(&start_locked_levels);
 	}
@@ -1618,8 +1630,8 @@ check_address(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 	uintptr_t    level_next;
 	error_t	     ret = OK;
 
-	atomic_entry_read(&(*level)->level[*index], &level_guard,
-			  &level_guard_shifts, &level_type, &level_next);
+	(void)atomic_entry_read(&(*level)->level[*index], &level_guard,
+				&level_guard_shifts, &level_type, &level_next);
 
 	// We need to go down the levels until we find an empty entry or we run
 	// out of remaining bits. In the former case, return error since the
@@ -1640,7 +1652,7 @@ check_address(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 			bool	res	    = false;
 
 			if (start) {
-				start_index = *index + 1;
+				start_index = *index + 1U;
 				end_index   = MEMDB_NUM_ENTRIES;
 			} else {
 				start_index = 0;
@@ -1659,9 +1671,9 @@ check_address(memdb_level_t *first_level, memdb_level_t **level, paddr_t addr,
 		*level = (memdb_level_t *)level_next;
 		*index = get_next_index(addr, shifts);
 
-		atomic_entry_read(&(*level)->level[*index], &level_guard,
-				  &level_guard_shifts, &level_type,
-				  &level_next);
+		(void)atomic_entry_read(&(*level)->level[*index], &level_guard,
+					&level_guard_shifts, &level_type,
+					&level_next);
 	}
 
 	if ((op == MEMDB_OP_CONTIGUOUSNESS) &&
@@ -1699,8 +1711,8 @@ memdb_insert(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 
 	allocator_t *allocator = &partition->allocator;
 
-	atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
-			  &next);
+	(void)atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
+				&next);
 
 	if (root_type == MEMDB_TYPE_NOTYPE) {
 		first_entry = true;
@@ -1760,7 +1772,7 @@ end_function:
 	if (ret == OK) {
 		TRACE(MEMDB, INFO,
 		      "memdb_insert: {:#x}..{:#x} - obj({:#x}) - type({:d})",
-		      start_addr, end_addr, object, obj_type);
+		      start_addr, end_addr, object, (register_t)obj_type);
 
 #if defined(MEMDB_DEBUG)
 		// Check that the range was added correctly
@@ -1776,7 +1788,8 @@ end_function:
 	} else {
 		TRACE(MEMDB, INFO,
 		      "memdb: Error inserting {:#x}..{:#x} - obj({:#x}) - type({:d}), err = {:d}",
-		      start_addr, end_addr, object, obj_type, (register_t)ret);
+		      start_addr, end_addr, object, (register_t)obj_type,
+		      (register_t)ret);
 	}
 
 	return ret;
@@ -1818,7 +1831,7 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	if (ret == OK) {
 		TRACE(MEMDB, INFO,
 		      "memdb_update: {:#x}..{:#x} - obj({:#x}) - type({:d})",
-		      start_addr, end_addr, object, obj_type);
+		      start_addr, end_addr, object, (register_t)obj_type);
 
 #if defined(MEMDB_DEBUG)
 		// Check that the range was added correctly
@@ -1834,7 +1847,8 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	} else {
 		TRACE(MEMDB, INFO,
 		      "memdb: Error updating {:#x}..{:#x} - obj({:#x}) - type({:d}), err = {:d}",
-		      start_addr, end_addr, object, obj_type, (register_t)ret);
+		      start_addr, end_addr, object, (register_t)obj_type,
+		      (register_t)ret);
 	}
 
 	return ret;
@@ -1866,7 +1880,8 @@ memdb_is_ownership_contiguous(paddr_t start_addr, paddr_t end_addr,
 	assert((start_addr != 0U) || (~end_addr != 0U));
 
 	ret = find_common_level(start_addr, end_addr, &common_level, &shifts,
-				NULL, object, type, 0, 0, NULL, false, false);
+				NULL, object, type, 0, MEMDB_TYPE_LEVEL, NULL,
+				false, false);
 	if (ret != OK) {
 		ret_bool = false;
 		goto end_function;
@@ -1891,7 +1906,7 @@ memdb_is_ownership_contiguous(paddr_t start_addr, paddr_t end_addr,
 
 	// Check first level intermediate entries between start end end
 	ret_bool = are_all_entries_same(common_level, object, MEMDB_NUM_ENTRIES,
-					type, start_index + 1, end_index);
+					type, start_index + 1U, end_index);
 	if (!ret_bool) {
 		goto end_function;
 	}
@@ -1923,12 +1938,12 @@ memdb_lookup(paddr_t addr)
 	count_t			guard_shifts;
 	memdb_type_t		root_type;
 	uintptr_t		next;
-	memdb_level_t	      *level;
+	memdb_level_t	       *level;
 	index_t			index;
 	bool			start = true;
 
-	atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
-			  &next);
+	(void)atomic_entry_read(&memdb.root, &guard, &guard_shifts, &root_type,
+				&next);
 
 	if (root_type == MEMDB_TYPE_NOTYPE) {
 		ret.e = ERROR_MEMDB_EMPTY;
@@ -1947,7 +1962,8 @@ memdb_lookup(paddr_t addr)
 	// Go down levels until we get to input address
 	// Dummy start argument, does not affect lookup.
 	ret.e = check_address((memdb_level_t *)next, &level, addr, &index,
-			      &guard_shifts, MEMDB_OP_LOOKUP, start, 0, 0);
+			      &guard_shifts, MEMDB_OP_LOOKUP, start, 0,
+			      MEMDB_TYPE_LEVEL);
 	if (ret.e != OK) {
 		ret.r.type   = MEMDB_TYPE_NOTYPE;
 		ret.r.object = 0;
@@ -2007,25 +2023,30 @@ memdb_do_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg,
 				break;
 			}
 
-			atomic_entry_read(&level->level[index], &guard,
-					  &guard_shifts, &next_type, &next);
+			(void)atomic_entry_read(&level->level[index], &guard,
+						&guard_shifts, &next_type,
+						&next);
 
+			size_t size;
 			if (guard_shifts != ADDR_SIZE) {
-				if (next_type == MEMDB_TYPE_NOTYPE) {
-					// FIXME: handle bad entry.
-				} else {
-					assert(next_type == MEMDB_TYPE_LEVEL);
-				}
+				assert(next_type == MEMDB_TYPE_LEVEL);
+				base = guard << guard_shifts;
+				size = util_bit(guard_shifts);
+			} else {
+				size = util_bit(shifts);
+			}
+
+			// Skip entry if it is before the start address.
+			if (!all_memdb && ((base + size - 1U) < start_addr)) {
+				index++;
+				continue;
 			}
 
 			if ((next_type == type) && (next == object)) {
-				// If entry points to the object, meaning this
-				// address is owned by the object, we add it to
-				// the pending address and size to be added to
-				// the range. The range will be added when the
-				// ownership stops being contiguous.
-
-				size_t size = util_bit(shifts);
+				// Entry points to the object. If the entry is
+				// contiguous with the current pending range, we
+				// add this entry to it; otherwise we flush it
+				// and start a new one.
 
 				if (!all_memdb) {
 					if (base < start_addr) {
@@ -2033,22 +2054,19 @@ memdb_do_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg,
 						base = start_addr;
 					}
 
-					if ((base + size - 1) > end_addr) {
-						size -= (base + size - 1) -
+					if ((base + size - 1U) > end_addr) {
+						size -= (base + size - 1U) -
 							end_addr;
 					}
 				}
 
-				if (pending_size != 0U) {
-					assert((pending_base + pending_size) ==
-					       base);
-					pending_size += size;
-				} else {
-					pending_base = base;
-					pending_size = size;
-				}
-				index++;
+				assert((pending_base + pending_size) <= base);
 
+				if ((pending_base + pending_size) == base) {
+					pending_size += size;
+					index++;
+					continue;
+				}
 			} else if (next_type == MEMDB_TYPE_LEVEL) {
 				// We move down to the next level and iterate
 				// through all its entries. We save current
@@ -2059,7 +2077,7 @@ memdb_do_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg,
 				covered_stack[count] = covered_bits;
 				shifts_stack[count]  = shifts;
 				levels[count]	     = level;
-				index_stack[count]   = index + 1;
+				index_stack[count]   = index + 1U;
 				count++;
 
 				if (guard_shifts == ADDR_SIZE) {
@@ -2076,21 +2094,23 @@ memdb_do_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg,
 
 				level = (memdb_level_t *)next;
 				index = 0;
-
+				continue;
 			} else {
-				// Entry does not point to object. Add range if
-				// it is pending to be added.
-				if (pending_size != 0U) {
-					ret = fn(pending_base, pending_size,
-						 arg);
-					if (ret != OK) {
-						goto error;
-					}
-					pending_base = 0;
-					pending_size = 0;
-				}
-				index++;
+				// Entry does not point to object.
+				base = 0U;
+				size = 0U;
 			}
+
+			if (pending_size != 0U) {
+				ret = fn(pending_base, pending_size, arg);
+				if (ret != OK) {
+					goto error;
+				}
+			}
+
+			pending_base = base;
+			pending_size = size;
+			index++;
 		}
 	} while (count > 0U);
 
@@ -2113,37 +2133,43 @@ memdb_range_walk(uintptr_t object, memdb_type_t type, paddr_t start_addr,
 {
 	error_t	       ret	    = OK;
 	paddr_t	       covered_bits = 0;
+	count_t	       guard_shifts;
+	paddr_t	       guard;
+	memdb_type_t   next_type;
+	uintptr_t      next;
 	count_t	       shifts;
 	memdb_level_t *common_level = NULL;
 
 	rcu_read_start();
 
-	memdb_entry_t root_entry =
-		atomic_load_explicit(&memdb.root, memory_order_relaxed);
-	if ((memdb_entry_info_get_type(&root_entry.info)) ==
-	    MEMDB_TYPE_NOTYPE) {
+	(void)atomic_entry_read(&memdb.root, &guard, &guard_shifts, &next_type,
+				&next);
+
+	if (next_type == MEMDB_TYPE_NOTYPE) {
 		ret = ERROR_MEMDB_EMPTY;
 		goto error;
 	}
 
+	assert(next_type == MEMDB_TYPE_LEVEL);
 	assert((start_addr != end_addr) && (start_addr < end_addr));
 	assert((start_addr != 0U) || (~end_addr != 0U));
 
 	ret = find_common_level(start_addr, end_addr, &common_level, &shifts,
-				NULL, object, type, 0, 0, NULL, false, false);
+				NULL, object, type, 0, MEMDB_TYPE_LEVEL, NULL,
+				false, false);
 	if (ret != OK) {
-		goto error;
+		// Start from the root level.
+		common_level = (memdb_level_t *)next;
+		shifts	     = guard_shifts;
 	}
 
-	memdb_level_t *level = common_level;
-	if (shifts == ADDR_SIZE) {
-		covered_bits = 0;
-	} else {
+	if (shifts != ADDR_SIZE) {
 		covered_bits = start_addr >> shifts;
 	}
 
-	ret = memdb_do_walk(object, type, fn, arg, level, covered_bits, shifts,
-			    start_addr, end_addr, false);
+	ret = memdb_do_walk(object, type, fn, arg, common_level, covered_bits,
+			    shifts, start_addr, end_addr, false);
+
 error:
 	rcu_read_finish();
 
@@ -2162,12 +2188,12 @@ memdb_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg)
 	paddr_t	     guard;
 	memdb_type_t next_type;
 	uintptr_t    next;
-	count_t	     shifts = ADDR_SIZE - MEMDB_BITS_PER_ENTRY;
+	count_t	     shifts = (count_t)(ADDR_SIZE - MEMDB_BITS_PER_ENTRY);
 
 	rcu_read_start();
 
-	atomic_entry_read(&memdb.root, &guard, &guard_shifts, &next_type,
-			  &next);
+	(void)atomic_entry_read(&memdb.root, &guard, &guard_shifts, &next_type,
+				&next);
 
 	if (next_type == MEMDB_TYPE_NOTYPE) {
 		ret = ERROR_MEMDB_EMPTY;
@@ -2192,14 +2218,12 @@ error:
 	return ret;
 }
 
-error_t
+void
 memdb_init(void)
 {
-	atomic_entry_write(&memdb.root, memory_order_relaxed, 0, ADDR_SIZE,
-			   MEMDB_TYPE_NOTYPE, 0);
+	atomic_entry_write(&memdb.root, memory_order_relaxed, 0,
+			   (count_t)ADDR_SIZE, MEMDB_TYPE_NOTYPE, 0);
 	spinlock_init(&memdb.lock);
-
-	return OK;
 }
 
 void
@@ -2255,6 +2279,7 @@ memdb_handle_partition_add_ram_range(partition_t *owner, paddr_t phys_base,
 	assert(size > 0U);
 	assert(!util_add_overflows(phys_base, size - 1U));
 
+	// FIXME:
 	// We should use memdb_insert() once this is safe to do so.
 	error_t err = memdb_update(hyp_partition, phys_base,
 				   phys_base + (size - 1U), (uintptr_t)owner,
@@ -2279,6 +2304,7 @@ memdb_handle_partition_remove_ram_range(partition_t *owner, paddr_t phys_base,
 	assert(size > 0U);
 	assert(!util_add_overflows(phys_base, size - 1U));
 
+	// FIXME:
 	// We should use memdb_insert() once this is safe to do so.
 	error_t err = memdb_update(hyp_partition, phys_base,
 				   phys_base + (size - 1U), (uintptr_t)owner,

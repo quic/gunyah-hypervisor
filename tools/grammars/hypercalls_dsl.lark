@@ -6,15 +6,15 @@ start : _top_level_member*
 
 _top_level_member : _definition
 
-%import .typed_dsl (_customized_type, IDENTIFIER, constant_value, LINE_COMMENT, WS)
+%import .typed_dsl (_customized_type, _identifier, constant_value, LINE_COMMENT, WS)
 
 hypercall_declaration : (_hypercall_property | _hypercall_params) ";"
 
 _hypercall_property : declaration_sensitive | declaration_call_num | declaration_vendor_hyp_call
 
-_hypercall_params : (IDENTIFIER | RESERVED) (declaration_input | declaration_output)
+_hypercall_params : (_identifier | RESERVED) (declaration_input | declaration_output)
 
-RESERVED : "_res0" | "_res1"
+RESERVED : "res0" | "res1"
 
 declaration_input : "input" _customized_type
 declaration_output : "output" _customized_type
@@ -25,7 +25,7 @@ declaration_vendor_hyp_call : "vendor_hyp_call"
 _definition : "define" _type_definition
 _type_definition : hypercall_definition
 
-hypercall_definition : IDENTIFIER "hypercall" "{" hypercall_declaration* "}" ";"
+hypercall_definition : _identifier "hypercall" "{" hypercall_declaration* "}" ";"
 
 %ignore WS
 %ignore LINE_COMMENT

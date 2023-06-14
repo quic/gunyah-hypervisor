@@ -1,0 +1,21 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface tests
+
+event tests_init
+
+handled_event tests_start
+
+#if defined(INTERFACE_TESTS)
+selector_event tests_run
+	selector test_id: tests_run_id_t
+	param arg0 : uint64_t
+	param arg1 : uint64_t
+	param arg2 : uint64_t
+	param arg3 : uint64_t
+	param arg4 : uint64_t
+	param arg5 : uint64_t
+	return: error_t = ERROR_UNIMPLEMENTED
+#endif

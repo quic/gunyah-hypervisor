@@ -9,3 +9,28 @@ handled_event addrspace_attach_vdma
 	param vdma_device_cap: cap_id_t
 	param index: index_t
 	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE
+
+handled_event addrspace_map
+	param addrspace: addrspace_t *
+	param vbase: vmaddr_t
+	param size: size_t
+	param phys: paddr_t
+	param memtype: pgtable_vm_memtype_t
+	param kernel_access: pgtable_access_t
+	param user_access: pgtable_access_t
+	return: error_t = ERROR_UNIMPLEMENTED
+
+handled_event addrspace_unmap
+	param addrspace: addrspace_t *
+	param vbase: vmaddr_t
+	param size: size_t
+	param phys: paddr_t
+	return: error_t = ERROR_UNIMPLEMENTED
+
+handled_event addrspace_attach_vdevice
+	param addrspace: addrspace_t *
+	param vdevice_cap: cap_id_t
+	param index: index_t
+	param vbase: vmaddr_t
+	param size: size_t
+	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE

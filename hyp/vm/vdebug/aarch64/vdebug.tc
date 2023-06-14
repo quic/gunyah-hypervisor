@@ -4,9 +4,6 @@
 
 extend thread object module vdebug {
 	state		structure debug_common_registers;
-#if ARCH_AARCH64_32BIT_EL1
-#error Context switch DBGVCR32_EL2 for 32-bit guests
-#endif
 	enabled		bool;
 };
 

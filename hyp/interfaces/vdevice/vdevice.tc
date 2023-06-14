@@ -6,6 +6,6 @@ define vdevice_type enumeration {
 	NONE = 0;
 };
 
-define vdevice_ptr union {
-	null	uintptr;
+define vdevice structure {
+	type		enumeration vdevice_type;
 };

@@ -4,6 +4,7 @@
 
 module abort
 
-subscribe ipi_received[IPI_REASON_ABORT_STOP]()
+subscribe ipi_received[IPI_REASON_ABORT_STOP]() noreturn
 
 subscribe scheduler_stop()
+	require_preempt_disabled

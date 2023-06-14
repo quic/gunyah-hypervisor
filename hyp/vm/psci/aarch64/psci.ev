@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module psci
+
+subscribe vcpu_trap_wfi()
+
+subscribe scheduler_selected_thread
+	// Raised priority because this can clear *can_idle
+	priority 1

@@ -2,24 +2,34 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+// Reserve highest possible priority for EL2 tasks only (typically used for
+// tasks that execute prior to boot)
+define VCPU_MAX_PRIORITY public constant type priority_t =
+	SCHEDULER_MAX_PRIORITY - 1;
+
 define vcpu object {
 };
 
 extend thread object module vcpu {
-	regs object vcpu;
+	regs		object vcpu;
+	// The option variable used for the hypercall_vcpu_configure hypercall.
+	options		bitfield vcpu_option_flags;
+	halt_virq_src	structure virq_source(contained);
 };
 
 extend thread_kind enumeration {
-	vcpu;
+	// Having THREAD_KIND_VCPU as 0 and using the correct compiler expected
+	// and unexpected directives helps with optimising the context-switch
+	// path and any other code that checks the thread kind against this
+	// value, replacing the "cmp/b.ne" pair with a single "cbz" or "cbnz".
+	vcpu = 0;
 };
 
 extend scheduler_block enumeration {
 	vcpu_off;
 	vcpu_suspend;
 	vcpu_wfi;
-#if !defined(NDEBUG)
 	vcpu_fault;
-#endif
 };
 
 extend hyp_api_flags0 bitfield {
@@ -29,4 +39,22 @@ extend hyp_api_flags0 bitfield {
 
 extend abort_reason enumeration {
 	UNHANDLED_EXCEPTION;
+};
+
+// Relevant modules (such as the debug module) need to extend this bitfield
+// and add their configuration flags for the hypercall_vcpu_configure
+// hypercall. Then in their thread_activate handlers they need to check the
+// values of these flags and act on them.
+define vcpu_option_flags public bitfield<64> {
+	0		pinned			bool = 0;
+	8		critical		bool = 0;
+	others		unknown = 0;
+};
+
+extend vcpu_virq_type enumeration {
+	halt = 0;
+};
+
+extend virq_trigger enumeration {
+	vcpu_halt;
 };

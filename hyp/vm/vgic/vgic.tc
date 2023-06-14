@@ -23,7 +23,14 @@ define VGIC_LOW_RANGES constant type count_t = 64;
 define VGIC_LPI_BITS constant type count_t = 16;
 #endif
 define VGIC_IDBITS constant type count_t =
-	VGIC_HAS_EXT_IRQS ? 13 : 10;
+	VGIC_HAS_LPI ? VGIC_LPI_BITS : VGIC_HAS_EXT_IRQS ? 13 : 10;
+
+#if VGIC_HAS_LPI
+define VGIC_LPI_NUM constant type count_t = (1 << VGIC_IDBITS) - GIC_LPI_BASE;
+#if !GICV3_HAS_VLPI
+define VGIC_LPI_RANGES constant type count_t = BITMAP_NUM_WORDS(VGIC_LPI_NUM);
+#endif
+#endif
 
 // Delivery state for VIRQs.
 //
@@ -64,6 +71,7 @@ define vgic_delivery_state bitfield<32>(set_ops) {
 	11		hw_active	bool;
 
 	// Add GICR index so we don't need to broadcast sync IPIs
+	// FIXME:
 
 	// An interrupt has been rerouted, disabled or reasserted while it is
 	// listed on a VCPU that is current on a remote CPU. The remote CPU
@@ -92,6 +100,7 @@ define vgic_delivery_state bitfield<32>(set_ops) {
 	3		enabled		bool;
 
 	// Also migrate priority and route to this bitfield.
+	// FIXME:
 
 	// The interrupt is currently active. This is only valid for an
 	// unlisted interrupt; for a listed interrupt the active state is in
@@ -205,11 +214,11 @@ extend virq_trigger enumeration {
 };
 
 extend virq_source structure module vgic {
-	// Index of the virtual CPU for a private binding. Invalid if shared.
-	gicr_index	type index_t;
-
 	// Flag to protect against concurrent binding of the source.
 	is_bound	bool(atomic);
+
+	// Index of the virtual CPU for a private binding. Invalid if shared.
+	gicr_index	type index_t;
 };
 
 // HW IRQ extensions for forwarding through the virtual GIC.
@@ -240,17 +249,22 @@ extend vic object {
 	// acquired while holding a GICR's attochment or LR ownership lock.
 	gicd_lock		structure spinlock;
 
+	// Virtual device structure representing the GICD registers. If the
+	// type is set to VDEVICE_TYPE_NONE, it has not been mapped. Mapping
+	// is protected by the gicd lock.
+	gicd_device		structure vdevice(contained);
+
 	// The current values of the virtual GICD_CTLR and GICD_STATUSR.
 	// Updates are serialised by gicd_lock, but GICD_CTLR is atomic so we
 	// can read it without taking the lock.
 	gicd_ctlr		bitfield GICD_CTLR_DS(atomic);
 	gicd_statusr		bitfield GICD_STATUSR;
 
+	// The size of the vcpus array.
+	gicr_count		type count_t;
 	// The array of VCPUs attached to this GICD. Protected by gicd_lock.
 	// Weak references; pointers cleared by thread deactivate.
 	gicr_vcpus		pointer pointer(atomic) object thread;
-	// The size of the vcpus array.
-	gicr_count		type count_t;
 
 	// The array of shared VIRQ sources attached to this GICD, indexed by
 	// VIRQ number minus GIC_SPI_BASE. The attachment pointers are
@@ -271,6 +285,52 @@ extend vic object {
 	rr_start_point		type count_t(atomic);
 #endif
 
+#if VGIC_HAS_LPI
+	// Maximum supported ID bits. Between 14 and VIC_IDBITS if LPIs are
+	// enabled for this VIC; otherwise 10.
+	gicd_idbits		type count_t;
+
+	// Virtual GICR_PROPBASER. As per the spec we are allowed to share a
+	// single copy of this across all virtual GICRs, since the table it
+	// points to is also shared.
+	gicr_rd_propbaser	bitfield GICR_PROPBASER(atomic);
+
+	// Cache of the VLPI configurations.
+	//
+	// This is a pointer to an array of 8-bit configuration fields for the
+	// virtual LPIs. Unlike the pending bitmap, there is no reserved space
+	// at the start corresponding to non-LPI IRQ numbers.
+	//
+	// Updates to this cache are not protected by any lock, based on the
+	// assumption that parallel updates will be copying from the same
+	// source anyway.
+	vlpi_config_table	pointer uint8;
+
+	// Validity flag for the vlpi config table.
+	//
+	// This is set the first time a VCPU enables VLPIs, to indicate that
+	// the initial copy of the config table from the VM has been done.
+	// Subsequent copies are triggered by invalidate commands.
+	//
+	// The GICD lock must be held while querying this, and the lock must
+	// be held across the initial copy-in of the config table.
+	vlpi_config_valid	bool;
+
+#if GICV3_HAS_VLPI_V4_1
+	// True if we can use the ITS to deliver virtual SGIs. This is only
+	// possible on GICv4.1, and only if this VIC has VLPI tables. Also,
+	// because an ITS-delivered SGI is really an LPI and therefore has no
+	// active state, this could potentially break the guest; so the guest
+	// must enable it by setting the virtual GICD_CTLR.nASSGIreq to 1.
+	vsgis_enabled		bool;
+#endif
+#endif
+
+	// True if we should handle fixed address vdevice accesses. This is
+	// temporary and will be removed once we have migrated away from fixed
+	// addresses.
+	allow_fixed_vmaddr	bool;
+
 	// Lock to serialise unrouted-IRQ searches. This only needs to be held
 	// while searching, not when flagging an IRQ in the search bitmaps.
 	search_lock		structure spinlock;
@@ -290,10 +350,16 @@ extend vic object {
 	// lock must be held, to prevent the transient clearing of a bit
 	// hiding an IRQ from a concurrent search.
 	search_ranges_low	BITMAP(VGIC_LOW_RANGES, atomic);
+
+	// Mapping between GICR indices and 4-level affinity values for
+	// MPIDR, GICR_TYPER etc. If not configured explicitly, this defaults
+	// to being the same as the underlying hardware's mapping.
+	mpidr_mapping		structure platform_mpidr_mapping;
 };
 
 extend cap_rights_vic bitfield {
 	1	attach_vcpu	bool;
+	2	attach_vdevice	bool;
 };
 
 // State tracking for a list register.
@@ -324,6 +390,11 @@ extend thread object module vgic {
 	// time.
 	gicr_index	type index_t;
 
+	// Virtual device structure representing the GICR registers. If the
+	// type is set to VDEVICE_TYPE_NONE, it has not been mapped. Mapping
+	// is protected by the gicd lock.
+	gicr_device		structure vdevice(contained);
+
 	// Physical route register that should be used to target this thread.
 	irouter		bitfield GICD_IROUTER;
 
@@ -341,6 +412,10 @@ extend thread object module vgic {
 
 	// The GICR's rd_base register state.
 	gicr_rd_statusr		bitfield GICR_STATUSR(atomic);
+#if VGIC_HAS_LPI
+	gicr_rd_ctlr		bitfield GICR_CTLR(atomic);
+	gicr_rd_pendbaser	bitfield GICR_PENDBASER(atomic);
+#endif
 
 	// The ICH EL2 register state. Parts of these are exposed to userspace
 	// through the ICV EL1 registers. These are accessed only by the owner
@@ -456,6 +531,44 @@ extend thread object module vgic {
 	search_ranges_low	array(VGIC_PRIORITIES)
 		BITMAP(VGIC_LOW_RANGES, atomic);
 
+#if VGIC_HAS_LPI && !GICV3_HAS_VLPI
+	// Extended search ranges for software-implemented LPIs.
+	search_ranges_lpi	array(VGIC_PRIORITIES)
+		BITMAP(VGIC_LPI_RANGES, atomic);
+#error Software VLPIs are not implemented yet
+#elif VGIC_HAS_LPI && GICV3_HAS_VLPI
+	// Cache of the VLPI pending state.
+	//
+	// This is a pointer to a bitmap with 1 << gicd_idbits bits if LPIs
+	// are supported by this VIC, or otherwise NULL. It must be
+	// 64k-aligned, due to the 16-bit shift of the physical base in the
+	// VMAPP command.
+	//
+	// The contents of this table are undefined when EnableLPIs is false in
+	// gicr_rd_ctlr. When that bit is set to true, this table is either
+	// entirely zeroed, or else partially copied from VM memory and the
+	// remainder zeroed, depending on the PTZ bit of gicr_rd_pendbaser.
+	vlpi_pending_table	pointer uint8;
+
+	// Sequence number of the vPE unmap. Valid only after the VCPU is
+	// deactivated while its EnableLPIs bit is true.
+	vlpi_unmap_seq		type count_t;
+
+#if GICV3_HAS_VLPI_V4_1
+	// Sequence number of the VSYNC following the initial VSGI setup.
+	// If this is set to ~0, the VSGI setup commands have not all been
+	// enqueued in the ITS yet, and software delivery must be used; if it
+	// is set to 0, the setup commands are known to have completed, and
+	// polling the ITS is not necessary. Otherwise, software delivery must
+	// be used until the specified sequence number is complete.
+	vsgi_setup_seq		type count_t(atomic);
+
+	// Sequence number of the VSYNC following the most recent VSGI clear
+	// enable operation. This is used to set GICR_CTLR.RWP on trapped reads.
+	vsgi_disable_seq	type count_t;
+#endif
+#endif
+
 	// Cache of shifted priorities that may have nonzero bits in their
 	// search ranges.
 	//
@@ -495,11 +608,8 @@ extend ipi_reason enumeration {
 	vgic_sgi;
 };
 
-extend boot_env_data structure {
+extend hyp_env_data structure {
 	vic		type cap_id_t;
-	vic_hwirq	array(GIC_SPI_BASE + GIC_SPI_NUM) type cap_id_t;
-	vic_msi_source	array(16) type cap_id_t;
-
 	gicd_base	type paddr_t;
 	gicr_base	type paddr_t;
 	gicr_stride	size;
@@ -529,12 +639,15 @@ define vgic_irq_type enumeration {
 	ppi_ext;
 	spi_ext;
 #endif
+#if VGIC_HAS_LPI
+	lpi;
+#endif
 	reserved;
 };
 
 extend trace_class enumeration {
-	VGIC;
-	VGIC_DEBUG;
+	VGIC = 17;
+	VGIC_DEBUG = 18;
 };
 
 extend trace_id enumeration {
@@ -546,4 +659,11 @@ extend trace_id enumeration {
 	VGIC_GICR_WRITE = 0x25;
 	VGIC_SGI = 0x26;
 	VGIC_ROUTE = 0x28;
+	VGIC_ICC_WRITE = 0x29;
+	VGIC_ASYNC_EVENT = 0x2a;
+};
+
+extend vdevice_type enumeration {
+	vgic_gicd;
+	vgic_gicr;
 };

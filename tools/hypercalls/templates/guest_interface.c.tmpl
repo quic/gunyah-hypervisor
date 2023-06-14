@@ -26,7 +26,7 @@
         #end if
 #slurp
         register uint${input.size * 8}_t#slurp
-        _in_$in_reg __asm__("$in_reg") = #slurp
+        in_${in_reg}_ __asm__("$in_reg") = #slurp
         #if $input.ignore
         ${hex(input.default)}U;
         #else
@@ -38,7 +38,7 @@
     #end for
     #for $out_reg, $output in $hypcall.outputs
         register uint${output.size * 8}_t#slurp
-        _out_$out_reg __asm__("$out_reg");
+        out_${out_reg}_ __asm__("$out_reg");
         #if $output.pointer
             #set $has_pointer = True
         #end if
@@ -48,12 +48,12 @@
     "hvc $hypcall.hvc_num" : #slurp
     #set sep = ''
     #for $out_reg, _ in $hypcall.outputs
-        $sep"=r"(_out_$out_reg) #slurp
+        $sep"=r"(out_${out_reg}_) #slurp
         #set sep = ', '
     #end for
     #for $in_reg, _ in $hypcall.inputs
 	#if in_reg not in outregs
-        ${sep}"+r"(_in_$in_reg) #slurp
+        ${sep}"+r"(in_${in_reg}_) #slurp
         #set sep = ', '
         #end if
     #end for
@@ -61,7 +61,7 @@
     #set sep = ''
     #for $in_reg, _ in $hypcall.inputs
 	#if in_reg in outregs
-        ${sep}"r"(_in_$in_reg) #slurp
+        ${sep}"r"(in_${in_reg}_) #slurp
         #set sep = ', '
         #end if
     #end for
@@ -74,11 +74,11 @@
     #if $hypcall.outputs
     return #slurp
     #if len($hypcall.outputs) < 2
-        $register_init($output, '_out_' + $out_reg);
+        $register_init($output, 'out_' + $out_reg + '_');
     #else
     ($return_type($hypcall)){
     #for $out_reg, $output in $hypcall.outputs
-        .${output.name} = $register_init($output, '_out_' + $out_reg),
+        .${output.name} = $register_init($output, 'out_' + $out_reg + '_'),
     #end for
     };
     #end if

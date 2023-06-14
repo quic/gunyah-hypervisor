@@ -15,8 +15,10 @@
 #for $definition in $definitions
 #if $definition.category == "bitfield"
 #set type_name=$definition.type_name
+#set unit_type=$definition.unit_type
 #set unit_cnt=$definition.unit_count
 #set compare_masks=$definition.compare_masks
+#set init_values=$definition.init_values
 #set all_fields_boolean=$definition.all_fields_boolean
 #set boolean_masks=$definition.boolean_masks
 #set trivial = True
@@ -32,29 +34,37 @@ ${type_name}_init(${type_name}_t *bit_field) {
 }
 
 #if $unit_cnt == 1
-${definition.unit_type}
+$unit_type
 ${type_name}_raw(${type_name}_t bit_field) {
 	return bit_field.bf[0];
 }
 
-_Atomic ${definition.unit_type} *
+_Atomic $unit_type *
 ${type_name}_atomic_ptr_raw(_Atomic ${type_name}_t *ptr) {
-	return (_Atomic ${definition.unit_type} *)&((${type_name}_t *)ptr)->bf[0];
+	return (_Atomic $unit_type *)&((${type_name}_t *)ptr)->bf[0];
 }
 
 #end if
+#set $unit_size_mask = (1 << definition.unit_size) - 1
 ${type_name}_t
-${type_name}_clean(${type_name}_t val) {
+${type_name}_clean(${type_name}_t bit_field) {
 #if trivial
-       (void)val;
+       (void)bit_field;
 #end if
        return (${type_name}_t) { .bf = { #slurp
 #for i in range($unit_cnt)
 #if $compare_masks[$i] != 0
 #set mask = hex($compare_masks[$i])
-               val.bf[$i] & ${mask}U,
+#if $init_values[$i] != 0
+#set init = hex($init_values[$i])
+## Keep any default values, only for `unknown = XX` fields
+               // (${init}U & ~${mask}U) |
+               ($unit_type)(${hex($init_values[$i] & ($compare_masks[$i] ^ unit_size_mask))}U) |
+#end if
+               (bit_field.bf[$i] & ${mask}U),
 #else
-               0,
+#set init = hex($init_values[$i])
+               ${init},
 #end if
 #end for
        } };
@@ -90,6 +100,41 @@ ${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2) {
 #set bool_trivial = False
 #end if
 #end for
+
+#if $all_fields_boolean
+bool
+${type_name}_is_empty(${type_name}_t bit_field)
+{
+return#slurp
+#set $first = True
+#for $unit in range($unit_cnt)
+#if not $first
+ &&#slurp
+#end if
+#set $first = False
+ ((bit_field.bf[$unit] & ${hex($boolean_masks[$unit])}U) == 0U)#slurp
+#end for
+;
+}
+#end if
+
+#if $all_fields_boolean
+bool
+${type_name}_is_clean(${type_name}_t bit_field)
+{
+return#slurp
+#set $first = True
+#for $unit in range($unit_cnt)
+#if not $first
+ &&#slurp
+#end if
+#set $first = False
+ ((bit_field.bf[$unit] & ${hex($boolean_masks[$unit] ^ $unit_size_mask)}U) == ${hex($init_values[$i] & ~$compare_masks[$i])}U)#slurp
+#end for
+;
+}
+#end if
+
 ${type_name}_t
 ${type_name}_union(${type_name}_t b1, ${type_name}_t b2)
 {
@@ -122,7 +167,7 @@ ${type_name}_intersection(${type_name}_t b1, ${type_name}_t b2)
                b1.bf[$i] & b2.bf[$i],
 #elif $boolean_masks[$i] != 0
 #set mask = hex($boolean_masks[$i])
-               b1.bf[$i] & (b2.bf[$i] | ~($definition.unit_type)${mask}U),
+               b1.bf[$i] & (b2.bf[$i] | ~($unit_type)${mask}U),
 #else
                b1.bf[$i],
 #end if
@@ -157,7 +202,7 @@ ${type_name}_difference(${type_name}_t b1, ${type_name}_t b2)
 ${type_name}_t
 ${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
 {
-       _Atomic ${definition.unit_type} *bf = (_Atomic ${definition.unit_type} *) & ((${type_name}_t *) b1)->bf[0];
+       _Atomic $unit_type *bf = (_Atomic $unit_type *) & ((${type_name}_t *) b1)->bf[0];
        return (${type_name}_t){ .bf = { #slurp
 #if $all_fields_boolean
                atomic_fetch_or_explicit(bf, b2.bf[0], order)
@@ -170,12 +215,12 @@ ${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_
 ${type_name}_t
 ${type_name}_atomic_intersection(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_order order)
 {
-       _Atomic ${definition.unit_type} *bf = (_Atomic ${definition.unit_type} *) & ((${type_name}_t *) b1)->bf[0];
+       _Atomic $unit_type *bf = (_Atomic $unit_type *) & ((${type_name}_t *) b1)->bf[0];
        return (${type_name}_t){ .bf = { #slurp
 #if $all_fields_boolean
                atomic_fetch_and_explicit(bf, b2.bf[0], order)
 #else
-               atomic_fetch_and_explicit(bf, b2.bf[0] | ~($definition.unit_type)${mask}U, order)
+               atomic_fetch_and_explicit(bf, b2.bf[0] | ~($unit_type)${mask}U, order)
 #end if
        } };
 }
@@ -190,32 +235,46 @@ ${type_name}_atomic_difference(_Atomic ${type_name}_t *b1, ${type_name}_t b2, me
 #end if
 #for $dec in $definition._all_declarations:
 #if not $dec.is_ignore
-#set field_type = $dec.compound_type.gen_type_name(unqualified=True)
+#set field_type = $dec.compound_type
+#set field_type_type_name = $dec.compound_type.gen_type_name(unqualified=True)
 #if $dec.is_nested_bitfield
-#set field_type_name = $dec.compound_type.type_name
-#set field_unit_type = $dec.compound_type.definition.unit_type
-#set val_expr = $field_type_name + '_raw(val)'
+#set field_type_name = $field_type.type_name
+#set field_unit_type = $field_type.definition.unit_type
+#set val_expr = '(' + $dec.unit_type + ')' + $field_type_name + '_raw(val)'
 #else
-#set val_expr = 'val'
+#set val_expr = '(' + $dec.unit_type + ')val'
 #end if
 #if not $dec.is_const:
-void ${dec.bf_type_name}_set_${dec.field_name}(${dec.bf_type_name}_t *bit_field, ${dec.compound_type.gen_declaration('val')}) {
-	${dec.unit_type} *bf = (${dec.unit_type} *)bit_field;
+void ${dec.bf_type_name}_set_${dec.field_name}(${dec.bf_type_name}_t *bit_field, ${field_type.gen_declaration('val')}) {
+## Handle MISRA Boolean type casting
+#if not $dec.is_nested_bitfield
+#if ($field_type.basic_type.bitsize == 1) and ($field_type.basic_type.category == 'primitive')
+	${dec.unit_type} bool_val = val ? (${dec.unit_type})1 : (${dec.unit_type})0;
+#set val_expr = 'bool_val'
+#end if
+#end if
+	${dec.unit_type} *bf = &bit_field->bf[0];
 #for $map in $dec.field_maps:
 #set $m = (1 << $map.length) - 1
 #set unit = $map.mapped_bit // $dec.unit_size
 #set mapped_bit = $map.mapped_bit % $dec.unit_size
     bf[$unit] &= (${dec.unit_type})${hex(((2 ** dec.unit_size) - 1) ^ (m << $mapped_bit))}U;
-    bf[$unit] |= ((((${dec.unit_type})${val_expr}) >> ${map.field_bit}U) & (${dec.unit_type})${hex(m)}U) << ${mapped_bit}U;
+    bf[$unit] |= ((${val_expr} >> ${map.field_bit}U) & (${dec.unit_type})${hex(m)}U) << ${mapped_bit}U;
 #end for
 }
 
 #end if
 #if not $dec.is_writeonly:
-${field_type}
+${field_type_type_name}
 ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field) {
-    ${dec.unit_type} val = 0U;
+    ${dec.unit_type} val = 0;
     const ${dec.unit_type} *bf = (const ${dec.unit_type} *)&bit_field->bf[0];
+#set $bool_type = False
+#if not $dec.is_nested_bitfield
+#if ($field_type.basic_type.bitsize == 1) and ($field_type.basic_type.category == 'primitive')
+#set $bool_type = True
+#end if
+#end if
 
 #for $map in $dec.field_maps:
 #set $m = (1 << $map.length) - 1
@@ -225,10 +284,16 @@ ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field
 #end for
 #if $dec.field_signed
 #set l=hex(1 << ($dec.field_length - 1)) + 'U'
-    return (${field_type})((val ^ $l) - $l);
+    return (${field_type_type_name})((val ^ $l) - $l);
 #else
 #if not $dec.is_nested_bitfield
-    return (${field_type})val;
+#if $bool_type
+    return val != (${dec.unit_type})0;
+#else if $field_type.is_pointer
+    return (${field_type_type_name})(uintptr_t)val;
+#else
+    return (${field_type_type_name})val;
+#end if
 #else
     return ${field_type_name}_cast((${field_unit_type})val);
 #end if

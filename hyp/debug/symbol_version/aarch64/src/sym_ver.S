@@ -10,6 +10,11 @@
 // externally visible and not optimized by LTO - usually for debuggers
 .section .text.debug, "ax", @progbits
 	adrp x0, hyp_sym_version_pointer
+	adrp x1, platform_gicd_base
+	adrp x2, platform_gicrs_bases
+#if GICV3_HAS_ITS
+	adrp x3, platform_gits_base
+#endif
 
 // We use a random value as the symbols version, put it directly in a symbol and
 // in memory. The external debugger reads the values of this symbol and the

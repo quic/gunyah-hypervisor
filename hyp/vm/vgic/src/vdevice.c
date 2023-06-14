@@ -6,6 +6,7 @@
 #include <hyptypes.h>
 
 #include <hypconstants.h>
+#include <hypcontainers.h>
 #include <hypregisters.h>
 
 #include <atomic.h>
@@ -13,7 +14,6 @@
 #include <cpulocal.h>
 #include <log.h>
 #include <panic.h>
-#include <platform_cpu.h>
 #include <preempt.h>
 #include <rcu.h>
 #include <scheduler.h>
@@ -29,12 +29,13 @@
 
 // Qualcomm's JEP106 identifier is 0x70, with no continuation bytes. This is
 // used in the virtual GICD_IIDR and GICR_IIDR.
-#define JEP106_IDENTITY	 0x70U
-#define JEP106_CONTCODE	 0x0U
-#define IIDR_IMPLEMENTER ((JEP106_CONTCODE << 8U) | JEP106_IDENTITY)
-#define IIDR_PRODUCTID	 (uint8_t)'G' /* For "Gunyah" */
-#define IIDR_VARIANT	 0U
-#define IIDR_REVISION	 0U
+#define JEP106_IDENTITY 0x70U
+#define JEP106_CONTCODE 0x0U
+#define IIDR_IMPLEMENTER                                                       \
+	(((uint16_t)JEP106_CONTCODE << 8U) | (uint16_t)JEP106_IDENTITY)
+#define IIDR_PRODUCTID (uint8_t)'G' /* For "Gunyah" */
+#define IIDR_VARIANT   0U
+#define IIDR_REVISION  0U
 
 static register_t
 vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
@@ -94,9 +95,21 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 		}
 
 		if (bit) {
-			bits |= (1U << i);
+			bits |= util_bit(i);
 		}
 	}
+
+#if GICV3_HAS_VLPI_V4_1 && defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE
+	if ((range_base == GIC_SGI_BASE) &&
+	    ((base_offset == offsetof(gicd_t, ispendr)) ||
+	     (base_offset == offsetof(gicd_t, icpendr)))) {
+		// Query the hardware for the vSGI pending state
+		uint32_result_t bits_r = gicv3_vpe_vsgi_query(vcpu);
+		if (bits_r.e == OK) {
+			bits |= bits_r.r;
+		}
+	}
+#endif // GICV3_HAS_VLPI_V4_1 && GICV3_ENABLE_VPE
 
 	if (compiler_expected(!listed)) {
 		// We didn't try to read the pending or active state of a VIRQ
@@ -242,7 +255,7 @@ vgic_read_config(vic_t *vic, thread_t *vcpu, size_t offset)
 			atomic_load_relaxed(&dstates[i]);
 
 		if (vgic_delivery_state_get_cfg_is_edge(&this_dstate)) {
-			bits |= 2U << (i * 2U);
+			bits |= util_bit((i * 2U) + 1U);
 		}
 	}
 
@@ -251,20 +264,19 @@ out:
 }
 
 static bool
-gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
+gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
+		  size_t access_size)
 {
 	bool	  ret	 = true;
 	thread_t *thread = thread_get_self();
-	vic_t    *vic	 = thread->vgic_vic;
 
-	if (vic == NULL) {
-		ret = false;
-		goto out;
-	}
+	assert(vic != NULL);
 
-	if ((offset == OFS_GICD_SETSPI_NSR) ||
-	    (offset == OFS_GICD_CLRSPI_NSR) || (offset == OFS_GICD_SETSPI_SR) ||
-	    (offset == OFS_GICD_CLRSPI_SR) || (offset == OFS_GICD_SGIR)) {
+	if ((offset == offsetof(gicd_t, setspi_nsr)) ||
+	    (offset == offsetof(gicd_t, clrspi_nsr)) ||
+	    (offset == offsetof(gicd_t, setspi_sr)) ||
+	    (offset == offsetof(gicd_t, clrspi_sr)) ||
+	    (offset == offsetof(gicd_t, sgir))) {
 		// WO registers, RAZ
 		GICD_STATUSR_t statusr;
 		GICD_STATUSR_init(&statusr);
@@ -278,10 +290,11 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 	} else if (offset == offsetof(gicd_t, statusr)) {
 		*val = GICD_STATUSR_raw(vic->gicd_statusr);
 
-	} else if (offset == OFS_GICD_TYPER) {
+	} else if (offset == offsetof(gicd_t, typer)) {
 		GICD_TYPER_t typer = GICD_TYPER_default();
 		GICD_TYPER_set_ITLinesNumber(
-			&typer, util_balign_up(GIC_SPI_NUM, 32U) / 32U);
+			&typer,
+			(count_t)util_balign_up(GIC_SPI_NUM, 32U) / 32U);
 		GICD_TYPER_set_MBIS(&typer, true);
 #if VGIC_HAS_EXT_IRQS
 #error Extended IRQs not yet implemented
@@ -289,12 +302,17 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 		GICD_TYPER_set_ESPI(&typer, false);
 #endif
 
+#if VGIC_HAS_LPI
+		GICD_TYPER_set_LPIS(&typer, vgic_has_lpis(vic));
+		GICD_TYPER_set_IDbits(&typer, vic->gicd_idbits - 1U);
+#else
 		GICD_TYPER_set_IDbits(&typer, VGIC_IDBITS - 1U);
+#endif
 		GICD_TYPER_set_A3V(&typer, true);
-		GICD_TYPER_set_No1N(&typer, VGIC_HAS_1N == 0U);
+		GICD_TYPER_set_No1N(&typer, VGIC_HAS_1N == 0);
 		*val = GICD_TYPER_raw(typer);
 
-	} else if (offset == OFS_GICD_IIDR) {
+	} else if (offset == offsetof(gicd_t, iidr)) {
 		GICD_IIDR_t iidr = GICD_IIDR_default();
 		GICD_IIDR_set_Implementer(&iidr, IIDR_IMPLEMENTER);
 		GICD_IIDR_set_ProductID(&iidr, IIDR_PRODUCTID);
@@ -302,11 +320,14 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 		GICD_IIDR_set_Revision(&iidr, IIDR_REVISION);
 		*val = GICD_IIDR_raw(iidr);
 
-	} else if (offset == OFS_GICD_TYPER2) {
+	} else if (offset == offsetof(gicd_t, typer2)) {
 		GICD_TYPER2_t typer2 = GICD_TYPER2_default();
+#if GICV3_HAS_VLPI_V4_1
+		GICD_TYPER2_set_nASSGIcap(&typer2, vgic_has_lpis(vic));
+#endif
 		*val = GICD_TYPER2_raw(typer2);
 
-	} else if (offset == OFS_GICD_PIDR2) {
+	} else if (offset == (size_t)OFS_GICD_PIDR2) {
 		*val = VGIC_PIDR2;
 
 	} else if ((offset >= OFS_GICD_IGROUPR(0U)) &&
@@ -368,49 +389,46 @@ gicd_vdevice_read(size_t offset, register_t *val, size_t access_size)
 		*val = 0U;
 	}
 
-out:
 	return ret;
 }
 
 static bool
-gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
+gicd_vdevice_write(vic_t *vic, size_t offset, register_t val,
+		   size_t access_size)
 {
-	bool	  ret	 = true;
-	thread_t *thread = thread_get_self();
-	vic_t    *vic	 = thread->vgic_vic;
+	bool ret = true;
 
-	if (vic == NULL) {
-		ret = false;
-		goto out;
-	}
+	assert(vic != NULL);
 	VGIC_TRACE(GICD_WRITE, vic, NULL, "GICD_WRITE reg = {:x}, val = {:#x}",
 		   offset, val);
 
-	if (offset == OFS_GICD_CTLR) {
+	if (offset == offsetof(gicd_t, ctlr)) {
 		vgic_gicd_set_control(vic, GICD_CTLR_DS_cast((uint32_t)val));
 
-	} else if ((offset == OFS_GICD_TYPER) || (offset == OFS_GICD_IIDR) ||
-		   (offset == OFS_GICD_PIDR2) || (offset == OFS_GICD_TYPER2)) {
+	} else if ((offset == offsetof(gicd_t, typer)) ||
+		   (offset == offsetof(gicd_t, iidr)) ||
+		   (offset == (size_t)OFS_GICD_PIDR2) ||
+		   (offset == offsetof(gicd_t, typer2))) {
 		// RO registers
 		GICD_STATUSR_t statusr;
 		GICD_STATUSR_init(&statusr);
 		GICD_STATUSR_set_WROD(&statusr, true);
 		vgic_gicd_set_statusr(vic, statusr, true);
 
-	} else if (offset == OFS_GICD_STATUSR) {
+	} else if (offset == offsetof(gicd_t, statusr)) {
 		GICD_STATUSR_t statusr = GICD_STATUSR_cast((uint32_t)val);
 		vgic_gicd_set_statusr(vic, statusr, false);
 
-	} else if ((offset == OFS_GICD_SETSPI_NSR) ||
-		   (offset == OFS_GICD_CLRSPI_NSR)) {
+	} else if ((offset == offsetof(gicd_t, setspi_nsr)) ||
+		   (offset == offsetof(gicd_t, clrspi_nsr))) {
 		vgic_gicd_change_irq_pending(
 			vic,
 			GICD_CLRSPI_SETSPI_NSR_SR_get_INTID(
 				&GICD_CLRSPI_SETSPI_NSR_SR_cast((uint32_t)val)),
-			offset == OFS_GICD_SETSPI_NSR, true);
+			(offset == offsetof(gicd_t, setspi_nsr)), true);
 
-	} else if ((offset == OFS_GICD_SETSPI_SR) ||
-		   (offset == OFS_GICD_CLRSPI_SR)) {
+	} else if ((offset == offsetof(gicd_t, setspi_sr)) ||
+		   (offset == offsetof(gicd_t, clrspi_sr))) {
 		// WI
 
 	} else if ((offset >= OFS_GICD_IGROUPR(0U)) &&
@@ -421,8 +439,8 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 				      sizeof(uint32_t));
 		for (index_t i = util_max(n * 32U, GIC_SPI_BASE);
 		     i < util_min((n + 1U) * 32U, 1020U); i++) {
-			vgic_gicd_set_irq_group(vic, i,
-						(val & util_bit(i % 32)) != 0U);
+			vgic_gicd_set_irq_group(
+				vic, i, (val & util_bit(i % 32U)) != 0U);
 		}
 
 	} else if ((offset >= OFS_GICD_ISENABLER(0U)) &&
@@ -436,11 +454,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_enable(vic, (n * 32U) + i,
 							    true);
@@ -458,11 +476,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_enable(vic, (n * 32U) + i,
 							    false);
@@ -480,11 +498,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_pending(vic, (n * 32U) + i,
 							     true, false);
@@ -502,11 +520,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_pending(vic, (n * 32U) + i,
 							     false, false);
@@ -524,11 +542,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_active(vic, (n * 32U) + i,
 							    true);
@@ -546,11 +564,11 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 			uint32_t bits = (uint32_t)val;
 			if (n == 31U) {
 				// Ignore the bits for IRQs 1020-1023
-				bits &= ~0xf0000000;
+				bits &= ~0xf0000000U;
 			}
 			while (bits != 0U) {
 				index_t i = compiler_ctz(bits);
-				bits &= ~util_bit(i);
+				bits &= ~((index_t)util_bit(i));
 
 				vgic_gicd_change_irq_active(vic, (n * 32U) + i,
 							    false);
@@ -582,7 +600,7 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 				      sizeof(uint32_t));
 		// Ignore writes to the SGI and PPI bits
 		for (index_t i = util_max(n * 16U, GIC_SPI_BASE);
-		     i < util_min((n + 1U) * 16U, 1020); i++) {
+		     i < util_min((n + 1U) * 16U, 1020U); i++) {
 			vgic_gicd_set_irq_config(
 				vic, i,
 				(val & util_bit(((i % 16U) * 2U) + 1U)) != 0U);
@@ -596,7 +614,7 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 		   (offset <= OFS_GICD_NSACR(63U))) {
 		// WI
 
-	} else if (offset == OFS_GICD_SGIR) {
+	} else if (offset == offsetof(gicd_t, sgir)) {
 		// WI
 
 	} else if ((offset >= OFS_GICD_CPENDSGIR(0U)) &&
@@ -656,7 +674,6 @@ gicd_vdevice_write(size_t offset, register_t val, size_t access_size)
 		ret = false;
 	}
 
-out:
 	return ret;
 }
 
@@ -685,8 +702,8 @@ gicd_access_allowed(size_t size, size_t offset)
 	} else if (size == sizeof(uint16_t)) {
 		// Half-word accesses are only allowed for the SETSPI and CLRSPI
 		// registers
-		ret = ((offset == OFS_GICD_SETSPI_NSR) ||
-		       (offset == OFS_GICD_CLRSPI_NSR));
+		ret = ((offset == offsetof(gicd_t, setspi_nsr)) ||
+		       (offset == offsetof(gicd_t, clrspi_nsr)));
 	} else if (size == sizeof(uint8_t)) {
 		// Byte accesses are only allowed for priority, target and
 		// SGI pending registers
@@ -721,10 +738,10 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 
 	(void)vic;
 
-	if ((offset == OFS_GICR_RD_SETLPIR) ||
-	    (offset == OFS_GICR_RD_CLRLPIR) ||
-	    (offset == OFS_GICR_RD_INVLPIR) ||
-	    (offset == OFS_GICR_RD_INVALLR)) {
+	if ((offset == offsetof(gicr_t, rd.setlpir)) ||
+	    (offset == offsetof(gicr_t, rd.clrlpir)) ||
+	    (offset == offsetof(gicr_t, rd.invlpir)) ||
+	    (offset == offsetof(gicr_t, rd.invallr))) {
 		// WO registers, RAZ
 		GICR_STATUSR_t statusr;
 		GICR_STATUSR_init(&statusr);
@@ -733,15 +750,21 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		*val = 0U;
 
 	} else if (util_balign_down(offset, sizeof(GICR_TYPER_t)) ==
-		   OFS_GICR_RD_TYPER) {
-		psci_mpidr_t route_id =
-			platform_cpu_index_to_mpidr((cpu_index_t)gicr_num);
-
+		   offsetof(gicr_t, rd.typer)) {
 		GICR_TYPER_t typer = GICR_TYPER_default();
-		GICR_TYPER_set_Aff0(&typer, psci_mpidr_get_Aff0(&route_id));
-		GICR_TYPER_set_Aff1(&typer, psci_mpidr_get_Aff1(&route_id));
-		GICR_TYPER_set_Aff2(&typer, psci_mpidr_get_Aff2(&route_id));
-		GICR_TYPER_set_Aff3(&typer, psci_mpidr_get_Aff3(&route_id));
+		GICR_TYPER_set_Aff0(
+			&typer,
+			MPIDR_EL1_get_Aff0(&gicr_vcpu->vcpu_regs_mpidr_el1));
+		GICR_TYPER_set_Aff1(
+			&typer,
+			MPIDR_EL1_get_Aff1(&gicr_vcpu->vcpu_regs_mpidr_el1));
+		GICR_TYPER_set_Aff2(
+			&typer,
+			MPIDR_EL1_get_Aff2(&gicr_vcpu->vcpu_regs_mpidr_el1));
+		GICR_TYPER_set_Aff3(
+			&typer,
+			MPIDR_EL1_get_Aff3(&gicr_vcpu->vcpu_regs_mpidr_el1));
+
 		// The last bit must indicate whether this is the last GICR in a
 		// contiguous range. This is true either if it is at the end of
 		// the VGIC's array, or if the next entry in the array is NULL.
@@ -752,15 +775,18 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 					 &vic->gicr_vcpus[gicr_num + 1U]) ==
 				 NULL));
 		GICR_TYPER_set_Processor_Num(&typer, gicr_num);
+#if VGIC_HAS_LPI
+		GICR_TYPER_set_PLPIS(&typer, vgic_has_lpis(vic));
+#endif
 		*val = GICR_TYPER_raw(typer);
 
-		if (offset != OFS_GICR_RD_TYPER) {
+		if (offset != offsetof(gicr_t, rd.typer)) {
 			// Must be a 32-bit access to the big end
 			assert(offset == OFS_GICR_RD_TYPER + sizeof(uint32_t));
 			*val >>= 32U;
 		}
 
-	} else if (offset == OFS_GICR_RD_IIDR) {
+	} else if (offset == offsetof(gicr_t, rd.iidr)) {
 		GICR_IIDR_t iidr = GICR_IIDR_default();
 		GICR_IIDR_set_Implementer(&iidr, IIDR_IMPLEMENTER);
 		GICR_IIDR_set_ProductID(&iidr, IIDR_PRODUCTID);
@@ -768,17 +794,17 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		GICR_IIDR_set_Revision(&iidr, IIDR_REVISION);
 		*val = GICR_IIDR_raw(iidr);
 
-	} else if (offset == OFS_GICR_PIDR2) {
+	} else if (offset == offsetof(gicr_t, PIDR2)) {
 		*val = VGIC_PIDR2;
 
-	} else if (offset == OFS_GICR_RD_CTLR) {
+	} else if (offset == offsetof(gicr_t, rd.ctlr)) {
 		*val = GICR_CTLR_raw(vgic_gicr_rd_get_control(vic, gicr_vcpu));
 
-	} else if (offset == OFS_GICR_RD_STATUSR) {
+	} else if (offset == offsetof(gicr_t, rd.statusr)) {
 		*val = GICR_STATUSR_raw(
 			atomic_load_relaxed(&gicr_vcpu->vgic_gicr_rd_statusr));
 
-	} else if (offset == OFS_GICR_RD_WAKER) {
+	} else if (offset == offsetof(gicr_t, rd.waker)) {
 		GICR_WAKER_t gicr_waker = GICR_WAKER_default();
 		GICR_WAKER_set_ProcessorSleep(
 			&gicr_waker,
@@ -788,27 +814,50 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 
 		*val = GICR_WAKER_raw(gicr_waker);
 
-	} else if (offset == OFS_GICR_RD_PROPBASER) {
+	} else if (offset == offsetof(gicr_t, rd.propbaser)) {
+#if VGIC_HAS_LPI
+		*val = GICR_PROPBASER_raw(
+			atomic_load_relaxed(&vic->gicr_rd_propbaser));
+#else
 		*val = 0U;
+#endif
 
-	} else if (offset == OFS_GICR_RD_PENDBASER) {
+	} else if (offset == offsetof(gicr_t, rd.pendbaser)) {
+#if VGIC_HAS_LPI
+		GICR_PENDBASER_t pendbase =
+			atomic_load_relaxed(&gicr_vcpu->vgic_gicr_rd_pendbaser);
+		// The PTZ bit is specified as WO/RAZ, but we use it to cache
+		// the written value which is used when EnableLPIs is set to 1.
+		// Therefore we must clear it here.
+		GICR_PENDBASER_set_PTZ(&pendbase, false);
+		*val = GICR_PENDBASER_raw(pendbase);
+#else
 		*val = 0U;
+#endif
 
-	} else if (offset == OFS_GICR_RD_SYNCR) {
+	} else if (offset == offsetof(gicr_t, rd.syncr)) {
+#if VGIC_HAS_LPI
+		GICR_SYNCR_t syncr = GICR_SYNCR_default();
+		GICR_SYNCR_set_Busy(&syncr,
+				    vgic_gicr_get_inv_pending(vic, gicr_vcpu));
+		*val = GICR_SYNCR_raw(syncr);
+#else
 		*val = 0U;
+#endif
 
-	} else if ((offset == OFS_GICR_SGI_IGROUPR0) ||
-		   (offset == OFS_GICR_SGI_ISENABLER0) ||
-		   (offset == OFS_GICR_SGI_ICENABLER0) ||
-		   (offset == OFS_GICR_SGI_ISPENDR0) ||
-		   (offset == OFS_GICR_SGI_ICPENDR0) ||
-		   (offset == OFS_GICR_SGI_ISACTIVER0) ||
-		   (offset == OFS_GICR_SGI_ICACTIVER0)) {
-		*val = vgic_read_irqbits(vic, gicr_vcpu, offset - OFS_GICR_SGI,
-					 offset - OFS_GICR_SGI);
+	} else if ((offset == offsetof(gicr_t, sgi.igroupr0)) ||
+		   (offset == offsetof(gicr_t, sgi.isenabler0)) ||
+		   (offset == offsetof(gicr_t, sgi.icenabler0)) ||
+		   (offset == offsetof(gicr_t, sgi.ispendr0)) ||
+		   (offset == offsetof(gicr_t, sgi.icpendr0)) ||
+		   (offset == offsetof(gicr_t, sgi.isactiver0)) ||
+		   (offset == offsetof(gicr_t, sgi.icactiver0))) {
+		*val = vgic_read_irqbits(vic, gicr_vcpu,
+					 offset - offsetof(gicr_t, sgi),
+					 offset - offsetof(gicr_t, sgi));
 
-	} else if ((offset == OFS_GICR_SGI_IGRPMODR0) ||
-		   (offset == OFS_GICR_SGI_NSACR)) {
+	} else if ((offset == offsetof(gicr_t, sgi.igrpmodr0)) ||
+		   (offset == offsetof(gicr_t, sgi.nsacr))) {
 		// RAZ/WI because GICD_CTLR.DS==1
 		*val = 0U;
 
@@ -842,25 +891,25 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 	VGIC_TRACE(GICR_WRITE, vic, gicr_vcpu,
 		   "GICR_WRITE reg = {:x}, val = {:#x}", offset, val);
 
-	if (offset == OFS_GICR_RD_CTLR) {
+	if (offset == offsetof(gicr_t, rd.ctlr)) {
 		vgic_gicr_rd_set_control(vic, gicr_vcpu,
 					 GICR_CTLR_cast((uint32_t)val));
 
-	} else if ((offset == OFS_GICR_RD_IIDR) ||
-		   (offset == OFS_GICR_RD_TYPER) ||
-		   (offset == OFS_GICR_RD_SYNCR) ||
-		   (offset == OFS_GICR_PIDR2)) {
+	} else if ((offset == offsetof(gicr_t, rd.iidr)) ||
+		   (offset == offsetof(gicr_t, rd.typer)) ||
+		   (offset == offsetof(gicr_t, rd.syncr)) ||
+		   (offset == offsetof(gicr_t, PIDR2))) {
 		// RO registers
 		GICR_STATUSR_t statusr;
 		GICR_STATUSR_init(&statusr);
 		GICR_STATUSR_set_WROD(&statusr, true);
 		vgic_gicr_rd_set_statusr(gicr_vcpu, statusr, true);
 
-	} else if (offset == OFS_GICR_RD_STATUSR) {
+	} else if (offset == offsetof(gicr_t, rd.statusr)) {
 		GICR_STATUSR_t statusr = GICR_STATUSR_cast((uint32_t)val);
 		vgic_gicr_rd_set_statusr(gicr_vcpu, statusr, false);
 
-	} else if (offset == OFS_GICR_RD_WAKER) {
+	} else if (offset == offsetof(gicr_t, rd.waker)) {
 		bool new_sleep = GICR_WAKER_get_ProcessorSleep(
 			&GICR_WAKER_cast((uint32_t)val));
 #if VGIC_HAS_1N
@@ -877,58 +926,82 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 		atomic_store_relaxed(&gicr_vcpu->vgic_sleep, new_sleep);
 #endif
 
-	} else if ((offset == OFS_GICR_RD_SETLPIR) ||
-		   (offset == OFS_GICR_RD_CLRLPIR)) {
+	} else if ((offset == offsetof(gicr_t, rd.setlpir)) ||
+		   (offset == offsetof(gicr_t, rd.clrlpir))) {
 		// Direct LPIs not implemented, WI
 		//
 		// Implementing these is strictly required by the GICv3 spec
 		// when the VCPU has LPI support but no ITS. We define that to
 		// be a configuration error in VM provisioning.
 
-	} else if (offset == OFS_GICR_SGI_IGROUPR0) {
+#if VGIC_HAS_LPI
+	} else if (offset == offsetof(gicr_t, rd.propbaser)) {
+		vgic_gicr_rd_set_propbase(vic, GICR_PROPBASER_cast(val));
+
+	} else if (offset == offsetof(gicr_t, rd.pendbaser)) {
+		vgic_gicr_rd_set_pendbase(vic, gicr_vcpu,
+					  GICR_PENDBASER_cast(val));
+
+	} else if (offset == offsetof(gicr_t, rd.invlpir)) {
+		GICR_INVLPIR_t invlpir = GICR_INVLPIR_cast(val);
+		// WI if the virtual bit is set
+		if (!GICR_INVLPIR_get_V(&invlpir)) {
+			vgic_gicr_rd_invlpi(vic, gicr_vcpu,
+					    GICR_INVLPIR_get_pINTID(&invlpir));
+		}
+
+	} else if (offset == offsetof(gicr_t, rd.invallr)) {
+		GICR_INVALLR_t invallr = GICR_INVALLR_cast(val);
+		// WI if the virtual bit is set
+		if (!GICR_INVALLR_get_V(&invallr)) {
+			vgic_gicr_rd_invall(vic, gicr_vcpu);
+		}
+#endif // VGIC_HAS_LPI
+
+	} else if (offset == offsetof(gicr_t, sgi.igroupr0)) {
 		// 32-bit register, 32-bit access only
 		for (index_t i = 0U; i < 32U; i++) {
 			vgic_gicr_sgi_set_sgi_ppi_group(
 				vic, gicr_vcpu, i, (val & util_bit(i)) != 0U);
 		}
 
-	} else if ((offset == OFS_GICR_SGI_ISENABLER0) ||
-		   (offset == OFS_GICR_SGI_ICENABLER0)) {
+	} else if ((offset == offsetof(gicr_t, sgi.isenabler0)) ||
+		   (offset == offsetof(gicr_t, sgi.icenabler0))) {
 		// 32-bit registers, 32-bit access only
 		uint32_t bits = (uint32_t)val;
 		while (bits != 0U) {
 			index_t i = compiler_ctz(bits);
-			bits &= ~util_bit(i);
+			bits &= ~((index_t)util_bit(i));
 
 			vgic_gicr_sgi_change_sgi_ppi_enable(
 				vic, gicr_vcpu, i,
-				offset == OFS_GICR_SGI_ISENABLER0);
+				(offset == offsetof(gicr_t, sgi.isenabler0)));
 		}
 
-	} else if ((offset == OFS_GICR_SGI_ISPENDR0) ||
-		   (offset == OFS_GICR_SGI_ICPENDR0)) {
+	} else if ((offset == offsetof(gicr_t, sgi.ispendr0)) ||
+		   (offset == offsetof(gicr_t, sgi.icpendr0))) {
 		// 32-bit registers, 32-bit access only
 		uint32_t bits = (uint32_t)val;
 		while (bits != 0U) {
 			index_t i = compiler_ctz(bits);
-			bits &= ~util_bit(i);
+			bits &= ~((index_t)util_bit(i));
 
 			vgic_gicr_sgi_change_sgi_ppi_pending(
 				vic, gicr_vcpu, i,
-				offset == OFS_GICR_SGI_ISPENDR0);
+				(offset == offsetof(gicr_t, sgi.ispendr0)));
 		}
 
-	} else if ((offset == OFS_GICR_SGI_ISACTIVER0) ||
-		   (offset == OFS_GICR_SGI_ICACTIVER0)) {
+	} else if ((offset == offsetof(gicr_t, sgi.isactiver0)) ||
+		   (offset == offsetof(gicr_t, sgi.icactiver0))) {
 		// 32-bit registers, 32-bit access only
 		uint32_t bits = (uint32_t)val;
 		while (bits != 0U) {
 			index_t i = compiler_ctz(bits);
-			bits &= ~util_bit(i);
+			bits &= ~((index_t)util_bit(i));
 
 			vgic_gicr_sgi_change_sgi_ppi_active(
 				vic, gicr_vcpu, i,
-				offset == OFS_GICR_SGI_ISACTIVER0);
+				(offset == offsetof(gicr_t, sgi.isactiver0)));
 		}
 
 	} else if ((offset >= OFS_GICR_SGI_IPRIORITYR(0U)) &&
@@ -956,10 +1029,10 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 				(val & util_bit((i * 2U) + 1U)) != 0U);
 		}
 
-	} else if (offset == OFS_GICR_SGI_IGRPMODR0) {
+	} else if (offset == offsetof(gicr_t, sgi.igrpmodr0)) {
 		// WI
 
-	} else if (offset == OFS_GICR_SGI_NSACR) {
+	} else if (offset == offsetof(gicr_t, sgi.nsacr)) {
 		// WI
 
 	}
@@ -987,13 +1060,13 @@ gicr_access_allowed(size_t size, size_t offset)
 	if ((offset & (size - 1U)) != 0UL) {
 		ret = false;
 	} else if (size == sizeof(uint64_t)) {
-		ret = ((offset == OFS_GICR_RD_INVALLR) ||
-		       (offset <= OFS_GICR_RD_INVLPIR) ||
-		       (offset == OFS_GICR_RD_PENDBASER) ||
-		       (offset == OFS_GICR_RD_PROPBASER) ||
-		       (offset == OFS_GICR_RD_SETLPIR) ||
-		       (offset == OFS_GICR_RD_CLRLPIR) ||
-		       (offset == OFS_GICR_RD_TYPER));
+		ret = ((offset == offsetof(gicr_t, rd.invallr)) ||
+		       (offset <= offsetof(gicr_t, rd.invlpir)) ||
+		       (offset == offsetof(gicr_t, rd.pendbaser)) ||
+		       (offset == offsetof(gicr_t, rd.propbaser)) ||
+		       (offset == offsetof(gicr_t, rd.setlpir)) ||
+		       (offset == offsetof(gicr_t, rd.clrlpir)) ||
+		       (offset == offsetof(gicr_t, rd.typer)));
 	} else if (size == sizeof(uint32_t)) {
 		// Word accesses, always allowed
 		ret = true;
@@ -1012,38 +1085,93 @@ gicr_access_allowed(size_t size, size_t offset)
 	return ret;
 }
 
-bool
-vgic_handle_vdevice_access(vmaddr_t ipa, size_t access_size, register_t *value,
+static vcpu_trap_result_t
+vgic_handle_gicd_access(vic_t *vic, size_t offset, size_t access_size,
+			register_t *value, bool is_write)
+{
+	bool access_ok = false;
+
+	if (gicd_access_allowed(access_size, offset)) {
+		if (is_write) {
+			access_ok = gicd_vdevice_write(vic, offset, *value,
+						       access_size);
+		} else {
+			access_ok = gicd_vdevice_read(vic, offset, value,
+						      access_size);
+		}
+	}
+	return access_ok ? VCPU_TRAP_RESULT_EMULATED : VCPU_TRAP_RESULT_FAULT;
+}
+
+static vcpu_trap_result_t
+vgic_handle_gicr_access(vic_t *vic, thread_t *thread, size_t offset,
+			size_t access_size, register_t *value, bool is_write)
+{
+	bool access_ok = false;
+
+	if (gicr_access_allowed(access_size, offset)) {
+		if (is_write) {
+			access_ok = gicr_vdevice_write(vic, thread, offset,
+						       *value, access_size);
+		} else {
+			access_ok = gicr_vdevice_read(vic, thread,
+						      thread->vgic_gicr_index,
+						      offset, value,
+						      access_size);
+		}
+	}
+
+	return access_ok ? VCPU_TRAP_RESULT_EMULATED : VCPU_TRAP_RESULT_FAULT;
+}
+
+vcpu_trap_result_t
+vgic_handle_vdevice_access(vdevice_type_t type, vdevice_t *vdevice,
+			   size_t offset, size_t access_size, register_t *value,
 			   bool is_write)
 {
-	bool ret;
+	assert(vdevice != NULL);
 
-	if ((ipa >= PLATFORM_GICD_BASE) &&
-	    (ipa < PLATFORM_GICD_BASE + 0x10000U)) {
+	vcpu_trap_result_t ret;
+
+	if (type == VDEVICE_TYPE_VGIC_GICD) {
+		vic_t *vic = vic_container_of_gicd_device(vdevice);
+		ret = vgic_handle_gicd_access(vic, offset, access_size, value,
+					      is_write);
+	} else {
+		assert(type == VDEVICE_TYPE_VGIC_GICR);
+		thread_t *gicr_vcpu =
+			thread_container_of_vgic_gicr_device(vdevice);
+		vic_t *vic = gicr_vcpu->vgic_vic;
+		assert(vic != NULL);
+		ret = vgic_handle_gicr_access(vic, gicr_vcpu, offset,
+					      access_size, value, is_write);
+	}
+
+	return ret;
+}
+
+vcpu_trap_result_t
+vgic_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
+				      register_t *value, bool is_write)
+{
+	vcpu_trap_result_t ret;
+
+	thread_t *thread = thread_get_self();
+	vic_t	 *vic	 = thread->vgic_vic;
+
+	if ((vic == NULL) || !vic->allow_fixed_vmaddr) {
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+	} else if ((ipa >= PLATFORM_GICD_BASE) &&
+		   (ipa < PLATFORM_GICD_BASE + 0x10000U)) {
 		size_t offset = (size_t)(ipa - PLATFORM_GICD_BASE);
-
-		if (gicd_access_allowed(access_size, offset)) {
-			if (is_write) {
-				ret = gicd_vdevice_write(offset, *value,
-							 access_size);
-			} else {
-				ret = gicd_vdevice_read(offset, value,
-							access_size);
-			}
-		} else {
-			ret = false;
-		}
+		ret = vgic_handle_gicd_access(vic, offset, access_size, value,
+					      is_write);
 	} else if ((ipa >= PLATFORM_GICR_BASE) &&
-		   (ipa < PLATFORM_GICR_BASE +
-				  (PLATFORM_MAX_CORES << GICR_STRIDE_SHIFT))) {
+		   (ipa < PLATFORM_GICR_BASE + ((vmaddr_t)PLATFORM_MAX_CORES
+						<< GICR_STRIDE_SHIFT))) {
 		index_t gicr_num = (index_t)((ipa - PLATFORM_GICR_BASE) >>
 					     GICR_STRIDE_SHIFT);
-		vic_t  *vic	 = thread_get_self()->vgic_vic;
-		if (vic == NULL) {
-			ret = false;
-		} else if (gicr_num >= vic->gicr_count) {
-			ret = false;
-		} else {
+		if ((vic != NULL) && (gicr_num < vic->gicr_count)) {
 			rcu_read_start();
 
 			thread_t *gicr_vcpu =
@@ -1051,32 +1179,24 @@ vgic_handle_vdevice_access(vmaddr_t ipa, size_t access_size, register_t *value,
 
 			if (gicr_vcpu != NULL) {
 				vmaddr_t gicr_base =
-					PLATFORM_GICR_BASE +
-					(gicr_num << GICR_STRIDE_SHIFT);
+					((vmaddr_t)PLATFORM_GICR_BASE +
+					 ((vmaddr_t)gicr_num
+					  << GICR_STRIDE_SHIFT));
 				size_t offset = (size_t)(ipa - gicr_base);
-
-				if (gicr_access_allowed(access_size, offset)) {
-					if (is_write) {
-						ret = gicr_vdevice_write(
-							vic, gicr_vcpu, offset,
-							*value, access_size);
-					} else {
-						ret = gicr_vdevice_read(
-							vic, gicr_vcpu,
-							gicr_num, offset, value,
-							access_size);
-					}
-				} else {
-					ret = false;
-				}
+				ret = vgic_handle_gicr_access(vic, gicr_vcpu,
+							      offset,
+							      access_size,
+							      value, is_write);
 			} else {
-				ret = false;
+				ret = VCPU_TRAP_RESULT_UNHANDLED;
 			}
 
 			rcu_read_finish();
+		} else {
+			ret = VCPU_TRAP_RESULT_UNHANDLED;
 		}
 	} else {
-		ret = false;
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
 	}
 
 	return ret;

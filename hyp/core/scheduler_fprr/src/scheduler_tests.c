@@ -37,6 +37,8 @@ static uintptr_t	 sched_test_stack_base;
 static uintptr_t	 sched_test_stack_end;
 static _Atomic uintptr_t sched_test_stack_alloc;
 
+static _Atomic count_t sync_flag;
+
 CPULOCAL_DECLARE_STATIC(_Atomic uint8_t, wait_flag);
 CPULOCAL_DECLARE_STATIC(thread_t *, test_thread);
 CPULOCAL_DECLARE_STATIC(count_t, test_passed_count);
@@ -44,6 +46,7 @@ CPULOCAL_DECLARE_STATIC(_Atomic count_t, affinity_count);
 
 static thread_ptr_result_t
 create_thread(priority_t prio, cpu_index_t cpu, sched_test_op_t op)
+	REQUIRE_PREEMPT_DISABLED
 {
 	thread_ptr_result_t ret;
 
@@ -73,6 +76,17 @@ create_thread(priority_t prio, cpu_index_t cpu, sched_test_op_t op)
 
 out:
 	return ret;
+}
+
+static void
+destroy_thread(thread_t *thread)
+{
+	// Wait for the thread to exit so subsequent tests do not race with it.
+	while (atomic_load_relaxed(&thread->state) != THREAD_STATE_EXITED) {
+		scheduler_yield_to(thread);
+	}
+
+	object_put_thread(thread);
 }
 
 static void
@@ -127,7 +141,7 @@ tests_scheduler_start(void)
 	old = atomic_load_relaxed(&CPULOCAL(wait_flag));
 	assert(old == 1U);
 	atomic_store_relaxed(&CPULOCAL(wait_flag), 0U);
-	object_put_thread(ret.r);
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
 
 	// priority == default: switch on yield
@@ -139,7 +153,7 @@ tests_scheduler_start(void)
 		scheduler_yield();
 	}
 	atomic_store_relaxed(&CPULOCAL(wait_flag), 0U);
-	object_put_thread(ret.r);
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
 
 	// priority < default: switch on directed yield
@@ -153,31 +167,27 @@ tests_scheduler_start(void)
 		scheduler_yield_to(ret.r);
 	}
 	atomic_store_relaxed(&CPULOCAL(wait_flag), 0U);
-	object_put_thread(ret.r);
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
 
 	// Test 2: wait for timeslice expiry
-	ret = create_thread(SCHEDULER_MIN_PRIORITY, cpulocal_get_index(),
+	ret = create_thread(SCHEDULER_DEFAULT_PRIORITY, cpulocal_get_index(),
 			    SCHED_TEST_OP_WAKE);
 	assert(ret.e == OK);
 
-	// Yield to reset the current thread's timeslice.
+	// Yield to reset the current thread's timeslice, then wait for the
+	// other thread to run and update the wait flag.
 	scheduler_yield();
-
-	scheduler_lock(ret.r);
-	scheduler_set_priority(ret.r, SCHEDULER_DEFAULT_PRIORITY);
-	scheduler_unlock(ret.r);
-
-	// To ensure a timeout is set, we need to reschedule. The timeslice
-	// shouldn't have expired yet due to the earlier yield.
-	schedule_check_switched(ret.r, false);
-
-	while (asm_event_load_before_wait(&CPULOCAL(wait_flag)) == 0U) {
-		asm_event_wait(&CPULOCAL(wait_flag));
+	_Atomic uint8_t *wait_flag = &CPULOCAL(wait_flag);
+	atomic_store_relaxed(wait_flag, 1U);
+	preempt_enable();
+	while (asm_event_load_before_wait(wait_flag) == 1U) {
+		asm_event_wait(wait_flag);
 	}
+	preempt_disable();
 
-	asm_event_store_and_wake(&CPULOCAL(wait_flag), 0U);
-	object_put_thread(ret.r);
+	assert(atomic_load_relaxed(&CPULOCAL(wait_flag)) == 0U);
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
 
 	// Test 3: double directed yield
@@ -198,8 +208,8 @@ tests_scheduler_start(void)
 	}
 	atomic_store_relaxed(&CPULOCAL(wait_flag), 0U);
 
-	object_put_thread(ret.r);
-	object_put_thread(CPULOCAL(test_thread));
+	destroy_thread(ret.r);
+	destroy_thread(CPULOCAL(test_thread));
 	CPULOCAL(test_passed_count)++;
 
 #if SCHEDULER_CAN_MIGRATE
@@ -213,16 +223,21 @@ tests_scheduler_start(void)
 	schedule_check_switched(ret.r, false);
 
 	CPULOCAL(test_thread) = thread_get_self();
-	scheduler_lock(ret.r);
+	scheduler_lock_nopreempt(ret.r);
 	err = scheduler_set_affinity(ret.r, cpulocal_get_index());
-	scheduler_unlock(ret.r);
+	scheduler_unlock_nopreempt(ret.r);
 	assert(err == OK);
 
 	schedule_check_switched(ret.r, true);
 
 	scheduler_yield_to(ret.r);
-	object_put_thread(ret.r);
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
+
+	(void)atomic_fetch_add_explicit(&sync_flag, 1U, memory_order_relaxed);
+	while (asm_event_load_before_wait(&sync_flag) < PLATFORM_MAX_CORES) {
+		asm_event_wait(&sync_flag);
+	}
 
 	// Test 5: migrate running thread
 	ret = create_thread(SCHEDULER_DEFAULT_PRIORITY, cpulocal_get_index(),
@@ -232,15 +247,24 @@ tests_scheduler_start(void)
 	while (atomic_load_relaxed(&CPULOCAL(affinity_count)) <
 	       NUM_AFFINITY_SWITCH) {
 		scheduler_yield();
-		scheduler_lock(ret.r);
+		scheduler_lock_nopreempt(ret.r);
 		cpu_index_t affinity = (scheduler_get_affinity(ret.r) + 1U) %
 				       PLATFORM_MAX_CORES;
 		err = scheduler_set_affinity(ret.r, affinity);
-		scheduler_unlock(ret.r);
+		scheduler_unlock_nopreempt(ret.r);
 		assert((err == OK) || (err == ERROR_RETRY));
 	}
 
-	object_put_thread(ret.r);
+	// Ensure the thread is running on the current CPU so we can yield to it
+	// and ensure it exits.
+	do {
+		scheduler_lock_nopreempt(ret.r);
+		err = scheduler_set_affinity(ret.r, cpulocal_get_index());
+		scheduler_unlock_nopreempt(ret.r);
+		assert((err == OK) || (err == ERROR_RETRY));
+	} while (err == ERROR_RETRY);
+
+	destroy_thread(ret.r);
 	CPULOCAL(test_passed_count)++;
 #endif
 
@@ -248,9 +272,9 @@ tests_scheduler_start(void)
 }
 
 static void
-sched_test_thread_entry(uintptr_t param) EXCLUDE_PREEMPT_DISABLED
+sched_test_thread_entry(uintptr_t param)
 {
-	assert_preempt_enabled();
+	cpulocal_begin();
 
 	sched_test_param_t test_param = sched_test_param_cast((uint32_t)param);
 	sched_test_op_t	   op	      = sched_test_param_get_op(&test_param);
@@ -260,12 +284,16 @@ sched_test_thread_entry(uintptr_t param) EXCLUDE_PREEMPT_DISABLED
 		(void)atomic_fetch_add_explicit(&CPULOCAL(wait_flag), 1U,
 						memory_order_relaxed);
 		break;
-	case SCHED_TEST_OP_WAKE:
-		asm_event_store_and_wake(&CPULOCAL(wait_flag), 1U);
-		while (asm_event_load_before_wait(&CPULOCAL(wait_flag)) == 1U) {
-			asm_event_wait(&CPULOCAL(wait_flag));
+	case SCHED_TEST_OP_WAKE: {
+		_Atomic uint8_t *wait_flag = &CPULOCAL(wait_flag);
+		cpulocal_end();
+		while (asm_event_load_before_wait(wait_flag) == 0U) {
+			asm_event_wait(wait_flag);
 		}
+		asm_event_store_and_wake(wait_flag, 0U);
+		cpulocal_begin();
 		break;
+	}
 	case SCHED_TEST_OP_YIELDTO:
 		while (atomic_load_relaxed(&CPULOCAL(wait_flag)) == 1U) {
 			scheduler_yield_to(CPULOCAL(test_thread));
@@ -285,6 +313,8 @@ sched_test_thread_entry(uintptr_t param) EXCLUDE_PREEMPT_DISABLED
 	default:
 		panic("Invalid param for sched test thread!");
 	}
+
+	cpulocal_end();
 }
 
 thread_func_t

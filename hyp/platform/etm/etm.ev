@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module etm
+
+subscribe boot_hypervisor_start
+	// Run after soc module init so we can query security state
+	priority -1
+
+subscribe power_cpu_online
+	require_preempt_disabled
+
+subscribe power_cpu_suspend(may_poweroff)
+	unwinder(may_poweroff)
+	require_preempt_disabled
+
+subscribe power_cpu_resume(was_poweroff)
+	require_preempt_disabled
+
+subscribe power_cpu_offline
+	require_preempt_disabled

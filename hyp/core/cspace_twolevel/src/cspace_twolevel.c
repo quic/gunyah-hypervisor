@@ -106,14 +106,14 @@ cspace_init_id_encoder(cspace_t *cspace)
 		}
 		// Calculate a 16-bit random multiplier and its inverse
 		cspace->id_mult = rand_mult.r & 0xffffU;
-		cspace->id_inv = (((uint64_t)1U << 32U) / cspace->id_mult) + 1U;
+		cspace->id_inv	= (util_bit(32) / cspace->id_mult) + 1U;
 	}
 
 out:
 #else
 	cspace->id_rand_base = 0U;
 	cspace->id_mult	     = 1U;
-	cspace->id_inv	     = ((uint64_t)1U << 32U) + 1U;
+	cspace->id_inv	     = util_bit(32U) + 1U;
 	err		     = OK;
 #endif
 	return err;
@@ -254,8 +254,8 @@ cspace_allocate_cap_table(cspace_t *cspace, cap_table_t **table,
 	error_t		  err;
 	void_ptr_result_t ret;
 	index_t		  index;
-	cap_table_t	    *new_table;
-	partition_t	    *partition = cspace->header.partition;
+	cap_table_t	 *new_table;
+	partition_t	 *partition = cspace->header.partition;
 
 	do {
 		if (!bitmap_atomic_ffc(cspace->allocated_tables,
@@ -276,8 +276,8 @@ cspace_allocate_cap_table(cspace_t *cspace, cap_table_t **table,
 		goto allocate_cap_table_error;
 	}
 
-	memset(ret.r, 0, sizeof(cap_table_t));
 	new_table = (cap_table_t *)ret.r;
+	(void)memset_s(new_table, sizeof(*new_table), 0, sizeof(*new_table));
 
 	new_table->partition = object_get_partition_additional(partition);
 	new_table->cspace    = cspace;
@@ -295,14 +295,14 @@ rcu_update_status_t
 cspace_destroy_cap_table(rcu_entry_t *entry)
 {
 	index_t		    index;
-	cap_table_t	    *table     = cap_table_container_of_rcu_entry(entry);
-	partition_t	    *partition = table->partition;
+	cap_table_t	   *table     = cap_table_container_of_rcu_entry(entry);
+	partition_t	   *partition = table->partition;
 	rcu_update_status_t ret	      = rcu_update_status_default();
 
 	// If called via cspace destroy, there may still
 	// be valid caps which also require destruction.
 	for (; table->cap_count > 0U; table->cap_count--) {
-		cap_t	      *cap;
+		cap_t		*cap;
 		cap_data_t	 data;
 		object_type_t	 type;
 		object_header_t *header;
@@ -327,7 +327,7 @@ cspace_destroy_cap_table(rcu_entry_t *entry)
 		type   = cap_info_get_type(&data.info);
 		header = object_get_header(type, data.object);
 		spinlock_acquire(&header->cap_list_lock);
-		list_delete_node(&header->cap_list, &cap->cap_list_node);
+		(void)list_delete_node(&header->cap_list, &cap->cap_list_node);
 		cap_list_empty = list_is_empty(&header->cap_list);
 		spinlock_release(&header->cap_list_lock);
 
@@ -336,7 +336,7 @@ cspace_destroy_cap_table(rcu_entry_t *entry)
 		}
 	}
 
-	partition_free(partition, table, sizeof(cap_table_t));
+	(void)partition_free(partition, table, sizeof(cap_table_t));
 	object_put_partition(partition);
 
 	return ret;
@@ -344,6 +344,7 @@ cspace_destroy_cap_table(rcu_entry_t *entry)
 
 static error_t
 cspace_allocate_cap_slot(cspace_t *cspace, cap_t **cap, cap_id_t *cap_id)
+	REQUIRE_RCU_READ
 {
 	error_t	     err;
 	cap_table_t *table;
@@ -445,7 +446,7 @@ cspace_lookup_object(cspace_t *cspace, cap_id_t cap_id, object_type_t type,
 		     cap_rights_t rights, bool active_only)
 {
 	error_t		    err;
-	cap_t	      *cap;
+	cap_t		   *cap;
 	cap_data_t	    cap_data;
 	object_ptr_result_t ret;
 
@@ -490,7 +491,7 @@ cspace_lookup_object_any(cspace_t *cspace, cap_id_t cap_id,
 			 cap_rights_generic_t rights, object_type_t *type)
 {
 	error_t		    err;
-	cap_t	      *cap;
+	cap_t		   *cap;
 	cap_data_t	    cap_data;
 	object_ptr_result_t ret;
 	object_type_t	    obj_type = OBJECT_TYPE_ANY;
@@ -565,7 +566,7 @@ cspace_configure(cspace_t *cspace, count_t max_caps)
 error_t
 cspace_twolevel_handle_object_activate_cspace(cspace_t *cspace)
 {
-	if (cspace->max_caps != 0) {
+	if (cspace->max_caps != 0U) {
 		return OK;
 	} else {
 		return ERROR_OBJECT_CONFIG;
@@ -589,7 +590,7 @@ cspace_create_master_cap(cspace_t *cspace, object_ptr_t object,
 			 object_type_t type)
 {
 	error_t		err;
-	cap_t	      *new_cap;
+	cap_t	       *new_cap;
 	cap_data_t	cap_data;
 	cap_id_t	new_cap_id;
 	cap_id_result_t ret;
@@ -631,7 +632,7 @@ cspace_copy_cap(cspace_t *target_cspace, cspace_t *parent_cspace,
 		cap_id_t parent_id, cap_rights_t rights_mask)
 {
 	error_t		 err;
-	cap_t	      *new_cap, *parent_cap;
+	cap_t		*new_cap, *parent_cap;
 	cap_data_t	 cap_data;
 	cap_id_t	 new_cap_id;
 	object_header_t *header;
@@ -705,7 +706,7 @@ error_t
 cspace_delete_cap(cspace_t *cspace, cap_id_t cap_id)
 {
 	error_t	      err;
-	cap_t	      *cap;
+	cap_t	     *cap;
 	cap_data_t    cap_data, null_cap_data = { 0 };
 	cap_state_t   state;
 	object_type_t type;
@@ -730,8 +731,8 @@ cspace_delete_cap(cspace_t *cspace, cap_id_t cap_id)
 
 		err = cspace_update_cap_slot(cap, &cap_data, null_cap_data);
 		if (err == OK) {
-			list_delete_node(&header->cap_list,
-					 &cap->cap_list_node);
+			(void)list_delete_node(&header->cap_list,
+					       &cap->cap_list_node);
 			cap_list_empty = list_is_empty(&header->cap_list);
 		}
 
@@ -741,8 +742,8 @@ cspace_delete_cap(cspace_t *cspace, cap_id_t cap_id)
 
 		err = cspace_update_cap_slot(cap, &cap_data, null_cap_data);
 		if (err == OK) {
-			list_delete_node(&cspace->revoked_cap_list,
-					 &cap->cap_list_node);
+			(void)list_delete_node(&cspace->revoked_cap_list,
+					       &cap->cap_list_node);
 		}
 
 		spinlock_release(&cspace->revoked_cap_list_lock);
@@ -766,7 +767,7 @@ error_t
 cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 {
 	error_t		 err;
-	cap_t	      *master_cap;
+	cap_t		*master_cap;
 	cap_data_t	 master_cap_data;
 	object_header_t *header;
 
@@ -805,6 +806,7 @@ cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 	list_t *list = &header->cap_list;
 	assert(list_get_head(list) == &master_cap->cap_list_node);
 
+	// FIXME:
 	cap_t *curr_cap = NULL;
 
 	list_foreach_container_maydelete (curr_cap, list, cap, cap_list_node) {
@@ -819,7 +821,7 @@ cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 		// Clear the object this cap points to, since the object could
 		// be deleted by deleting the last valid cap, revoked caps
 		// pointing to freed memory would make debugging confusing.
-		memset(&curr_cap_data.object, 0, sizeof(curr_cap_data.object));
+		curr_cap_data.object = (object_ptr_t){ 0 };
 
 		// It is safe to get the child cap's cspace, as the child
 		// cap must be destroyed before the cspace can be, and
@@ -830,7 +832,8 @@ cspace_revoke_caps(cspace_t *cspace, cap_id_t master_cap_id)
 		// Child cap data won't change while we hold the locks,
 		// so just atomically store the invalid data.
 		atomic_store_relaxed(&curr_cap->data, curr_cap_data);
-		list_delete_node(&header->cap_list, &curr_cap->cap_list_node);
+		(void)list_delete_node(&header->cap_list,
+				       &curr_cap->cap_list_node);
 		list_insert_at_head(&curr_cspace->revoked_cap_list,
 				    &curr_cap->cap_list_node);
 		spinlock_release_nopreempt(&curr_cspace->revoked_cap_list_lock);

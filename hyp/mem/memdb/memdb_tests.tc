@@ -16,6 +16,7 @@ define memdb_range structure {
 define memdb_data structure {
 	ranges array(MEMDB_RANGES_NUM) structure memdb_range;
 	ranges_count type count_t;
+	ranges_index type index_t;
 };
 
 #endif

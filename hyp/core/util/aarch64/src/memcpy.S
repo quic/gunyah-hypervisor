@@ -6,7 +6,7 @@
 #include <asm/cpu.h>
 #include <asm/panic.inc>
 
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 // Two instructions per jump
 #define JUMP_SHIFT	3
 #else

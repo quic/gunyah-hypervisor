@@ -11,7 +11,7 @@ define vcpu_pmu_registers structure {
 	pmccfiltr_el0	uint32;
 	pmintenset_el1	uint32;
 	pmcntenset_el0	uint32;
-#if defined(ARCH_ARM_8_5_PMU)
+#if defined(ARCH_ARM_FEAT_PMUv3p5)
 	pmevcntr_el0	array(PLATFORM_PMU_CNT_NUM) uint64;
 	pmevtyper_el0	array(PLATFORM_PMU_CNT_NUM) uint64;
 #else

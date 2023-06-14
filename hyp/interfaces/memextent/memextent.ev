@@ -4,21 +4,36 @@
 
 interface memextent
 
+selector_event memextent_activate
+	selector type: memextent_type_t
+	param me: memextent_t *
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
 selector_event memextent_activate_derive
 	selector type: memextent_type_t
 	param me: memextent_t *
-	return: error_t = ERROR_ARGUMENT_INVALID
+	return: error_t = ERROR_MEMEXTENT_TYPE
 
-selector_event memextent_derive
+selector_event memextent_supports_donation
 	selector type: memextent_type_t
 	param me: memextent_t *
-	param parent: memextent_t *
-	param offsets: size_t *
-	param sizes: size_t *
-	param num_entries: count_t
-	param memtype: pgtable_vm_memtype_t
-	param access: pgtable_access_t
-	return: error_t = ERROR_ARGUMENT_INVALID
+	return: bool = false
+
+selector_event memextent_donate_child
+	selector type: memextent_type_t
+	param me: memextent_t *
+	param phys: paddr_t
+	param size: size_t
+	param reverse: bool
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_donate_sibling
+	selector type: memextent_type_t
+	param from: memextent_t *
+	param to: memextent_t *
+	param phys: paddr_t
+	param size: size_t
+	return: error_t = ERROR_MEMEXTENT_TYPE
 
 selector_event memextent_map
 	selector type: memextent_type_t
@@ -26,14 +41,33 @@ selector_event memextent_map
 	param addrspace: addrspace_t *
 	param vm_base: vmaddr_t
 	param map_attrs: memextent_mapping_attrs_t
-	return: error_t = ERROR_ARGUMENT_INVALID
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_map_partial
+	selector type: memextent_type_t
+	param extent: memextent_t *
+	param addrspace: addrspace_t *
+	param vm_base: vmaddr_t
+	param offset: size_t
+	param size: size_t
+	param map_attrs: memextent_mapping_attrs_t
+	return: error_t = ERROR_MEMEXTENT_TYPE
 
 selector_event memextent_unmap
 	selector type: memextent_type_t
 	param extent: memextent_t *
 	param addrspace: addrspace_t *
 	param vm_base: vmaddr_t
-	return: error_t = ERROR_ARGUMENT_INVALID
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_unmap_partial
+	selector type: memextent_type_t
+	param extent: memextent_t *
+	param addrspace: addrspace_t *
+	param vm_base: vmaddr_t
+	param offset: size_t
+	param size: size_t
+	return: error_t = ERROR_MEMEXTENT_TYPE
 
 selector_event memextent_unmap_all
 	selector type: memextent_type_t
@@ -46,7 +80,24 @@ selector_event memextent_update_access
 	param addrspace: addrspace_t *
 	param vm_base: vmaddr_t
 	param access_attrs: memextent_access_attrs_t
-	return: error_t = ERROR_ARGUMENT_INVALID
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_update_access_partial
+	selector type: memextent_type_t
+	param extent: memextent_t *
+	param addrspace: addrspace_t *
+	param vm_base: vmaddr_t
+	param offset: size_t
+	param size: size_t
+	param access_attrs: memextent_access_attrs_t
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_is_mapped
+	selector type: memextent_type_t
+	param me: memextent_t *
+	param addrspace: addrspace_t *
+	param exclusive: bool
+	return: bool = false
 
 selector_event memextent_deactivate
 	selector type: memextent_type_t
@@ -57,3 +108,40 @@ selector_event memextent_cleanup
 	selector type: memextent_type_t
 	param extent: memextent_t *
 	return: bool = false
+
+selector_event memextent_retain_mappings
+	selector type: memextent_type_t
+	param me: memextent_t *
+
+selector_event memextent_release_mappings
+	selector type: memextent_type_t
+	param me: memextent_t *
+	param clear: bool
+
+selector_event memextent_lookup_mapping
+	selector type: memextent_type_t
+	param me: memextent_t *
+	param phys: paddr_t
+	param size: size_t
+	param i: index_t
+	return: memextent_mapping_result_t = memextent_mapping_result_error(ERROR_MEMEXTENT_TYPE)
+
+selector_event memextent_attach
+	selector type: memextent_type_t
+	param me: memextent_t *
+	param hyp_va: uintptr_t
+	param size: size_t
+	param memtype: pgtable_hyp_memtype_t
+	return: error_t = ERROR_MEMEXTENT_TYPE
+
+selector_event memextent_detach
+	selector type: memextent_type_t
+	param me: memextent_t *
+	return: bool = false
+
+selector_event memextent_get_offset_for_pa
+	selector type: memextent_type_t
+	param extent: memextent_t *
+	param pa: paddr_t
+	param size: size_t
+	return: size_result_t = size_result_error(ERROR_MEMEXTENT_TYPE)

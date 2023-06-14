@@ -29,8 +29,9 @@ smccc_1_1_do_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 	register_t trace_regs[SMC_TRACE_REG_MAX];
 
 	trace_regs[0] = smccc_function_id_raw(fn_id);
-	memscpy(&trace_regs[1], sizeof(trace_regs) - sizeof(trace_regs[0]),
-		args, sizeof(*args));
+	(void)memscpy(&trace_regs[1],
+		      sizeof(trace_regs) - sizeof(trace_regs[0]), *args,
+		      sizeof(*args));
 	trace_regs[7] = client_id;
 
 	smc_trace_log(SMC_TRACE_ID_EL2_64CAL, &trace_regs, 8U);
@@ -73,7 +74,7 @@ smccc_1_1_do_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 	}
 
 #if defined(INTERFACE_SMC_TRACE)
-	memscpy(&trace_regs[0], sizeof(trace_regs), ret, sizeof(*ret));
+	(void)memscpy(&trace_regs[0], sizeof(trace_regs), *ret, sizeof(*ret));
 	trace_regs[4] = 0U;
 	trace_regs[5] = 0U;
 	trace_regs[6] = x6;
@@ -90,11 +91,12 @@ smccc_1_1_call(smccc_function_id_t fn_id, uint64_t (*args)[6],
 	assert(ret != NULL);
 
 #if defined(INTERFACE_VCPU)
-	bool is_vcpu = thread_get_self()->kind == THREAD_KIND_VCPU;
+	bool is_vcpu = (client_id != CLIENT_ID_HYP);
 	bool is_fast = smccc_function_id_get_is_fast(&fn_id);
 
 	if (is_vcpu && !is_fast) {
 		preempt_disable();
+		assert(thread_get_self()->kind == THREAD_KIND_VCPU);
 		bool pending_wakeup = vcpu_block_start();
 		if (pending_wakeup) {
 			// Assert a local IPI. This notifies secure world of the

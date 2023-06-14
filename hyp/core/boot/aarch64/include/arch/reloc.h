@@ -6,4 +6,4 @@
 	(((R_TYPE(r_info) == R_AARCH64_NONE) ||                                \
 	  (R_TYPE(r_info) == R_AARCH64_NULL) ||                                \
 	  (R_TYPE(r_info) == R_AARCH64_RELATIVE)) &&                           \
-	 (R_SYM(r_info) == 0))
+	 (R_SYM(r_info) == 0U))

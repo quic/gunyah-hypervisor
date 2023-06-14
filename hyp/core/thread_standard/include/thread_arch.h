@@ -35,11 +35,17 @@ thread_arch_init_context(thread_t *thread);
 // specifying this thread as an argument. At that point, it returns a pointer to
 // the thread it switched from, which need not be the same as the thread that
 // the original call switched to.
+//
+// The tick counter is the time at which the specified thread was scheduled;
+// it is passed through to the new thread's context switch handlers to avoid a
+// double read of the timer which can cause gaps in the time accounting and
+// might be expensive on some platforms. On return, it is updated to be the
+// value passed through by the previous thread.
 thread_t *
-thread_arch_switch_thread(thread_t *next_thread);
+thread_arch_switch_thread(thread_t *next_thread, ticks_t *schedtime);
 
 // Set the current thread, assuming there was no previous current thread.
 //
 // This function is called at the end of the CPU power-on sequence.
 noreturn void
-thread_arch_set_thread(thread_t *next_thread);
+thread_arch_set_thread(thread_t *next_thread) REQUIRE_PREEMPT_DISABLED;

@@ -4,13 +4,30 @@
 
 #include <types/bitmap.h>
 
-define ROOT_VM_VMID constant type count_t = 255;
+define ROOT_VM_VMID constant type vmid_t = 255;
 
 define ADDRSPACE_MAX_THREADS constant type count_t = PLATFORM_MAX_CORES;
 
+#if defined(INTERFACE_VCPU_RUN)
+// This upper bound exists to prevent an unprivileged VM with the ability to
+// add VMMIO ranges to its own address space executing a denial of service
+// attack by adding many small ranges to the GPT and exhausting the partition
+// heap. In order to safely reduce this count when a range is removed, we also
+// require that removed ranges are identical to added ranges.
+define ADDRSPACE_MAX_VMMIO_RANGES constant type count_t = 128;
+#endif
+
 extend cap_rights_addrspace bitfield {
-	0	attach	bool;
-	1	map	bool;
+	0	attach		bool;
+	1	map		bool;
+	2	lookup		bool;
+	3	add_vmmio_range	bool;
+};
+
+define addrspace_information_area structure {
+	hyp_va		pointer structure addrspace_info_area_layout;
+	ipa		type vmaddr_t;
+	me		pointer object memextent;
 };
 
 extend addrspace object {
@@ -18,18 +35,29 @@ extend addrspace object {
 	pgtable_lock		structure spinlock;
 	vm_pgtable		structure pgtable_vm;
 	vmid			type vmid_t;
-	vm_read_only		bool;
-	stack_range		structure virt_range;
+	read_only		bool;
+	platform_pgtable	bool;
+	hyp_va_range		structure virt_range;
 	stack_bitmap		BITMAP(ADDRSPACE_MAX_THREADS, atomic);
+	info_area		structure addrspace_information_area;
+#if defined(INTERFACE_VCPU_RUN)
+	vmmio_range_lock	structure spinlock;
+	vmmio_ranges		structure gpt;
+	vmmio_range_count	type count_t;
+#endif
+};
+
+extend gpt_type enumeration {
+	vmmio_range;
+};
+
+extend gpt_value union {
+	vmmio_range_base	type vmaddr_t;
 };
 
 extend thread object {
 	addrspace		pointer object addrspace;
 	stack_map_index		type index_t;
-};
-
-extend boot_env_data structure {
-	addrspace_capid		type cap_id_t;
 };
 
 extend trace_ids bitfield {

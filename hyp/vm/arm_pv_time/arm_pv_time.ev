@@ -1,0 +1,22 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_pv_time
+
+#include <smccc.ev.h>
+
+SMCCC_STANDARD_HYP_FUNCTION_64(PV_TIME_FEATURES, 0, pv_time_features, arg1, ret0)
+SMCCC_STANDARD_HYP_FUNCTION_64(PV_TIME_ST, 0, pv_time_st, arg1, ret0)
+
+subscribe object_create_thread(thread_create)
+
+subscribe vcpu_activate_thread(thread)
+
+subscribe scheduler_schedule
+
+subscribe thread_context_switch_post(curticks, prevticks)
+
+subscribe scheduler_blocked(thread, block)
+
+subscribe scheduler_unblocked(thread, block)

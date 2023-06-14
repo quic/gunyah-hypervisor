@@ -74,7 +74,7 @@ hypercall_vic_configure(cap_id_t vic_cap, count_t max_vcpus, count_t max_virqs,
 			vic_option_flags_t vic_options, count_t max_msis)
 {
 	error_t	      err;
-	cspace_t	 *cspace = cspace_get_self();
+	cspace_t     *cspace = cspace_get_self();
 	object_type_t type;
 
 	object_ptr_result_t o = cspace_lookup_object_any(
@@ -102,7 +102,9 @@ hypercall_vic_configure(cap_id_t vic_cap, count_t max_vcpus, count_t max_virqs,
 
 	spinlock_acquire(&vic->header.lock);
 	if (atomic_load_relaxed(&vic->header.state) == OBJECT_STATE_INIT) {
-		err = vic_configure(vic, max_vcpus, max_virqs, max_msis);
+		err = vic_configure(vic, max_vcpus, max_virqs, max_msis,
+				    !vic_option_flags_get_disable_default_addr(
+					    &vic_options));
 	} else {
 		err = ERROR_OBJECT_STATE;
 	}

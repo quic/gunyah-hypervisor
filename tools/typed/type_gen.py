@@ -5,7 +5,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from lark import Lark
+from lark import Lark, ParseError
 from exceptions import RangeError, DSLError
 from ir import TransformTypes
 from abi import AArch64ABI
@@ -30,10 +30,13 @@ def parse_dsl(parser, inputs, abi):
     trees = []
     for p in inputs:
         text = p.read()
-        parse_tree = parser.parse(text)
-        cur_tree = TransformTypes(text).transform(parse_tree)
-
-        trees.append(cur_tree.get_intermediate_tree())
+        try:
+            parse_tree = parser.parse(text)
+            cur_tree = TransformTypes(text).transform(parse_tree)
+            trees.append(cur_tree.get_intermediate_tree())
+        except ParseError as e:
+            raise Exception("Parse error in {:s}: {:s}".format(p.name,
+                                                               str(e)))
 
     final_tree = trees.pop(0)
     for t in trees:
@@ -103,7 +106,8 @@ def main():
 
     grammar_file = os.path.join(__loc__, 'grammars', 'typed_dsl.lark')
 
-    parser = Lark.open(grammar_file, 'start', propagate_positions=True)
+    parser = Lark.open(grammar_file, 'start', parser='lalr',
+                       lexer='contextual', propagate_positions=True)
 
     if options.input:
         try:
@@ -143,7 +147,7 @@ def main():
 
     if options.deps is not None:
         deps = set()
-        deps.add(grammar_file)
+        deps.add(os.path.relpath(grammar_file))
         if options.template is not None:
             deps.add(options.template.name)
         for m in sys.modules.values():
@@ -157,7 +161,10 @@ def main():
             if f.startswith('../'):
                 continue
             deps.add(f)
-        # TODO: include Cheetah templates
+        if options.template is None:
+            templates = ir.get_output_templates()
+            for t in templates:
+                deps.add(os.path.relpath(t))
         if options.dump_pickle:
             out_name = options.dump_pickle.name
         else:

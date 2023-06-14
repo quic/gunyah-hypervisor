@@ -45,5 +45,5 @@ spinlock_release_nopreempt(spinlock_t *lock) RELEASE_SPINLOCK_NP(lock);
 //
 // This might only be a static check, especially in non-debug builds.
 void
-assert_spinlock_held(spinlock_t *lock) REQUIRE_LOCK(lock)
+assert_spinlock_held(const spinlock_t *lock) REQUIRE_LOCK(lock)
 	REQUIRE_PREEMPT_DISABLED;

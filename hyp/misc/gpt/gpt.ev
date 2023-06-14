@@ -1,0 +1,29 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module gpt
+
+subscribe gpt_values_equal[GPT_TYPE_EMPTY]
+	handler gpt_handle_empty_values_equal()
+
+subscribe gpt_walk_callback[GPT_CALLBACK_RESERVED]
+	handler gpt_handle_reserved_callback() noreturn
+
+subscribe rcu_update[RCU_UPDATE_CLASS_GPT_FREE_LEVEL]
+	handler gpt_handle_rcu_free_level(entry)
+
+#if defined(UNIT_TESTS)
+subscribe tests_init
+
+subscribe tests_start
+
+subscribe gpt_value_add_offset[GPT_TYPE_TEST_A, GPT_TYPE_TEST_B, GPT_TYPE_TEST_C]
+	handler gpt_tests_add_offset
+
+subscribe gpt_values_equal[GPT_TYPE_TEST_A, GPT_TYPE_TEST_B, GPT_TYPE_TEST_C]
+	handler gpt_tests_values_equal(x, y)
+
+subscribe gpt_walk_callback[GPT_CALLBACK_TEST]
+	handler gpt_tests_callback(entry, base, size, arg)
+#endif

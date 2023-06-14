@@ -67,6 +67,8 @@ dump_self_sync_fault(kernel_trap_frame_full_t *frame)
 {
 	TRACE_AND_LOG(ERROR, WARN, "EL2t synchronous fault");
 	vectors_dump_regs(frame);
+
+	// FIXME:
 }
 
 void
@@ -74,6 +76,8 @@ dump_self_irq_fault(kernel_trap_frame_full_t *frame)
 {
 	TRACE_AND_LOG(ERROR, WARN, "EL2t IRQ");
 	vectors_dump_regs(frame);
+
+	// FIXME:
 }
 
 void
@@ -81,6 +85,8 @@ dump_self_fiq_fault(kernel_trap_frame_full_t *frame)
 {
 	TRACE_AND_LOG(ERROR, WARN, "EL2t FIQ fault");
 	vectors_dump_regs(frame);
+
+	// FIXME:
 }
 
 void
@@ -88,6 +94,8 @@ dump_self_serror(kernel_trap_frame_full_t *frame)
 {
 	TRACE_AND_LOG(ERROR, WARN, "EL2t SError fault");
 	vectors_dump_regs(frame);
+
+	// FIXME:
 }
 
 void
@@ -95,4 +103,6 @@ dump_nested_fault(kernel_trap_frame_full_t *frame)
 {
 	TRACE_AND_LOG(ERROR, WARN, "EL2 stack fault");
 	vectors_dump_regs(frame);
+
+	// FIXME:
 }

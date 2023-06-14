@@ -1,0 +1,97 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend cap_rights_virtio_mmio bitfield {
+	0	bind_backend_virq	bool;
+	1	bind_frontend_virq	bool;
+	2	assert_virq		bool;
+	3	config			bool;
+};
+
+define VIRTIO_MMIO_MAX_VQS constant type count_t = 16;
+
+// Feature bits
+define VIRTIO_F_VERSION_1 constant type index_t = 32;
+define VIRTIO_F_ACCESS_PLATFORM constant type index_t = 33;
+define VIRTIO_F_NOTIFICATION_DATA constant type index_t = 38;
+
+define VIRTIO_MMIO_REG_CONFIG_BYTES constant type count_t = (PGTABLE_HYP_PAGE_SIZE - 0x100);
+
+define VIRTIO_MMIO_DEV_FEAT_NUM constant type count_t = 2;
+define VIRTIO_MMIO_DRV_FEAT_NUM constant type count_t = 2;
+
+// Device Status
+define virtio_mmio_status_reg bitfield<32> {
+	2	driver_ok		bool;
+	6	device_needs_reset	bool;
+	7	failed			bool;
+	others	unknown=0;
+};
+
+extend virtio_mmio object {
+	me			pointer object memextent;
+	backend_source		structure virq_source(contained);
+	frontend_source		structure virq_source(contained);
+	frontend_device		structure vdevice(contained);
+	regs			pointer structure virtio_mmio_regs;
+	size			size;
+	vqs_num			type count_t;
+	lock			structure spinlock;
+	vqs_bitmap		type register_t(atomic);
+	drv_feat_sel		uint32;
+	queue_sel		uint32;
+	reason			bitfield virtio_mmio_notify_reason(atomic);
+	banked_dev_feat		array(VIRTIO_MMIO_DEV_FEAT_NUM) uint32;
+	banked_drv_feat		array(VIRTIO_MMIO_DRV_FEAT_NUM) uint32;
+	banked_queue_regs	pointer structure virtio_mmio_banked_queue_registers;
+	pending_rst		bool;
+};
+
+define virtio_mmio_banked_queue_registers structure {
+	num_max		uint32;
+	num		uint32;
+	ready		uint32;
+	desc_low	uint32;
+	desc_high	uint32;
+	drv_low		uint32;
+	drv_high	uint32;
+	dev_low		uint32;
+	dev_high	uint32;
+};
+
+define virtio_mmio_regs structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	magic_value @ 0x000		uint32(atomic);
+	version @ 0x004			uint32(atomic);
+	dev_id @ 0x008			uint32(atomic);
+	vendor_id @ 0x00c		uint32(atomic);
+	dev_feat @ 0x010		uint32(atomic);
+	dev_feat_sel @ 0x014		uint32(atomic);
+	drv_feat @ 0x020		uint32(atomic);
+	drv_feat_sel @ 0x024		uint32(atomic);
+	queue_sel @ 0x030		uint32(atomic);
+	queue_num_max @ 0x034		uint32(atomic);
+	queue_num @ 0x038		uint32(atomic);
+	queue_ready @ 0x044		uint32(atomic);
+	queue_notify @ 0x050		uint32(atomic);
+	interrupt_status @ 0x060	uint32(atomic);
+	interrupt_ack @ 0x064		uint32(atomic);
+	status @ 0x070			bitfield virtio_mmio_status_reg(atomic);
+	queue_desc_low @ 0x080		uint32(atomic);
+	queue_desc_high @ 0x084		uint32(atomic);
+	queue_drv_low @ 0x090		uint32(atomic);
+	queue_drv_high @ 0x094		uint32(atomic);
+	queue_dev_low @ 0x0a0		uint32(atomic);
+	queue_dev_high @ 0x0a4		uint32(atomic);
+	config_gen @ 0x0fc		uint32(atomic);
+	config @ 0x100			array(VIRTIO_MMIO_REG_CONFIG_BYTES) uint8(atomic);
+};
+
+extend virq_trigger enumeration {
+	virtio_mmio_backend;
+	virtio_mmio_frontend;
+};
+
+extend vdevice_type enumeration {
+	VIRTIO_MMIO;
+};

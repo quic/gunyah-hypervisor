@@ -57,7 +57,10 @@ class Variable:
         self.name = name
         self.size = type_definition.size
         self.category = type_definition.category
-        self.ignore = name.startswith('_')
+        if type_definition.category == "bitfield":
+            self.type_name = type_definition.type_name
+        self.ignore = name.startswith('res0') or name.startswith(
+            'res1') or name.endswith('_')
         self.pointer = False
         try:
             from ir import PointerType
@@ -67,10 +70,13 @@ class Variable:
         except AttributeError:
             pass
         if self.ignore:
-            if name.startswith('_res0'):
+            if name.startswith('res0'):
                 self.default = 0
-            elif name.startswith('_res1'):
+            elif name.startswith('res1'):
                 self.default = 0xffffffffffffffff
+            elif name.endswith('_'):
+                raise Exception(
+                    "Invalid name ending with underscore: {:s}".format(name))
             else:
                 raise Exception("Invalid ignored name {:s}".format(name))
 

@@ -1,0 +1,29 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface gpt
+
+// Add an offset to a GPT value.
+// The value can be left unmodified if not applicable.
+selector_event gpt_value_add_offset
+	selector type: gpt_type_t
+	param value: gpt_value_t *
+	param offset: size_t
+	return: void
+
+// Return true if two values of the same type are equal.
+selector_event gpt_values_equal
+	selector type: gpt_type_t
+	param x: gpt_value_t
+	param y: gpt_value_t
+	return: bool = false
+
+// Callback for the GPT type when performing a walk.
+selector_event gpt_walk_callback
+	selector callback: gpt_callback_t
+	param entry: gpt_entry_t
+	param base: size_t
+	param size: size_t
+	param arg: gpt_arg_t
+	return: error_t = ERROR_ARGUMENT_INVALID

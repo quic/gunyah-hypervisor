@@ -2,15 +2,20 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+// FIXME:
 // Integrate these tests into unittest configuration
 
+#include <assert.h>
 #include <stdalign.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
+#include <attributes.h>
 #include <errno.h>
 
 #include <asm/cpu.h>
@@ -34,11 +39,37 @@ typedef size_t rsize_t;
 extern errno_t
 memset_s(void *s, rsize_t smax, int c, size_t n);
 
+noreturn void NOINLINE
+assert_failed(const char *file, int line, const char *func, const char *err)
+{
+	fprintf(stderr, "Assert failed in %s at %s:%d: %s\n", func, file, line,
+		err);
+	abort();
+}
+
+noreturn void NOINLINE
+panic(const char *msg)
+{
+	fprintf(stderr, "panic: %s\n", msg);
+	abort();
+}
+
 static size_t
 memchk(const volatile uint8_t *p, int c, size_t n)
 {
 	for (size_t i = 0; i < n; i++) {
 		if (p[i] != (uint8_t)c) {
+			return i;
+		}
+	}
+	return n;
+}
+
+static size_t
+memcmpchk(const volatile uint8_t *p, const volatile uint8_t *q, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		if (p[i] != q[i]) {
 			return i;
 		}
 	}
@@ -157,8 +188,8 @@ memcpy_test(size_t size, size_t src_misalign, size_t dst_misalign)
 	size_t dst_end	 = dst_start + size;
 	size_t pos;
 
-	// We assume that we can memset the whole buffer safely... hopefully
-	// any bugs in it won't crash the test before we find them!
+	// We tested memset first, so it should be safe to use it to clear
+	// the destination buffer.
 	memset(dst_buffer, INIT_BYTE, BUFFER_SIZE);
 
 	memcpy(&dst_buffer[dst_start], &src_buffer[src_start], size);
@@ -172,11 +203,8 @@ memcpy_test(size_t size, size_t src_misalign, size_t dst_misalign)
 		exit(2);
 	}
 
-	for (pos = 0; pos < size; pos++) {
-		if (dst_buffer[dst_start + pos] ==
-		    src_buffer[src_start + pos]) {
-			continue;
-		}
+	pos = memcmpchk(&dst_buffer[dst_start], &src_buffer[src_start], size);
+	if (pos < size) {
 		fprintf(stderr,
 			"FAILED: memcpy(dst + %#zx, src + %#zx, %#zx) set byte at offset %#zx to %#x (should be %#x)\n",
 			dst_start - BUFFER_PAD, src_start - BUFFER_PAD, size,
@@ -217,6 +245,108 @@ memcpy_tests(void)
 	printf("\nPASS\n");
 }
 
+static void
+memmove_test(size_t size, ptrdiff_t overlap)
+{
+	// We assume here that memmove() is based on memcpy(), so we don't need
+	// to re-test with different alignments; just different amounts of
+	// overlap is enough.
+	size_t src_start = BUFFER_PAD + overlap;
+	size_t src_end	 = src_start + size;
+	size_t dst_start = BUFFER_PAD;
+	size_t dst_end	 = dst_start + size;
+	size_t pos;
+
+	// We tested memset first, so it should be safe to use it to clear
+	// the destination buffer.
+	memset(dst_buffer, INIT_BYTE, BUFFER_SIZE);
+
+	// We also tested memcpy already, so it should be safe to use it to copy
+	// some random bytes from the source buffer into the destination buffer
+	// at the source location.
+	memcpy(&dst_buffer[src_start], src_buffer, size);
+
+	// Now move from the source location to the destination location, both
+	// within the destination buffer.
+	memmove(&dst_buffer[dst_start], &dst_buffer[src_start], size);
+
+	size_t start = (overlap > 0) ? dst_start : src_start;
+	pos	     = memchk(dst_buffer, INIT_BYTE, start);
+	if (pos < start) {
+		fprintf(stderr,
+			"FAILED: memmove(dst, dst + %td, %#zx) set byte at dst + %td to %#x (1)\n",
+			overlap, size, dst_start - pos, dst_buffer[pos]);
+		exit(2);
+	}
+
+	pos = memcmpchk(&dst_buffer[dst_start], src_buffer, size);
+	if (pos < size) {
+		fprintf(stderr,
+			"FAILED: memmove(dst, dst + %td, %#zx) set byte at dst + %#zx to %#x (should be %#x) (2)\n",
+			overlap, size, pos, dst_buffer[dst_start + pos],
+			src_buffer[pos]);
+		exit(2);
+	}
+
+	if ((overlap > 0) && (size > overlap)) {
+		pos = memcmpchk(&dst_buffer[dst_end],
+				&src_buffer[size - overlap], overlap);
+		if (pos < overlap) {
+			fprintf(stderr,
+				"FAILED: memmove(dst, dst + %td, %#zx) set byte at dst + %td to %#x (3a, should be %#x, %#zx, %#zx)\n",
+				overlap, size, size + pos,
+				dst_buffer[dst_end + pos],
+				src_buffer[size - overlap + pos], pos, overlap);
+			exit(2);
+		}
+	} else if ((overlap < 0) && (size > -overlap)) {
+		pos = memcmpchk(&dst_buffer[src_start], src_buffer, -overlap);
+		if (pos < -overlap) {
+			fprintf(stderr,
+				"FAILED: memmove(dst, dst + %td, %#zx) set byte at dst + %td to %#x (3b, should be %#x, %#zx, %#zx)\n",
+				overlap, size, overlap + pos,
+				dst_buffer[src_start + pos], src_buffer[pos],
+				pos, overlap);
+			exit(2);
+		}
+	}
+
+	size_t end = (overlap > 0) ? src_end : dst_end;
+	size_t cnt = BUFFER_SIZE - end;
+	pos	   = memchk(&dst_buffer[end], INIT_BYTE, cnt);
+	if (pos < cnt) {
+		fprintf(stderr,
+			"FAILED: memmove(dst, dst + %td, %#zx) set byte at dst + %#zx to %#x (4)\n",
+			overlap, size, end - dst_start, dst_buffer[end + pos]);
+		exit(2);
+	}
+}
+
+void
+memmove_tests(void)
+{
+	size_t	  size;
+	ptrdiff_t overlap;
+	printf("Testing memmove...");
+
+	for (size = 0; size <= MAX_SIZE; size++) {
+		if ((size % 64) == 0) {
+			printf("\n%#5zx: .", size);
+		} else {
+			printf(".");
+		}
+		static_assert(BUFFER_PAD <= (2 * LARGE_ALIGN),
+			      "Buffer padding too small");
+		for (overlap = (-2 * LARGE_ALIGN); overlap <= (2 * LARGE_ALIGN);
+		     overlap++) {
+			if (overlap == 0) {
+				continue;
+			}
+			memmove_test(size, overlap);
+		}
+	}
+}
+
 int
 main(void)
 {
@@ -224,7 +354,8 @@ main(void)
 	__asm__("mrs	%0, dczid_el0" : "=r"(dczid));
 
 	if (dczid != CPU_DCZVA_BITS - 2) {
-		fprintf(stderr, "Unexpected DC ZVA ID: %#x (expected %#x)\n",
+		fprintf(stderr,
+			"ERROR: Unexpected DC ZVA ID: %#x (expected %#x)\n",
 			(unsigned int)dczid, CPU_DCZVA_BITS - 2);
 		return 1;
 	}
@@ -236,6 +367,8 @@ main(void)
 	}
 
 	memcpy_tests();
+
+	memmove_tests();
 
 	return 0;
 }

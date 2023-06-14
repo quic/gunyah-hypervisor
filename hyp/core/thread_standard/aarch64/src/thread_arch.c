@@ -11,6 +11,7 @@
 #include <panic.h>
 #include <partition.h>
 #include <pgtable.h>
+#include <platform_timer.h>
 #include <preempt.h>
 #include <prng.h>
 #include <scheduler.h>
@@ -22,28 +23,37 @@
 #include "event_handlers.h"
 #include "thread_arch.h"
 
+typedef register_t (*fptr_t)(register_t arg);
+typedef void (*fptr_noreturn_t)(register_t arg);
+
 const size_t thread_stack_min_align    = 16;
 const size_t thread_stack_alloc_align  = PGTABLE_HYP_PAGE_SIZE;
 const size_t thread_stack_size_default = PGTABLE_HYP_PAGE_SIZE;
 
-static uintptr_t
-thread_get_tls_base(thread_t *thread)
+static size_t
+thread_get_tls_offset(void)
 {
 	size_t offset = 0;
 	__asm__("add     %0, %0, :tprel_hi12:current_thread	;"
 		"add     %0, %0, :tprel_lo12_nc:current_thread	;"
 		: "+r"(offset));
-	return (uintptr_t)thread - offset;
+	return offset;
+}
+
+static uintptr_t
+thread_get_tls_base(thread_t *thread)
+{
+	return (uintptr_t)thread - thread_get_tls_offset();
 }
 
 static noreturn void
-thread_arch_main(thread_t *prev) LOCK_IMPL
+thread_arch_main(thread_t *prev, ticks_t schedtime) LOCK_IMPL
 {
 	thread_t *thread = thread_get_self();
 
 	trigger_thread_start_event();
 
-	trigger_thread_context_switch_post_event(prev);
+	trigger_thread_context_switch_post_event(prev, schedtime, (ticks_t)0UL);
 	object_put_thread(prev);
 
 	thread_func_t thread_func =
@@ -59,21 +69,22 @@ thread_arch_main(thread_t *prev) LOCK_IMPL
 }
 
 thread_t *
-thread_arch_switch_thread(thread_t *next_thread)
+thread_arch_switch_thread(thread_t *next_thread, ticks_t *schedtime)
 {
-	// Note: the old thread must be in X0 so that a switch to a new thread
-	// with its PC set to thread_arch_main() will get the old thread as
-	// its argument.
-	register thread_t *old __asm__("x0") = thread_get_self();
+	// The previous thread and the scheduling time must be kept in X0 and X1
+	// to ensure that thread_arch_main() receives them as arguments on the
+	// first context switch.
+	register thread_t *old __asm__("x0")   = thread_get_self();
+	register ticks_t   ticks __asm__("x1") = *schedtime;
 
 	// The remaining hard-coded registers here are only needed to ensure a
 	// correct clobber list below. The union of the clobber list, hard-coded
 	// registers and explicitly saved registers (x29, sp and pc) must be the
 	// entire integer register state.
-	register register_t old_pc __asm__("x1");
-	register register_t old_sp __asm__("x2");
-	register register_t old_fp __asm__("x3");
-	register uintptr_t  old_context __asm__("x4") =
+	register register_t old_pc __asm__("x2");
+	register register_t old_sp __asm__("x3");
+	register register_t old_fp __asm__("x4");
+	register uintptr_t  old_context __asm__("x5") =
 		(uintptr_t)&old->context.pc;
 	static_assert(offsetof(thread_t, context.sp) ==
 			      offsetof(thread_t, context.pc) +
@@ -104,17 +115,21 @@ thread_arch_switch_thread(thread_t *next_thread)
 		"str	%[old_fp], [%[old_context], 16]		;"
 		"br	%[new_pc]				;"
 		".Lthread_continue.%=:				;"
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 		"bti	j					;"
 #endif
-		: [old] "+r"(old), [old_pc] "=&r"(old_pc), [old_sp] "=&r"(old_sp),
-		  [old_fp] "=&r"(old_fp), [old_context] "+r"(old_context),
-		  [new_pc] "+r"(new_pc), [new_sp] "+r"(new_sp),
-		  [new_fp] "+r"(new_fp), [new_tls_base] "+r"(new_tls_base)
+		: [old] "+r"(old), [old_pc] "=&r"(old_pc),
+		  [old_sp] "=&r"(old_sp), [old_fp] "=&r"(old_fp),
+		  [old_context] "+r"(old_context), [new_pc] "+r"(new_pc),
+		  [new_sp] "+r"(new_sp), [new_fp] "+r"(new_fp),
+		  [new_tls_base] "+r"(new_tls_base), [ticks] "+r"(ticks)
 		: /* This must not have any inputs */
-		: "x5", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x17",
-		  "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26",
-		  "x27", "x28", "x30", "cc", "memory");
+		: "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x17", "x18",
+		  "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27",
+		  "x28", "x30", "cc", "memory");
+
+	// Update schedtime from the tick count passed by the previous thread
+	*schedtime = ticks;
 
 	return old;
 }
@@ -128,10 +143,14 @@ thread_arch_set_thread(thread_t *thread)
 	assert(thread == thread_get_self());
 	assert(thread == idle_thread());
 
-	// Note: the old thread must be in X0 so that a switch to a new thread
-	// with its PC set to thread_arch_main() will get the old thread as
-	// its argument.
-	register thread_t *old __asm__("x0") = thread;
+	// The previous thread and the scheduling time must be kept in X0 and X1
+	// to ensure that thread_arch_main() receives them as arguments on the
+	// first context switch during CPU cold boot. The scheduling time is set
+	// to 0 because we consider the idle thread to have been scheduled at
+	// the epoch. These are unused on warm boot, which is always resuming a
+	// thread_freeze() call.
+	register thread_t *old __asm__("x0")   = thread;
+	register ticks_t   ticks __asm__("x1") = (ticks_t)0U;
 
 	// The new PC must be in x16 or x17 so ARMv8.5-BTI will treat the BR
 	// below as a call trampoline, and thus allow it to jump to the BTI C
@@ -145,15 +164,15 @@ thread_arch_set_thread(thread_t *thread)
 		"mov   sp, %[new_sp]			;"
 		"mov   x29, %[new_fp]			;"
 		"br	%[new_pc]			;"
-		: [old] "+r"(old)
-		: [new_pc] "r"(new_pc), [new_sp] "r"(new_sp), [new_fp] "r"(new_fp)
+		:
+		: [old] "r"(old), [ticks] "r"(ticks), [new_pc] "r"(new_pc),
+		  [new_sp] "r"(new_sp), [new_fp] "r"(new_fp)
 		: "memory");
 	__builtin_unreachable();
 }
 
 register_t
-thread_freeze(register_t (*fn)(register_t), register_t param,
-	      register_t resumed_result)
+thread_freeze(fptr_t fn, register_t param, register_t resumed_result)
 {
 	TRACE(DEBUG, INFO, "thread_freeze start fn: {:#x} param: {:#x}",
 	      (uintptr_t)fn, (uintptr_t)param);
@@ -163,6 +182,8 @@ thread_freeze(register_t (*fn)(register_t), register_t param,
 	thread_t *thread = thread_get_self();
 	assert(thread != NULL);
 
+	// The parameter must be kept in X0 so the freeze function gets it as an
+	// argument.
 	register register_t x0 __asm__("x0") = param;
 
 	// The remaining hard-coded registers here are only needed to
@@ -173,8 +194,8 @@ thread_freeze(register_t (*fn)(register_t), register_t param,
 	register register_t saved_sp __asm__("x2");
 	register uintptr_t  context __asm__("x3") =
 		(uintptr_t)&thread->context.pc;
-	register register_t (*fn_reg)(register_t) __asm__("x4") = fn;
-	register bool is_resuming __asm__("x5");
+	register fptr_t fn_reg __asm__("x4") = fn;
+	register bool	is_resuming __asm__("x5");
 
 	static_assert(offsetof(thread_t, context.sp) ==
 			      offsetof(thread_t, context.pc) +
@@ -194,7 +215,7 @@ thread_freeze(register_t (*fn)(register_t), register_t param,
 		"mov	%[is_resuming], 0			;"
 		"b	.Lthread_freeze.done.%=			;"
 		".Lthread_freeze.resumed.%=:			;"
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 		"bti	j					;"
 #endif
 		"mov	%[is_resuming], 1			;"
@@ -220,9 +241,9 @@ thread_freeze(register_t (*fn)(register_t), register_t param,
 }
 
 noreturn void
-thread_reset_stack(void (*fn)(register_t), register_t param)
+thread_reset_stack(fptr_noreturn_t fn, register_t param)
 {
-	thread_t		 *thread	     = thread_get_self();
+	thread_t	   *thread	     = thread_get_self();
 	register register_t x0 __asm__("x0") = param;
 	uintptr_t new_sp = (uintptr_t)thread->stack_base + thread->stack_size;
 
@@ -243,15 +264,6 @@ thread_arch_init_context(thread_t *thread)
 	thread->context.pc = (uintptr_t)thread_arch_main;
 	thread->context.sp = (uintptr_t)thread->stack_base + thread->stack_size;
 	thread->context.fp = (uintptr_t)0;
-}
-
-void
-thread_standard_handle_boot_hypervisor_start(void)
-{
-	thread_t *thread = idle_thread();
-	assert(thread != NULL);
-
-	thread->context.pc = (uintptr_t)thread_arch_main;
 }
 
 error_t

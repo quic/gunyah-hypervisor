@@ -14,7 +14,7 @@ subscribe vcpu_activate_thread
 
 subscribe thread_save_state
 
-subscribe thread_context_switch_post
+subscribe thread_context_switch_post(prev)
 
 subscribe thread_load_state()
 

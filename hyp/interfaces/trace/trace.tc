@@ -7,9 +7,9 @@
 // The number of enumerators in trace_class enumeration should be less than 32
 // for _core_ classes to support 32-bit architectures.
 
-define trace_class enumeration() {
-	ERROR;	// Critical errors
-	DEBUG;	// Debugging information
+define trace_class public enumeration(explicit) {
+	ERROR = 0;	// Critical errors
+	DEBUG = 1;	// Debugging information
 };
 
 define trace_id enumeration(explicit) {

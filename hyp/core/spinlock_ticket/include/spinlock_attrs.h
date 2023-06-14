@@ -10,8 +10,7 @@
 #define ACQUIRE_SPINLOCK(lock)	  ACQUIRE_LOCK(lock) ACQUIRE_PREEMPT_DISABLED
 #define ACQUIRE_SPINLOCK_NP(lock) ACQUIRE_LOCK(lock) REQUIRE_PREEMPT_DISABLED
 #define TRY_ACQUIRE_SPINLOCK(success, lock)                                    \
-	TRY_ACQUIRE_LOCK(success, lock)                                        \
-	TRY_ACQUIRE_PREEMPT_DISABLED(success)
+	TRY_ACQUIRE_LOCK(success, lock) TRY_ACQUIRE_PREEMPT_DISABLED(success)
 #define TRY_ACQUIRE_SPINLOCK_NP(success, lock)                                 \
 	TRY_ACQUIRE_LOCK(success, lock) REQUIRE_PREEMPT_DISABLED
 #define RELEASE_SPINLOCK(lock)	  RELEASE_LOCK(lock) RELEASE_PREEMPT_DISABLED

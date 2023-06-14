@@ -12,17 +12,19 @@
 #include <partition.h>
 #include <pgtable.h>
 #include <preempt.h>
+#include <spinlock.h>
 
 #include "event_handlers.h"
 #include "uart.h"
 
 static soc_qemu_uart_t *uart;
+static spinlock_t	uart_lock;
 
 static void
 uart_putc(const char c)
 {
-	while ((atomic_load_relaxed(&uart->tfr) & ((uint32_t)1U << 5)) != 0U)
-		;
+	while ((atomic_load_relaxed(&uart->tfr) & ((uint32_t)1U << 5)) != 0U) {
+	}
 
 	atomic_store_relaxed(&uart->dr, c);
 }
@@ -59,11 +61,11 @@ uart_write(const char *out, size_t size)
 void
 soc_qemu_console_puts(const char *msg)
 {
-	preempt_disable();
+	spinlock_acquire(&uart_lock);
 	if (uart != NULL) {
 		uart_write(msg, strlen(msg));
 	}
-	preempt_enable();
+	spinlock_release(&uart_lock);
 }
 
 void
@@ -88,6 +90,8 @@ soc_qemu_handle_log_message(trace_id_t id, const char *str)
 void
 soc_qemu_uart_init(void)
 {
+	spinlock_init(&uart_lock);
+
 	virt_range_result_t range = hyp_aspace_allocate(PLATFORM_UART_SIZE);
 	if (range.e != OK) {
 		panic("uart: Address allocation failed.");

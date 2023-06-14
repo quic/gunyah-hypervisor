@@ -20,6 +20,7 @@
 #include <partition_alloc.h>
 #include <partition_init.h>
 #include <platform_mem.h>
+#include <qcbor.h>
 #include <scheduler.h>
 #include <spinlock.h>
 #include <thread.h>
@@ -44,13 +45,13 @@ rootvm_init(void)
 {
 	static_assert(SCHEDULER_NUM_PRIORITIES >= (priority_t)3U,
 		      "unexpected scheduler configuration");
-	static_assert(SCHEDULER_MAX_PRIORITY - 2U > SCHEDULER_DEFAULT_PRIORITY,
+	static_assert(ROOTVM_PRIORITY <= VCPU_MAX_PRIORITY,
 		      "unexpected scheduler configuration");
 
 	thread_create_t params = {
 		.scheduler_affinity	  = cpulocal_get_index(),
 		.scheduler_affinity_valid = true,
-		.scheduler_priority	  = SCHEDULER_MAX_PRIORITY - 2U,
+		.scheduler_priority	  = ROOTVM_PRIORITY,
 		.scheduler_priority_valid = true,
 	};
 
@@ -70,12 +71,12 @@ rootvm_init(void)
 	}
 	cspace_t *root_cspace = cspace_ret.r;
 
-	spinlock_acquire(&root_cspace->header.lock);
+	spinlock_acquire_nopreempt(&root_cspace->header.lock);
 	if (cspace_configure(root_cspace, MAX_CAPS) != OK) {
-		spinlock_release(&root_cspace->header.lock);
+		spinlock_release_nopreempt(&root_cspace->header.lock);
 		goto cspace_fail;
 	}
-	spinlock_release(&root_cspace->header.lock);
+	spinlock_release_nopreempt(&root_cspace->header.lock);
 
 	if (object_activate_cspace(root_cspace) != OK) {
 		goto cspace_fail;
@@ -93,9 +94,7 @@ rootvm_init(void)
 
 	vcpu_option_flags_t vcpu_options = vcpu_option_flags_default();
 
-#if defined(ROOTVM_IS_HLOS) && ROOTVM_IS_HLOS
-	vcpu_option_flags_set_hlos_vm(&vcpu_options, true);
-#endif
+	vcpu_option_flags_set_critical(&vcpu_options, true);
 
 	if (vcpu_configure(root_thread, vcpu_options) != OK) {
 		panic("Error configuring vcpu");
@@ -117,18 +116,68 @@ rootvm_init(void)
 	}
 
 	void_ptr_result_t alloc_ret;
-	boot_env_data_t	*env_data;
-	size_t		  env_data_size = sizeof(*env_data);
+	hyp_env_data_t	  hyp_env; // Local on stack used as context
+	qcbor_enc_ctxt_t *qcbor_enc_ctxt;
+
+	rm_env_data_hdr_t *rm_env_data;
+	rt_env_data_t	  *crt_env;
+	uint32_t	   env_data_size = 0x4000;
+	uint32_t	   remaining_size;
 
 	alloc_ret = partition_alloc(root_partition, env_data_size,
-				    alignof(*env_data));
+				    PGTABLE_VM_PAGE_SIZE);
 	if (alloc_ret.e != OK) {
 		panic("Allocate env_data failed");
 	}
-	env_data = (boot_env_data_t *)alloc_ret.r;
-	memset(env_data, 0, env_data_size);
+	crt_env = (rt_env_data_t *)alloc_ret.r;
+	(void)memset_s(crt_env, env_data_size, 0, env_data_size);
 
-	env_data->cspace_capid = capid_ret.r;
+	alloc_ret = partition_alloc(root_partition, sizeof(*qcbor_enc_ctxt),
+				    alignof(*qcbor_enc_ctxt));
+	if (alloc_ret.e != OK) {
+		panic("Allocate cbor_ctxt failed");
+	}
+
+	qcbor_enc_ctxt = (qcbor_enc_ctxt_t *)alloc_ret.r;
+	memset_s(qcbor_enc_ctxt, sizeof(*qcbor_enc_ctxt), 0,
+		 sizeof(*qcbor_enc_ctxt));
+
+	memset_s(&hyp_env, sizeof(hyp_env), 0, sizeof(hyp_env));
+
+	hyp_env.env_data_size = env_data_size;
+	remaining_size	      = env_data_size;
+
+	crt_env->signature = ROOTVM_ENV_DATA_SIGNATURE;
+	crt_env->version   = 1;
+
+	size_t rm_config_offset =
+		util_balign_up(sizeof(*crt_env), alignof(*rm_env_data));
+	assert(remaining_size >= (rm_config_offset + sizeof(*rm_env_data)));
+
+	remaining_size -= rm_config_offset;
+	rm_env_data =
+		(rm_env_data_hdr_t *)((uintptr_t)crt_env + rm_config_offset);
+
+	crt_env->rm_config_offset = rm_config_offset;
+	crt_env->rm_config_size	  = remaining_size;
+
+	rm_env_data->signature		 = RM_ENV_DATA_SIGNATURE;
+	rm_env_data->version		 = 1;
+	rm_env_data->data_payload_offset = sizeof(*rm_env_data);
+	rm_env_data->data_payload_size	 = 0U;
+
+	remaining_size -= sizeof(*rm_env_data);
+
+	useful_buff_t qcbor_data_buff;
+	qcbor_data_buff.ptr =
+		(((uint8_t *)rm_env_data) + rm_env_data->data_payload_offset);
+	qcbor_data_buff.len = remaining_size;
+
+	QCBOREncode_Init(qcbor_enc_ctxt, qcbor_data_buff);
+
+	QCBOREncode_OpenMap(qcbor_enc_ctxt);
+
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "cspace_capid", capid_ret.r);
 
 	// Take extra reference so that the deletion of the master cap does not
 	// accidentally destroy the partition.
@@ -141,7 +190,8 @@ rootvm_init(void)
 	if (capid_ret.e != OK) {
 		panic("Error creating root partition cap");
 	}
-	env_data->partition_capid = capid_ret.r;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "partition_capid",
+				   capid_ret.r);
 
 	obj_ptr.thread = root_thread;
 	capid_ret      = cspace_create_master_cap(root_cspace, obj_ptr,
@@ -149,54 +199,85 @@ rootvm_init(void)
 	if (capid_ret.e != OK) {
 		panic("Error creating root partition cap");
 	}
-	env_data->vcpu_capid = capid_ret.r;
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "vcpu_capid", capid_ret.r);
+	crt_env->vcpu_capid = capid_ret.r;
 
 	// Do a memdb walk to get all the available memory ranges of the root
-	// partition and save in the boot_env_data
-	if (memdb_walk((uintptr_t)root_partition, MEMDB_TYPE_PARTITION,
-		       boot_add_free_range, (void *)env_data) != OK) {
+	// partition and save in the rm_env_data
+	if (boot_add_free_range((uintptr_t)root_partition, MEMDB_TYPE_PARTITION,
+				qcbor_enc_ctxt) != OK) {
 		panic("Error doing the memory database walk");
 	}
 
-	// FIXME: add event for converting env_data structure to a DTB
 	trigger_rootvm_init_event(root_partition, root_thread, root_cspace,
-				  env_data);
+				  &hyp_env, qcbor_enc_ctxt);
 
-#if !defined(ROOTVM_IS_HLOS) || !ROOTVM_IS_HLOS
-	// Copy the boot_env_data to the root VM memory
-	paddr_t rootvm_env_phys = env_data->env_ipa - env_data->me_ipa_base +
-				  PLATFORM_ROOTVM_LMA_BASE;
-	void *va = partition_phys_map(rootvm_env_phys,
-				      util_balign_up(env_data_size,
-						     PGTABLE_VM_PAGE_SIZE));
+	QCBOREncode_CloseMap(qcbor_enc_ctxt);
+	{
+		qcbor_err_t	    cb_err;
+		const_useful_buff_t payload_out_buff;
+
+		payload_out_buff.ptr = NULL;
+		payload_out_buff.len = 0;
+
+		cb_err = QCBOREncode_Finish(qcbor_enc_ctxt, &payload_out_buff);
+
+		if (cb_err != QCBOR_SUCCESS) {
+			panic("Env data encoding error, increase the buffer size");
+		}
+
+		rm_env_data->data_payload_size = (uint32_t)payload_out_buff.len;
+	}
+
+	crt_env->runtime_ipa   = hyp_env.runtime_ipa;
+	crt_env->app_ipa       = hyp_env.app_ipa;
+	crt_env->app_heap_ipa  = hyp_env.app_heap_ipa;
+	crt_env->app_heap_size = hyp_env.app_heap_size;
+	crt_env->timer_freq    = hyp_env.timer_freq;
+	crt_env->gicd_base     = hyp_env.gicd_base;
+	crt_env->gicr_base     = hyp_env.gicr_base;
+
+	// Copy the rm_env_data to the root VM memory
+	paddr_t hyp_env_phys = hyp_env.env_ipa - hyp_env.me_ipa_base +
+			       PLATFORM_ROOTVM_LMA_BASE;
+	assert(util_is_baligned(hyp_env_phys, PGTABLE_VM_PAGE_SIZE));
+
+	void *va = partition_phys_map(hyp_env_phys, env_data_size);
 	partition_phys_access_enable(va);
 
-	memcpy(va, (void *)env_data, env_data_size);
-	CACHE_CLEAN_RANGE((boot_env_data_t *)va, env_data_size);
+	(void)memcpy(va, (void *)crt_env,
+		     (rm_env_data->data_payload_size + sizeof(*rm_env_data) +
+		      sizeof(*crt_env)));
+	CACHE_CLEAN_RANGE((rm_env_data_hdr_t *)va,
+			  (rm_env_data->data_payload_size +
+			   sizeof(*rm_env_data) + sizeof(*crt_env)));
 
 	partition_phys_access_disable(va);
-	partition_phys_unmap(va, rootvm_env_phys,
-			     util_balign_up(env_data_size,
-					    PGTABLE_VM_PAGE_SIZE));
-#endif
+	partition_phys_unmap(va, hyp_env_phys, env_data_size);
 
 	// Setup the root VM thread
 	if (object_activate_thread(root_thread) != OK) {
 		panic("Error activating root thread");
 	}
 
-	scheduler_lock(root_thread);
-#if defined(ROOTVM_IS_HLOS) && ROOTVM_IS_HLOS
-	// FIXME: add a platform interface for configuring root thread
-	vcpu_poweron(root_thread, env_data->entry_hlos, 0U);
-#else
-	// FIXME: eventually pass as dtb, for now the boot_env_data ipa is passed
+	trigger_rootvm_init_late_event(root_partition, root_thread, root_cspace,
+				       &hyp_env);
+
+	scheduler_lock_nopreempt(root_thread);
+	// FIXME: eventually pass as dtb, for now the rm_env_data ipa is passed
 	// directly.
-	vcpu_poweron(root_thread, env_data->entry_ipa, env_data->env_ipa);
-#endif
-	scheduler_unlock(root_thread);
-	partition_free(root_partition, env_data, env_data_size);
-	env_data = NULL;
+	bool_result_t power_ret =
+		vcpu_poweron(root_thread, vmaddr_result_ok(hyp_env.entry_ipa),
+			     register_result_ok(hyp_env.env_ipa));
+	if (power_ret.e != OK) {
+		panic("Error vcpu poweron");
+	}
+
+	// Allow other modules to clean up after root VM creation.
+	trigger_rootvm_started_event(root_thread);
+	scheduler_unlock_nopreempt(root_thread);
+	(void)partition_free(root_partition, crt_env, env_data_size);
+	rm_env_data = NULL;
 
 	return;
 

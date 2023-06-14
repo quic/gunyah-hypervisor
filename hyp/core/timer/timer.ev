@@ -4,16 +4,20 @@
 
 module timer
 
-subscribe boot_cpu_cold_init
+subscribe boot_cold_init
+
+subscribe ipi_received[IPI_REASON_TIMER_QUEUE_SYNC]()
+	require_preempt_disabled
 
 #if !defined(UNITTESTS) || !UNITTESTS
-subscribe rootvm_init(env_data)
+subscribe rootvm_init(hyp_env)
 #endif
 
 subscribe platform_timer_expiry
 	require_preempt_disabled
 
 subscribe power_cpu_suspend()
+	unwinder timer_handle_power_cpu_online()
 	// Run early since it may reject suspends
 	priority 100
 	require_preempt_disabled
@@ -23,3 +27,6 @@ subscribe power_cpu_online()
 
 subscribe power_cpu_resume
 	handler timer_handle_power_cpu_online()
+
+subscribe power_cpu_offline()
+	require_preempt_disabled

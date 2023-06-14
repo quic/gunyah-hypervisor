@@ -9,6 +9,7 @@
 #include <panic.h>
 #include <platform_cpu.h>
 #include <platform_security.h>
+#include <smccc_platform.h>
 
 #include "event_handlers.h"
 
@@ -24,11 +25,28 @@ platform_cpu_stack_size(void)
 	return 0;
 }
 
+bool
+smccc_handle_smc_platform_call(register_t args[7], bool is_hvc)
+	EXCLUDE_PREEMPT_DISABLED
+{
+	(void)is_hvc;
+	args[0] = (register_t)SMCCC_UNKNOWN_FUNCTION64;
+	return true;
+}
+
+// Overrides the weak imlementation in core_id.c
+core_id_t
+platform_cpu_get_coreid(MIDR_EL1_t midr)
+{
+	(void)midr;
+	return CORE_ID_QEMU;
+}
+
 #if !defined(UNIT_TESTS)
 static _Atomic BITMAP_DECLARE(PLATFORM_MAX_CORES, hlos_vm_cpus);
 
 bool
-soc_qemu_handle_vcpu_activate_thread(thread_t	      *thread,
+soc_qemu_handle_vcpu_activate_thread(thread_t		*thread,
 				     vcpu_option_flags_t options)
 {
 	bool ret = true;

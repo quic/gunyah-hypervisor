@@ -43,3 +43,13 @@ hyp_aspace_va_to_pa_el2_read(void *addr, paddr_t *pa, MAIR_ATTR_t *memattr,
 error_t
 hyp_aspace_va_to_pa_el2_write(void *addr, paddr_t *pa, MAIR_ATTR_t *memattr,
 			      vmsa_shareability_t *shareability);
+
+// Return the offset used for the physaccess mappings. For the CPUs that support
+// PAN this is a compile-time constant offset, and for the older CPUs it is
+// randomised on every boot.
+uintptr_t
+hyp_aspace_get_physaccess_offset(void);
+
+// Returns the base of the memory used for virtual address allocation
+uintptr_t
+hyp_aspace_get_alloc_base(void);

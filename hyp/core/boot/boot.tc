@@ -9,7 +9,5 @@ define boot_env_phys_range public structure {
 	size size;
 };
 
-define boot_env_data public structure {
-	free_ranges array(BOOT_ENV_RANGES_NUM) structure boot_env_phys_range;
-	free_ranges_count type count_t;
+define hyp_env_data structure {
 };

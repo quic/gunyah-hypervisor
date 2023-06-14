@@ -6,7 +6,7 @@ define partition_create_partition hypercall {
 	call_num	0x1;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -18,7 +18,7 @@ define partition_create_cspace hypercall {
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
 	// cspace size
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -27,7 +27,7 @@ define partition_create_addrspace hypercall {
 	call_num	0x3;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -37,7 +37,7 @@ define partition_create_memextent hypercall {
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
 	// base, size
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -46,7 +46,7 @@ define partition_create_thread hypercall {
 	call_num	0x5;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -55,7 +55,7 @@ define partition_create_doorbell hypercall {
 	call_num	0x6;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -65,7 +65,7 @@ define partition_create_msgqueue hypercall {
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
 	// create info
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -75,7 +75,7 @@ define partition_create_watchdog hypercall {
 	call_num	0x9;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -85,7 +85,7 @@ define partition_create_vic hypercall {
 	call_num	0xa;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -94,7 +94,7 @@ define partition_create_vpm_group hypercall {
 	call_num	0xb;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -104,7 +104,7 @@ define partition_create_virtio_mmio hypercall {
 	call_num	0x48;
 	src_partition	input type cap_id_t;
 	cspace		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };

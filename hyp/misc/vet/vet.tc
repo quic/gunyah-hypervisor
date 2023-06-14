@@ -1,0 +1,10 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object module vet {
+	// Indicate if the trace unit/buffer is enabled. If it's not enabled,
+	// we can skip the thread/power context save/restore.
+	trace_unit_enabled		bool;
+	trace_buffer_enabled		bool;
+};

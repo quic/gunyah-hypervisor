@@ -13,18 +13,18 @@ interface virq
 // delivery is possible, e.g. for IPC objects.
 //
 // However, the result of the handler will not necessarily affect the VIRQ
-// source's state. Tn particular, after the handler returns false, clearing
-// the interrupt's pending state may fail due to a concurrent virq_assert()
-// call, or any other concurrent VIRQ or VIC operation, or spuriously.
+// source's state. Changing the state may fail due to any concurrent VIRQ or
+// VIC operation, or spuriously. In this case, the event will be triggered
+// again, unless the concurrent operation made it redundant.
 //
 // The VIC implementation must guarantee that as soon as practical after an
-// EOI by the VM for any VIRQ that has been asserted by its VIRQ source with
-// edge_only=false, this event will be triggered repeatedly for that source
-// until at least one of the following has occurred:
+// EOI by the VM for any VIRQ that has been delivered in level-triggering mode
+// after being asserted by its VIRQ source, this event will be triggered
+// repeatedly for that source until at least one of the following has
+// occurred:
 //
 // 1.	the handler for this event returns false, and the level-pending flag is
-//	successfully cleared (rather than remaining set for any of the reasons
-//	listed above);
+//	successfully cleared;
 //
 // 2.	the handler for this event returns true (which is the default when
 //	there is no registered handler); or
@@ -35,17 +35,19 @@ interface virq
 //	acknowledges the IRQ but before EOI), this event may not be triggered.
 //
 // The event may not be triggered in a timely manner, or at all, after an EOI
-// for an edge-triggered delivery.
+// of a VIRQ that was delivered in edge-triggering mode.
 //
 // In addition to the guaranteed triggers above, this event may be triggered
 // at any other time while the interrupt is marked pending for level-triggered
 // delivery. Any memory reads executed by the handler are guaranteed to be
-// ordered after the read that determines that the interrupt is marked pending.
+// ordered after the read that determines that the interrupt is marked pending
+// for level-triggered delivery.
 //
-// The reasserted argument is true if the virq_assert() function has been
-// called more recently than the last acknowledgement of this VIRQ by the VM.
-// Any memory reads executed by the handler are guaranteed to be ordered after
-// the read that determines the value of the reasserted argument.
+// The reasserted argument is true if the source has been asserted more
+// recently than the last acknowledgement of its VIRQ by the VM. This may
+// include a previous true result from this handler. Any memory reads executed
+// by the handler are guaranteed to be ordered after the read that determines
+// the value of the reasserted argument.
 //
 // If the reasserted argument is false, then a false return from the handler is
 // guaranteed to take effect only if it is ordered before any virq_assert(),

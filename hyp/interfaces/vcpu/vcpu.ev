@@ -8,57 +8,68 @@ interface vcpu
 //
 // This event is triggered with the scheduler lock for the specified VCPU held
 // by the caller. The VCPU is blocked by the SCHEDULER_BLOCK_VCPU_OFF flag.
-event vcpu_poweron
+//
+// The valid returns are OK or ERROR_ARGUMENT_INVALID or errors forwarded
+// from the PSCI SMC cpu_on call.
+setup_event vcpu_poweron
 	param vcpu: thread_t *
+	return: error_t = OK
+	success: OK
 
-// Triggered when a VCPU's state is torn down by a call to vcpu_poweroff().
+// Triggered when a VCPU halts itself by calling vcpu_poweroff().
 //
 // This event is triggered with the scheduler lock for the current VCPU held
 // by the caller. The VCPU will be blocked by the SCHEDULER_BLOCK_VCPU_OFF
 // flag after the event completes.
 //
-// The argument force is to override 'soft errors' such as PSCI preventing
-// poweroff of the last vCPU in a group.
+// The last_vcpu argument indicates whether this VCPU is expected to be the
+// only powered-on VCPU in the VM. If the force argument is not set, handlers
+// may assume or assert that the last_vcpu flag is correct, and return
+// ERROR_DENIED otherwise.
 //
-// Additionally, the only valid error returns for vcpu_poweroff handlers are
-// OK or ERROR_DENIED.
+// If the force argument is not set, handlers must return OK. No result other
+// than OK or ERROR_DENIED is permitted.
 setup_event vcpu_poweroff
 	param current: thread_t *
+	param last_vcpu: bool
 	param force: bool
 	return: error_t = OK
 	success: OK
 
-// Triggered when a VCPU has completed power off sequence.
+// Triggered when a VCPU has stopped execution due to a power-off or halt.
 //
-// This event is triggered without the scheduler lock for the current VCPU
-// held by the caller.
-event vcpu_poweredoff
+// This event is triggered in the context of the VCPU that is stopping, with
+// preemption disabled after marking it blocked. Handlers must not enable
+// preemption, because the thread will not resume if preempted.
+//
+// If the VCPU starts again after this event, there will be a vcpu_started
+// event with the warm_reset parameter set to false.
+event vcpu_stopped
 
 // Triggered when the current VCPU is requesting entry to a virtual low-power
 // state. Entry to the low-power state is denied if any registered handler
 // returns an error. The error code may be passed on to the VCPU.
 //
-// This event is triggered with the scheduler lock for the current VCPU held
-// by the caller.
+// This event is triggered with preemption disabled.
 //
 // Handlers that only want to check for pending wakeup events and return
 // ERROR_BUSY should register for vcpu_pending_wakeup instead.
 //
 // The valid errors for vcpu_suspend are OK, ERROR_DENIED, or ERROR_BUSY.
 setup_event vcpu_suspend
+	param current: thread_t *
 	return: error_t = OK
 	success: OK
 
 // Triggered when a VCPU has been woken from a virtual low-power state.
 //
-// This event is triggered with the scheduler lock for the current VCPU
-// held by the caller. Note that this is is triggered by the resuming VCPU,
-// not directly by the call to vcpu_resume(). Also, note that the scheduler
-// lock will have been dropped and re-acquired after the vcpu_suspend event.
+// This event is triggered with preemption disabled. Note that this is
+// triggered by the resuming VCPU, not directly by the call to vcpu_resume().
 //
 // In many cases, handlers for this event will be the same as unwinders for
 // vcpu_suspend.
 event vcpu_resume
+	param current: thread_t *
 
 // Triggered when a VCPU is simulating a warm reset.
 //
@@ -126,7 +137,29 @@ setup_event vcpu_block_start
 // Triggered when vcpu_block_finish() is called.
 event vcpu_block_finish
 
-// Triggered when vcpu_thread_start() is called
+// Triggered when a VCPU starts execution after a power-off or halt state.
 //
-// This event is triggered when the VCPU returns from powerdown
+// The warm_reset argument is true if the VCPU is completing a warm reset. If
+// it is false, then the VCPU is either starting for the first time, or is
+// starting after a previous vcpu_stopped event. If it is true, the VCPU had
+// been running previously (or was in power-off suspend) and has not executed
+// a vcpu_poweroff event.
 event vcpu_started
+	param warm_reset: bool
+
+// Triggered when vcpu_bind_virq() / vcpu_unbind_virq() are called.
+//
+// Handlers must be registered by any module that registers a VCPU IRQ type.
+// They must call vic_bind_*() / vic_unbind_sync(), respectively, with the
+// appropriate VIRQ source object and triggering type.
+selector_event vcpu_bind_virq
+	selector type: vcpu_virq_type_t
+	param vcpu: thread_t *
+	param vic: vic_t *
+	param virq: virq_t
+	return: error_t = ERROR_ARGUMENT_INVALID
+
+selector_event vcpu_unbind_virq
+	selector type: vcpu_virq_type_t
+	param vcpu: thread_t *
+	return: error_t = ERROR_ARGUMENT_INVALID

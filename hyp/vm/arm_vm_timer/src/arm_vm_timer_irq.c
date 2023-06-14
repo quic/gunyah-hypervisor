@@ -20,16 +20,11 @@
 static void
 arm_vm_timer_inject_timer_virq(thread_t *thread, arm_vm_timer_type_t tt)
 {
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		(void)virq_assert(&thread->virtual_timer_virq_src, false);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		(void)virq_assert(&thread->physical_timer_virq_src, false);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 }
@@ -71,6 +66,7 @@ arm_vm_timer_handle_timer_action(timer_action_t action_type, timer_t *timer)
 // Handle the VM arch timer expiry
 static bool
 arm_vm_timer_type_irq_received(thread_t *thread, arm_vm_timer_type_t tt)
+	REQUIRE_PREEMPT_DISABLED
 {
 	bool injected = false;
 
@@ -106,6 +102,7 @@ arm_vm_timer_handle_irq_received(irq_t irq)
 
 static bool
 arm_vm_timer_virq_check_pending(thread_t *thread, arm_vm_timer_type_t tt)
+	REQUIRE_PREEMPT_DISABLED
 {
 	bool ret = true;
 
@@ -136,6 +133,7 @@ arm_vm_timer_handle_virq_check_pending(virq_trigger_t trigger,
 			thread_container_of_physical_timer_virq_src(source),
 			ARM_VM_TIMER_TYPE_PHYSICAL);
 	} else {
+		/* Do Nothing */
 	}
 
 	return ret;

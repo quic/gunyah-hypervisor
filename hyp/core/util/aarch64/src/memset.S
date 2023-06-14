@@ -7,7 +7,7 @@
 #include <asm/panic.inc>
 
 
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 // Two instructions per jump
 #define JUMP_SHIFT	3
 #else
@@ -236,50 +236,3 @@ function_chain memset_alignable, memset_align16
 	cbnz	x2, LOCAL(memset_below16)
 	ret
 function_end memset_align16
-
-// Optimize memset_s to perform size, alignment and store zero checks and call
-// optimized functions above.
-function memset_s
-	cbz	x0, LOCAL(memset_s_null)
-	uxtb	w2, w2
-	cbz	x3, LOCAL(out)
-	cmp	x3, x1
-	bhi	LOCAL(memset_s_size)
-	// Note, 15.99MiB is smaller than RSIZE_MAX, its the largest immediate
-	cmp	x1, 4095, lsl 12
-	b.hi	LOCAL(memset_s_size)
-
-	cmp	x3, 8
-	blo	3f
-	// Copy is at least 8 bytes, assume pointers are aligned
-
-	// Vector duplicate the byte value in x2
-	orr	x2, x2, x2, lsl 8
-	orr	x2, x2, x2, lsl 16
-	orr	x2, x2, x2, lsl 32
-
-	bic	x1, x3, 7
-	// Copy 8 bytes per loop
-2:
-	str	x2, [x0], #8
-	subs	x1, x1, 8
-	b.gt	2b
-
-	and	x3, x3, 7
-	cbnz	x3, 3f
-local out:
-	mov	x0, xzr
-	ret
-
-3:	// Slow copy 1 byte per loop
-	strb	w2, [x0], #1
-	subs	x3, x3, 1
-	b.ne	3b
-
-	b	LOCAL(out)
-
-local memset_s_null:
-	panic   "memset_s: null pointer"
-local memset_s_size:
-	panic   "memset_s: bad size"
-function_end memset_s

@@ -4,9 +4,11 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
 #include <compiler.h>
+#include <panic.h>
 #include <util.h>
 
 #include <asm/cpu.h>
@@ -78,9 +80,9 @@ memcpy(void *restrict s1, const void *restrict s2, size_t n)
 {
 	assert(compiler_sizeof_object(s1) >= n);
 	assert(compiler_sizeof_object(s2) >= n);
-	if (n == 0) {
+	if (n == 0U) {
 		// Nothing to do.
-	} else if (n < 32) {
+	} else if (n < 32U) {
 		prefetch_store_keep(s1);
 		prefetch_load_stream(s2);
 		memcpy_below32(s1, s2, n);
@@ -88,7 +90,7 @@ memcpy(void *restrict s1, const void *restrict s2, size_t n)
 		prefetch_store_keep(s1);
 		prefetch_load_stream(s2);
 		uintptr_t a16 = (uintptr_t)s1 & (uintptr_t)15;
-		if (a16 == 0) {
+		if (a16 == 0U) {
 			memcpy_align16(s1, s2, n);
 		} else {
 			memcpy_alignable(s1, s2, n);
@@ -98,61 +100,78 @@ memcpy(void *restrict s1, const void *restrict s2, size_t n)
 	return s1;
 }
 
-size_t
-memscpy(void *restrict s1, size_t s1_size, const void *restrict s2,
-	size_t s2_size)
+static void
+memmove_bytes_reverse(uint8_t *dst, const uint8_t *src, size_t n)
 {
-	size_t copy_size = util_min(s1_size, s2_size);
+	assert((uintptr_t)src < (uintptr_t)dst);
 
-	memcpy(s1, s2, copy_size);
+	// move to a higher address, copy backwards
+	const uint8_t *srcr;
+	uint8_t	      *dstr;
+	srcr = src + (n - 1U);
+	dstr = dst + (n - 1U);
 
-	return copy_size;
-}
-
-void *
-memmove(void *s1, const void *s2, size_t n)
-{
-	// The hypervisor should never need memmove(), but unfortunately the
-	// test program won't link if we don't define it. This is because
-	// static glibc defines it in the same object as memcpy(), so if we
-	// don't define it the calls in the glibc startup will pull in the
-	// glibc version of memcpy() and cause duplicate definition errors.
-	//
-	// In cases where we know our fast memcpy will work, just call that.
-	// Otherwise call a slow memcpy which is only defined in the test
-	// program.
-	if ((uintptr_t)s1 == (uintptr_t)s2) {
-		// Nothing to do.
-	} else if ((uintptr_t)s1 < (uintptr_t)s2) {
-		(void)memcpy(s1, s2, n);
-	} else if ((uintptr_t)s2 + CPU_MEMCPY_STRIDE < (uintptr_t)s1) {
-		(void)memcpy(s1, s2, n);
-	} else if (((uintptr_t)s1 + n <= (uintptr_t)s2) &&
-		   ((uintptr_t)s2 + n <= (uintptr_t)s1)) {
-		(void)memcpy(s1, s2, n);
-	} else {
-		(void)memcpy_bytes(s1, s2, n);
+	for (; n != 0; n--) {
+		*dstr = *srcr;
+		dstr--;
+		srcr--;
 	}
-	return s1;
 }
 
 void *
-memset(void *s, int c, size_t n)
+memmove(void *dst, const void *src, size_t n)
 {
-	assert(compiler_sizeof_object(s) >= n);
+	if (n == 0) {
+		goto out;
+	}
+
+	if (util_add_overflows((uintptr_t)dst, n - 1U) ||
+	    util_add_overflows((uintptr_t)src, n - 1U)) {
+		panic("memmove_bytes addr overflow");
+	}
+
+	if ((uintptr_t)dst == (uintptr_t)src) {
+		// Nothing to do.
+	} else if ((uintptr_t)dst < (uintptr_t)src) {
+		(void)memcpy(dst, src, n);
+	} else if ((uintptr_t)src + (n - 1) < (uintptr_t)dst) {
+		(void)memcpy(dst, src, n);
+	} else {
+		(void)memmove_bytes_reverse(dst, src, n);
+	}
+
+out:
+	return dst;
+}
+
+errno_t
+memset_s(void *s, rsize_t smax, int c, rsize_t n)
+{
+	assert(compiler_sizeof_object(s) >= smax);
 	uintptr_t a16 = (uintptr_t)s & (uintptr_t)15;
 
-	if (n == 0) {
+	errno_t err = 0;
+
+	if (s == NULL) {
+		err = 1;
+		goto out_null;
+	}
+	if (n > smax) {
+		err = 1;
+		n   = smax;
+	}
+
+	if (n == 0U) {
 		// Nothing to do.
 	} else if (c == 0) {
 		uintptr_t a_zva = (uintptr_t)s &
-				  (uintptr_t)((1 << CPU_DCZVA_BITS) - 1);
-		if (n < 32) {
+				  (uintptr_t)util_mask(CPU_DCZVA_BITS);
+		if (n < 32U) {
 			prefetch_store_keep(s);
 			memset_zeros_below32(s, n);
-		} else if ((a_zva == 0) && ((n >> CPU_DCZVA_BITS) > 0U)) {
+		} else if ((a_zva == 0U) && ((n >> CPU_DCZVA_BITS) > 0U)) {
 			memset_zeros_dczva(s, n);
-		} else if (a16 == 0) {
+		} else if (a16 == 0U) {
 			prefetch_store_keep(s);
 			memset_zeros_align16(s, n);
 		} else {
@@ -164,10 +183,10 @@ memset(void *s, int c, size_t n)
 		cs |= cs << 8;
 		cs |= cs << 16;
 		cs |= cs << 32;
-		if (n < 32) {
+		if (n < 32U) {
 			prefetch_store_keep(s);
 			memset_below32(s, cs, n);
-		} else if (a16 == 0) {
+		} else if (a16 == 0U) {
 			prefetch_store_keep(s);
 			memset_align16(s, cs, n);
 		} else {
@@ -176,6 +195,14 @@ memset(void *s, int c, size_t n)
 		}
 	}
 
+out_null:
+	return err;
+}
+
+void *
+memset(void *s, int c, size_t n)
+{
+	(void)memset_s(s, n, c, n);
 	return s;
 }
 
@@ -199,7 +226,7 @@ strchr(const char *str, int c)
 	const char *end = str;
 
 	for (; *end != '\0'; end++) {
-		if (*end == c) {
+		if (*end == (char)c) {
 			ret = (uintptr_t)end;
 			break;
 		}

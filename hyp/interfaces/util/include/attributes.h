@@ -12,7 +12,12 @@
 // This rule does not apply to language constructs that have an effect that is
 // similar or equivalent to an attribute, such as _Noreturn or _Alignas.
 
-// Don't inline the function. This is used to mark cold functions for which
+// Mark a function as cold. This is used to mark cold functions for
+// which internal inlining or size increasing optimizations would be
+// a waste of space.
+#define COLD __attribute__((cold))
+
+// Don't inline this function. This is used to mark functions for which
 // inlining would be a waste of space and/or would make debugging inconvenient.
 #define NOINLINE __attribute__((noinline))
 

@@ -66,6 +66,9 @@ define debug_common_registers structure {
 	bcrs		array(CPU_DEBUG_BP_COUNT) bitfield DBGBCR_EL1;
 	wcrs		array(CPU_DEBUG_WP_COUNT) bitfield DBGWCR_EL1;
 	mdscr		bitfield MDSCR_EL1;
+#if ARCH_AARCH64_32BIT_EL1
+	dbgvcr		uint32;
+#endif
 };
 
 #if PLATFORM_DEBUG_SAVE_STATE

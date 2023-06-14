@@ -6,6 +6,6 @@ define scheduler_yield hypercall {
 	call_num	0x3b;
 	control		input bitfield scheduler_yield_control;
 	arg1		input uregister;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };

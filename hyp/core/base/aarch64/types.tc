@@ -3,3 +3,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 define paddr_t public newtype uregister;
+
+define PADDR_INVALID constant type paddr_t = -1;
+define VADDR_INVALID constant uintptr = -1;
+
+define coreid_info structure {
+	part_num		uint16;
+	core_ID		enumeration core_id;
+};

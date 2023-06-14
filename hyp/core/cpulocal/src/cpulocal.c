@@ -15,7 +15,7 @@
 bool
 cpulocal_index_valid(cpu_index_t index)
 {
-	return index < PLATFORM_MAX_CORES;
+	return index < (cpu_index_t)PLATFORM_MAX_CORES;
 }
 
 cpu_index_t
@@ -33,10 +33,10 @@ cpulocal_get_index_for_thread(const thread_t *thread)
 }
 
 cpu_index_t
-cpulocal_get_index(void)
+cpulocal_get_index_unsafe(void)
 {
 	const thread_t *self = thread_get_self();
-	return cpulocal_check_index(cpulocal_get_index_for_thread(self));
+	return cpulocal_get_index_for_thread(self);
 }
 
 void

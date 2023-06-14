@@ -2,30 +2,37 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-extend addrspace object {
-	mapping_list		structure list;
-};
+define MEMEXTENT_MAX_MAPS constant type count_t = 4;
 
 extend cap_rights_memextent bitfield {
 	0	map	bool;
 	1	derive	bool;
 	2	attach	bool;
+	3	lookup	bool;
+	4	donate	bool;
 };
 
-define memextent_max_maps constant = 4;
+extend addrspace object {
+	basic_mapping_list	structure list;
+};
 
-define memextent_arg structure {
+define memextent_basic_arg structure {
 	me		pointer object memextent;
-	map		array(memextent_max_maps) pointer structure memextent_mapping;
+	map		array(MEMEXTENT_MAX_MAPS) pointer structure memextent_basic_mapping;
 	failed_address	type paddr_t;
 };
 
-define memextent_mapping structure {
+define memextent_basic_mapping structure {
 	// RCU-protected addrspace pointer
 	addrspace		pointer(atomic) object addrspace;
-	attrs			bitfield memextent_mapping_attrs;
 	mapping_list_node	structure list_node(contained);
 	vbase			type vmaddr_t;
+	attrs			bitfield memextent_mapping_attrs;
+	retained		bool;
+};
+
+define memextent_map_ptr union(lockable) {
+	basic	pointer structure memextent_basic_mapping;
 };
 
 extend memextent object {
@@ -36,9 +43,11 @@ extend memextent object {
 	access			enumeration pgtable_access;
 	children_list		structure list;
 	children_list_node	structure list_node(contained);
-	mappings		array(memextent_max_maps) structure memextent_mapping;
+	mappings		union memextent_map_ptr;
 	active			bool;
 	device_mem		bool;
+	attached_address	uintptr;
+	attached_size		size;
 };
 
 #if defined(HYPERCALLS)

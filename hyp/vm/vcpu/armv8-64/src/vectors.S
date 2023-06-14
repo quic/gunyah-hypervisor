@@ -34,6 +34,7 @@
 	cmp	x18, HYPERCALL_NUM
 	b.hs	LOCAL(\el\()_non_hypercall)
 
+	// FIXME:
 	// Temporarily preserve x8 for backwards compatibility.
 	stp	x8, x19, [sp, #-16]!
 
@@ -70,7 +71,7 @@ local \el\()_non_hypercall:
 .global vcpu_aarch64_vectors
 vcpu_aarch64_vectors:
 
-el2_vectors vcpu
+el2_vectors vcpu 1
 
 // Guest vectors
 // The assumption is that upon entry, SP (SP_EL2) points to the kernel stack,
@@ -107,9 +108,8 @@ vector vector_guest64_fiq
 vector_end vector_guest64_fiq
 
 vector vector_guest64_serror
-	disable_phys_access
-
-	b	exception_64_entry
+	save_guest_context_vcpu_zero_0_13_irq
+	b	error_64_entry
 vector_end vector_guest64_serror
 
 
@@ -145,9 +145,8 @@ vector vector_guest32_fiq
 vector_end vector_guest32_fiq
 
 vector vector_guest32_serror
-	disable_phys_access
-
-	bl	exception_32_entry
+	save_kernel_context_vcpu_zero_0_13_irq
+	bl	error_32_entry
 vector_end vector_guest32_serror
 
 #else // !ARCH_AARCH64_32BIT_EL1
@@ -202,7 +201,7 @@ function hypercall_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	stp	x10, x11, [sp, #-16]!
 
 	// Compute hypercall jump table index.
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 	add	x9, x9, x18, lsl 4
 #else
 	add	x9, x9, x18, lsl 3
@@ -225,6 +224,13 @@ function exception_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	b	vcpu_exception_return
 function_end exception_64_entry
 
+function error_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
+	save_guest_context_vcpu_zero_14_29_irq
+
+	bl	vcpu_error_dispatch
+	b	vcpu_exception_return
+function_end error_64_entry
+
 function irq_64_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	save_guest_context_vcpu_zero_14_29_irq
 
@@ -240,6 +246,13 @@ function exception_32_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	bl	vcpu_exception_dispatch
 	b	vcpu_exception_return
 function_end exception_32_entry
+
+function error_32_entry local, align=(1 << CPU_L1D_LINE_BITS)
+	save_guest_context_vcpu_zero_14_29_irq
+
+	bl	vcpu_error_dispatch
+	b	vcpu_exception_return
+function_end error_32_entry
 
 function irq_32_entry local, align=(1 << CPU_L1D_LINE_BITS)
 	save_guest_context_vcpu_zero_14_29_irq

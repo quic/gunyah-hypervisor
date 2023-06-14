@@ -1,0 +1,20 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_vm_sve_simple
+
+#if defined(ARCH_ARM_FEAT_SVE)
+subscribe boot_runtime_first_init
+	handler arm_vm_sve_simple_handle_boot_runtime_init()
+subscribe boot_runtime_warm_init
+	handler arm_vm_sve_simple_handle_boot_runtime_init()
+subscribe boot_cold_init()
+subscribe boot_cpu_warm_init()
+
+subscribe rootvm_init(qcbor_enc_ctxt)
+
+subscribe vcpu_activate_thread
+
+subscribe vcpu_trap_sysreg_read
+#endif

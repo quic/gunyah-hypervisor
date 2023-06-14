@@ -25,12 +25,12 @@ subscribe vcpu_expects_wakeup
 
 subscribe object_deactivate_thread
 
-subscribe thread_context_switch_pre
+subscribe thread_context_switch_pre(next)
 	unwinder()
 	priority first
 	require_preempt_disabled
 
-subscribe thread_context_switch_post
+subscribe thread_context_switch_post(prev)
 	priority last
 	require_preempt_disabled
 
@@ -43,6 +43,7 @@ subscribe timer_action[TIMER_ACTION_RESCHEDULE]
 
 subscribe rcu_update[RCU_UPDATE_CLASS_AFFINITY_CHANGED]
 	handler scheduler_fprr_handle_affinity_change_update(entry)
+	require_preempt_disabled
 
 subscribe thread_killed
 	// Run last so other handlers can prepare for the thread
@@ -60,6 +61,7 @@ subscribe tests_init
 
 subscribe tests_start
 	handler tests_scheduler_start()
+	require_preempt_disabled
 
 subscribe thread_get_entry_fn[THREAD_KIND_SCHED_TEST]
 	handler sched_test_get_entry_fn

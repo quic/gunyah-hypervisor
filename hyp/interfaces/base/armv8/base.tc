@@ -1,0 +1,28 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend core_id enumeration {
+	CORTEX_A53;
+	CORTEX_A55;
+	CORTEX_A57;
+	CORTEX_A72;
+	CORTEX_A73;
+	CORTEX_A75;
+	CORTEX_A76;
+	CORTEX_A76AE;
+	CORTEX_A77;
+	CORTEX_A78;
+	CORTEX_A78AE;
+	CORTEX_A78C;
+	CORTEX_X1;
+	CORTEX_X2;
+	CORTEX_A710;
+	CORTEX_A510;
+	NEOVERSE_N1;
+	NEOVERSE_N2;
+	NEOVERSE_V1;
+	CORTEX_A715;
+	CORTEX_X3;
+	QEMU;
+};

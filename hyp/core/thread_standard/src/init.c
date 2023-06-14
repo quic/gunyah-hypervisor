@@ -41,7 +41,12 @@ thread_standard_handle_boot_runtime_first_init(void)
 	// reference count. The real setup will be done in the idle module after
 	// partitions and allocators are working.
 	idle_thread = (thread_t *)ret.r;
-	memset(idle_thread, 0, thread_size);
+
+	assert(thread_size >= sizeof(*idle_thread));
+	errno_t err_mem = memset_s(idle_thread, thread_size, 0, thread_size);
+	if (err_mem != 0) {
+		panic("Error in memset_s operation!");
+	}
 	refcount_init(&idle_thread->header.refcount);
 
 	// This must be the last operation in boot_runtime_first_init.

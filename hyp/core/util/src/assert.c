@@ -19,8 +19,9 @@
 #include <asm/event.h>
 #include <asm/interrupt.h>
 
-noreturn void NOINLINE
+noreturn void NOINLINE COLD
 assert_failed(const char *file, int line, const char *func, const char *err)
+	LOCK_IMPL
 {
 	const char *file_short;
 
@@ -28,12 +29,12 @@ assert_failed(const char *file, int line, const char *func, const char *err)
 	trigger_scheduler_stop_event();
 
 	size_t len = strlen(file);
-	if (len < 64) {
+	if (len < 64U) {
 		file_short = file;
 	} else {
 		file_short = file + len - 64;
 
-		char *file_strchr = strchr(file_short, '/');
+		char *file_strchr = strchr(file_short, (int)'/');
 		if (file_strchr != NULL) {
 			file_short = file_strchr + 1;
 		}

@@ -6,4 +6,4 @@
 
 #include <asm/barrier.h>
 
-struct asm_ordering_dummy asm_ordering;
+asm_ordering_dummy_t asm_ordering;

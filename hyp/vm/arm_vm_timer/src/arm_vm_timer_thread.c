@@ -7,6 +7,7 @@
 
 #include <hypregisters.h>
 
+#include <compiler.h>
 #include <irq.h>
 #include <timer_queue.h>
 #include <vcpu.h>
@@ -78,7 +79,8 @@ arm_vm_timer_handle_thread_context_switch_pre(void)
 
 	// Enqueue thread's timeout if it is enabled, not already queued, and is
 	// capable of waking the VCPU
-	if ((thread->kind == THREAD_KIND_VCPU) && vcpu_expects_wakeup(thread)) {
+	if ((compiler_expected(thread->kind == THREAD_KIND_VCPU) &&
+	     vcpu_expects_wakeup(thread))) {
 		if (arm_vm_timer_is_irq_enabled_thread(
 			    thread, ARM_VM_TIMER_TYPE_VIRTUAL)) {
 			timer_update(&thread->virtual_timer,
@@ -103,7 +105,7 @@ void
 arm_vm_timer_handle_thread_context_switch_post(void)
 {
 	thread_t *thread = thread_get_self();
-	if (thread->kind == THREAD_KIND_VCPU) {
+	if (compiler_expected(thread->kind == THREAD_KIND_VCPU)) {
 		arm_vm_timer_load_state(thread);
 
 		bool_result_t asserted;
@@ -126,8 +128,8 @@ arm_vm_timer_handle_thread_context_switch_post(void)
 	}
 }
 
-error_t
-arm_vm_timer_handle_vcpu_poweroff(void)
+void
+arm_vm_timer_handle_vcpu_stopped(void)
 {
 	thread_t *thread = thread_get_self();
 
@@ -139,8 +141,6 @@ arm_vm_timer_handle_vcpu_poweroff(void)
 	// Ensure that the EL2 timer has not been lazily left queued.
 	timer_dequeue(&thread->virtual_timer);
 	timer_dequeue(&thread->physical_timer);
-
-	return OK;
 }
 
 error_t

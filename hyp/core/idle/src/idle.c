@@ -37,6 +37,8 @@ idle_thread_create(cpu_index_t i)
 	thread_create_t params = {
 		.scheduler_affinity	  = i,
 		.scheduler_affinity_valid = true,
+		.scheduler_priority	  = SCHEDULER_MIN_PRIORITY,
+		.scheduler_priority_valid = true,
 		.kind			  = THREAD_KIND_IDLE,
 	};
 
@@ -69,6 +71,8 @@ idle_thread_init_boot(thread_t *thread, cpu_index_t i)
 	thread_create_t params = {
 		.scheduler_affinity	  = i,
 		.scheduler_affinity_valid = true,
+		.scheduler_priority	  = SCHEDULER_MIN_PRIORITY,
+		.scheduler_priority_valid = true,
 		.kind			  = THREAD_KIND_IDLE,
 	};
 
@@ -91,7 +95,8 @@ void
 idle_thread_init(void)
 {
 	// Allocate some address space for the idle stacks.
-	size_t aspace_size = THREAD_STACK_MAP_ALIGN * (PLATFORM_MAX_CORES + 1U);
+	size_t aspace_size =
+		THREAD_STACK_MAP_ALIGN * ((size_t)PLATFORM_MAX_CORES + 1U);
 
 	virt_range_result_t stack_range = hyp_aspace_allocate(aspace_size);
 	if (stack_range.e != OK) {
@@ -106,14 +111,14 @@ idle_thread_init(void)
 	const cpu_index_t cpu = cpulocal_get_index();
 
 	for (cpu_index_t i = 0; cpulocal_index_valid(i); i++) {
-		thread_t *idle_thread;
+		thread_t *thread_idle;
 
 		if (cpu == i) {
 			thread_t *self = thread_get_self();
 			idle_thread_init_boot(self, i);
-			idle_thread = self;
+			thread_idle = self;
 		} else {
-			idle_thread = idle_thread_create(i);
+			thread_idle = idle_thread_create(i);
 		}
 
 		// Each idle thread needs a single extra reference to prevent it
@@ -121,10 +126,10 @@ idle_thread_init(void)
 		// be switching from itself in thread_boot_set_idle(), so when
 		// it releases the reference to the previous thread in
 		// thread_arch_main(), it will in fact be releasing itself.
-		object_get_thread_additional(idle_thread);
+		(void)object_get_thread_additional(thread_idle);
 
-		CPULOCAL_BY_INDEX(idle_thread, i) = idle_thread;
-		if (object_activate_thread(idle_thread) != OK) {
+		CPULOCAL_BY_INDEX(idle_thread, i) = thread_idle;
+		if (object_activate_thread(thread_idle) != OK) {
 			panic("Error activating idle thread");
 		}
 
@@ -152,6 +157,7 @@ idle_handle_idle_start(void)
 
 	// Free the boot stack
 	// Find a better place to free the boot stack
+	// FIXME:
 	error_t err = partition_add_heap(
 		private,
 		partition_virt_to_phys(private, (uintptr_t)&aarch64_boot_stack),
@@ -164,6 +170,11 @@ idle_handle_idle_start(void)
 static noreturn void
 idle_loop(uintptr_t unused_params)
 {
+	// We generally run the idle thread with preemption disabled. Handlers
+	// for the idle_yield event may re-enable preemption, as long as they
+	// are guaranteed to stop waiting and return true if preemption occurs.
+	preempt_disable();
+
 	const cpu_index_t this_cpu = cpulocal_get_index();
 
 	if (compiler_unexpected(this_cpu == boot_cpu)) {
@@ -175,11 +186,6 @@ idle_loop(uintptr_t unused_params)
 	assert(idle_is_current());
 
 	(void)unused_params;
-
-	// We generally run the idle thread with preemption disabled. Handlers
-	// for the idle_yield event may re-enable preemption, as long as they
-	// are guaranteed to stop waiting and return true if preemption occurs.
-	preempt_disable();
 
 	assert(scheduler_is_blocked(thread_get_self(), SCHEDULER_BLOCK_IDLE));
 
@@ -210,7 +216,7 @@ idle_handle_thread_get_stack_base(thread_kind_t kind, thread_t *thread)
 
 	cpu_index_t cpu = thread->scheduler_affinity;
 
-	return idle_stack_base + (cpu * THREAD_STACK_MAP_ALIGN);
+	return idle_stack_base + ((uintptr_t)cpu * THREAD_STACK_MAP_ALIGN);
 }
 
 thread_t *

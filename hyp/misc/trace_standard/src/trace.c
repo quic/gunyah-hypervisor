@@ -56,14 +56,15 @@ trace_init_common(partition_t *partition, void *base, size_t size,
 {
 	count_t global_entries, local_entries;
 
-	assert(size != 0);
+	assert(size != 0U);
 	assert(base != NULL);
-	assert(buffer_count != 0);
+	assert(buffer_count != 0U);
 
-	if (buffer_count == 1) {
+	if (buffer_count == 1U) {
 		// Allocate all the area to the global buffer
-		global_entries = (count_t)(size / TRACE_BUFFER_ENTRY_SIZE);
-		local_entries  = 0;
+		global_entries =
+			(count_t)(size / (size_t)TRACE_BUFFER_ENTRY_SIZE);
+		local_entries = 0;
 	} else {
 		// Ensure the count is one global buffer + one per each CPU
 		assert(buffer_count == TRACE_BUFFER_NUM);
@@ -71,8 +72,10 @@ trace_init_common(partition_t *partition, void *base, size_t size,
 		// to the size reserved for each local buffer
 		assert(size >= (PER_CPU_TRACE_ENTRIES *
 				TRACE_BUFFER_ENTRY_SIZE * TRACE_BUFFER_NUM));
-		global_entries = (count_t)(size / TRACE_BUFFER_ENTRY_SIZE) -
-				 (PER_CPU_TRACE_ENTRIES * PLATFORM_MAX_CORES);
+		global_entries =
+			(count_t)((size / (size_t)TRACE_BUFFER_ENTRY_SIZE) -
+				  ((size_t)PER_CPU_TRACE_ENTRIES *
+				   PLATFORM_MAX_CORES));
 		local_entries = PER_CPU_TRACE_ENTRIES;
 	}
 
@@ -83,15 +86,15 @@ trace_init_common(partition_t *partition, void *base, size_t size,
 	count_t		       entries;
 	trace_buffer_header_t *ptr = (trace_buffer_header_t *)base;
 	for (count_t i = 0U; i < buffer_count; i++) {
-		if (i == 0) {
+		if (i == 0U) {
 			entries = global_entries;
 		} else {
 			entries = local_entries;
 		}
 		trace_buffer_header_t *tb = ptr;
 		ptr += entries;
-		memset(tb, 0, sizeof(*tb));
 
+		*tb		= (trace_buffer_header_t){ 0U };
 		tb->buf_magic	= TRACE_MAGIC_BUFFER;
 		tb->entries	= entries - 1U;
 		tb->not_wrapped = true;
@@ -103,7 +106,7 @@ trace_init_common(partition_t *partition, void *base, size_t size,
 
 	hyp_trace.num_bufs = buffer_count;
 	// Total size of the trace buffer, in units of 64 bytes.
-	hyp_trace.area_size_64 = (uint32_t)(size / 64);
+	hyp_trace.area_size_64 = (uint32_t)(size / 64U);
 }
 
 void
@@ -112,7 +115,8 @@ trace_boot_init(void)
 	register_t flags = 0U;
 
 	hyp_trace.flags = trace_control_flags_default();
-	trace_control_flags_set_format(&hyp_trace.flags, TRACE_FORMAT);
+	trace_control_flags_set_format(&hyp_trace.flags,
+				       (trace_format_t)TRACE_FORMAT);
 
 	// Default to enable trace buffer and error traces
 	TRACE_SET_CLASS(flags, ERROR);
@@ -128,32 +132,30 @@ trace_boot_init(void)
 	atomic_init(&hyp_trace.enabled_class_flags, flags);
 
 	// Setup internal flags that cannot be changed by hypercalls
-	trace_public_class_flags = ~(0U);
+	trace_public_class_flags = ~(register_t)0;
+	TRACE_CLEAR_CLASS(trace_public_class_flags, ERROR);
 	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_BUFFER);
 	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_TRACE_BUFFER);
 
-	trace_init_common(partition_get_private(), &trace_boot_buffer,
-			  TRACE_BOOT_ENTRIES * TRACE_BUFFER_ENTRY_SIZE, 1U,
-			  &trace_buffer_global);
+	trace_init_common(
+		partition_get_private(), &trace_boot_buffer,
+		((size_t)TRACE_BOOT_ENTRIES * (size_t)TRACE_BUFFER_ENTRY_SIZE),
+		1U, &trace_buffer_global);
 }
 
-void
-trace_init(partition_t *partition, size_t size)
+static void
+trace_buffer_init(partition_t *partition, void *base, size_t size)
+	REQUIRE_PREEMPT_DISABLED
 {
 	assert(size != 0);
-
-	void_ptr_result_t alloc_ret = partition_alloc(
-		partition, size, alignof(trace_buffer_header_t));
-	if (alloc_ret.e != OK) {
-		panic("Error allocating trace buffer");
-	}
+	assert(base != NULL);
 
 	trace_buffer_header_t *tbs[TRACE_BUFFER_NUM];
-	trace_init_common(partition, alloc_ret.r, size, TRACE_BUFFER_NUM, tbs);
+	trace_init_common(partition, base, size, TRACE_BUFFER_NUM, tbs);
 	// The global buffer will be the first, followed by the local buffers
 	trace_buffer_global = tbs[0];
 	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
-		bitmap_set(tbs[i + 1]->cpu_mask, i);
+		bitmap_set(tbs[i + 1U]->cpu_mask, i);
 		// The global buffer is first, hence the increment by 1
 		CPULOCAL_BY_INDEX(trace_buffer, i) = tbs[i + 1];
 	}
@@ -169,21 +171,45 @@ trace_init(partition_t *partition, size_t size)
 	index_t head = atomic_load_explicit(&tb->head, memory_order_relaxed);
 	size_t	cpy_size = head * sizeof(trace_buffer_entry_t);
 
-	if (cpy_size) {
-		trace_buffer_entry_t *src_buf =
-			(trace_buffer_entry_t *)((uintptr_t)tb +
-						 TRACE_BUFFER_HEADER_SIZE);
-		trace_buffer_entry_t *dst_buf =
-			(trace_buffer_entry_t *)((uintptr_t)trace_buffer +
-						 TRACE_BUFFER_HEADER_SIZE);
+	if (cpy_size != 0U) {
+		// The log entries follow on immediately after the header
+		char *src_buf = (char *)(tb + 1);
+		char *dst_buf = (char *)(trace_buffer + 1);
 
-		memcpy(dst_buf, src_buf, cpy_size);
+		(void)memcpy(dst_buf, src_buf, cpy_size);
 
 		CACHE_CLEAN_INVALIDATE_RANGE(dst_buf, cpy_size);
 	}
 
 	atomic_store_release(&trace_buffer->head, head);
 }
+
+#if defined(PLATFORM_TRACE_STANDALONE_REGION)
+void
+trace_single_region_init(partition_t *partition, paddr_t base, size_t size)
+{
+	assert(size != 0);
+	assert(base != 0);
+
+	// Call to initiaize the trace buffer
+	trace_buffer_init(partition, (void *)base, size);
+}
+#else
+void
+trace_init(partition_t *partition, size_t size)
+{
+	assert(size != 0);
+
+	void_ptr_result_t alloc_ret = partition_alloc(
+		partition, size, alignof(trace_buffer_header_t));
+	if (alloc_ret.e != OK) {
+		panic("Error allocating trace buffer");
+	}
+
+	// Call to initiaize the trace buffer
+	trace_buffer_init(partition, alloc_ret.r, size);
+}
+#endif
 
 // Log a trace with specified trace class.
 //
@@ -222,7 +248,7 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 		goto out;
 	}
 
-	cpu_id	  = cpulocal_get_index();
+	cpu_id	  = cpulocal_get_index_unsafe();
 	timestamp = arch_get_timestamp();
 
 	trace_info_init(&trace_info);
@@ -252,19 +278,19 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 	// Atomically grab the next entry in the buffer
 	head = atomic_fetch_add_explicit(&tb->head, 1, memory_order_consume);
 	if (compiler_unexpected(head >= entries)) {
-		index_t new_head = head + 1;
+		index_t new_head = head + 1U;
 
 		tb->not_wrapped = false;
 		head -= entries;
 
 		(void)atomic_compare_exchange_strong_explicit(
-			&tb->head, &new_head, head + 1, memory_order_relaxed,
+			&tb->head, &new_head, head + 1U, memory_order_relaxed,
 			memory_order_relaxed);
 	}
 
 	trace_buffer_entry_t *buffers =
 		(trace_buffer_entry_t *)((uintptr_t)tb +
-					 TRACE_BUFFER_HEADER_SIZE);
+					 (uintptr_t)TRACE_BUFFER_HEADER_SIZE);
 
 #if defined(ARCH_ARM) && defined(ARCH_IS_64BIT) && ARCH_IS_64BIT
 	// Store using non-temporal store instructions. Also, if the entry
@@ -312,15 +338,15 @@ out:
 void
 trace_set_class_flags(register_t flags)
 {
-	atomic_fetch_or_explicit(&hyp_trace.enabled_class_flags, flags,
-				 memory_order_relaxed);
+	(void)atomic_fetch_or_explicit(&hyp_trace.enabled_class_flags, flags,
+				       memory_order_relaxed);
 }
 
 void
 trace_clear_class_flags(register_t flags)
 {
-	atomic_fetch_and_explicit(&hyp_trace.enabled_class_flags, ~flags,
-				  memory_order_relaxed);
+	(void)atomic_fetch_and_explicit(&hyp_trace.enabled_class_flags, ~flags,
+					memory_order_relaxed);
 }
 
 void
@@ -339,7 +365,7 @@ trace_update_class_flags(register_t set_flags, register_t clear_flags)
 }
 
 register_t
-trace_get_class_flags()
+trace_get_class_flags(void)
 {
 	return atomic_load_explicit(&hyp_trace.enabled_class_flags,
 				    memory_order_relaxed);

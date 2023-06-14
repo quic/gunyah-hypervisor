@@ -6,4 +6,4 @@
 
 // Switch to the idle thread at the end of the boot sequence.
 noreturn void
-thread_boot_set_idle(void);
+thread_boot_set_idle(void) REQUIRE_PREEMPT_DISABLED;

@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 define vcpu_gpr structure {
-	x		array(31) type register_t;
+	x		array(31) type register_t(aligned(16));
 	pc		bitfield ELR_EL2;
-	spsr_el2	bitfield SPSR_EL2_A64;
+	spsr_el2	union SPSR_EL2;
 };
 
 define vector_register_t newtype array(16) uint8();
@@ -36,21 +36,27 @@ define vcpu_el1_registers structure {
 	tpidr_el1	bitfield TPIDR_EL1;
 	tcr_el1		bitfield TCR_EL1;
 	vbar_el1	bitfield VBAR_EL1;
-// zce_el1
-// trfcr_el1
-// apxxKeyxx_el1
-// RAS registers ERRxxx_el1, DISR_el1
-// SPE PMxxx_el1
-// PMU PMxx_el1
-// LOxxx_el1
-// vgic registers
-// timer registers cntxxx_el1
-// AMU
-// aarch32 guest registers
+#if defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_1p2) || \
+	defined(ARCH_ARM_FEAT_CSV2_3)
+	scxtnum_el0	uint64;
+	scxtnum_el1	uint64;
+#endif
+#if !defined(CPU_HAS_NO_ACTLR_EL1)
+	actlr_el1	bitfield ACTLR_EL1;
+#endif
+#if !defined(CPU_HAS_NO_AMAIR_EL1)
+	amair_el1	bitfield AMAIR_EL1;
+#endif
+#if !defined(CPU_HAS_NO_AFSR0_EL1)
+	afsr0_el1	bitfield AFSR0_EL1;
+#endif
+#if !defined(CPU_HAS_NO_AFSR1_EL1)
+	afsr1_el1	bitfield AFSR1_EL1;
+#endif
 };
 
 define vcpu_el2_registers structure {
-#if defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_FEAT_VHE)
 	cptr_el2	bitfield CPTR_EL2_E2H1;
 #else
 	cptr_el2	bitfield CPTR_EL2_E2H0;
@@ -60,17 +66,17 @@ define vcpu_el2_registers structure {
 };
 
 extend vcpu object {
-	gpr	structure vcpu_gpr;
-#if defined(ARCH_ARM_8_3_PAUTH)
-	pauth	structure aarch64_pauth_keys;
+	gpr	structure vcpu_gpr(group(context_switch, registers, a));
+#if defined(ARCH_ARM_FEAT_PAuth)
+	pauth	structure aarch64_pauth_keys(group(context_switch, registers, b));
 #endif
-	fpr	structure vcpu_vfp_registers;
-	el1	structure vcpu_el1_registers;
-	el2	structure vcpu_el2_registers;
+	fpr	structure vcpu_vfp_registers(group(context_switch, registers, c));
+	el1	structure vcpu_el1_registers(group(context_switch, registers, d));
+	el2	structure vcpu_el2_registers(group(context_switch, registers, e));
 
-	mpidr_el1	bitfield MPIDR_EL1;
+	mpidr_el1	bitfield MPIDR_EL1(group(context_switch, registers, d));
 #if SCHEDULER_CAN_MIGRATE
-	midr_el1	bitfield MIDR_EL1;
+	midr_el1	bitfield MIDR_EL1(group(context_switch, registers, d));
 #endif
 };
 
@@ -81,25 +87,18 @@ extend thread object module vcpu {
 };
 #endif
 
-// Relevant modules (such as the debug module) need to extend this bitfield
-// and add their configuration flags for the hypercall_vcpu_configure
-// hypercall. Then in their thread_activate handlers they need to check the
-// values of these flags and act on them.
-define vcpu_option_flags public bitfield<64> {
-	0		pinned			bool = 0;
+extend vcpu_option_flags bitfield {
 	1		ras_error_handler	bool = 0;
 	2		amu_counting_disabled	bool = 0;
 	3		sve_allowed		bool = 0;
 	// 4		reserved: debug_allowed
 	// 5		reserved: trace_allowed
+#if defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_1p2) || \
+	defined(ARCH_ARM_FEAT_CSV2_3)
+	6		scxt_allowed		bool = 0;
+#endif
+	// 7		reserved: mpam_allowed
+	// 8		reserved: critical
 	63		hlos_vm			bool = 0;
 	others		unknown = 0;
-};
-
-extend thread object module vcpu {
-	// The option variable used for the hypercall_vcpu_configure hypercall.
-	options		bitfield vcpu_option_flags;
-
-	// Flag to indicate that the VCPU has been warm-reset
-	warm_reset	bool;
 };

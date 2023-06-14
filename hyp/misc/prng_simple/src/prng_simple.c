@@ -49,8 +49,8 @@
 #include "event_handlers.h"
 
 #define WORD_BITS	   32U
-#define BLOCK_WORDS	   (512 / WORD_BITS)
-#define KEY_WORDS	   (256 / WORD_BITS)
+#define BLOCK_WORDS	   (512U / WORD_BITS)
+#define KEY_WORDS	   (256U / WORD_BITS)
 #define BUFFER_KEY_OFFSET  0U
 #define BUFFER_DATA_OFFSET KEY_WORDS // first bytes are reserved for the key
 #define BUFFER_BLOCKS	   4U
@@ -96,16 +96,18 @@ prng_simple_handle_boot_runtime_first_init(void)
 	}
 
 	prng_data = (prng_data_t *)ret.r;
+	assert(prng_data != NULL);
 
-	memset_s(prng_data, sizeof(*prng_data), 0, sizeof(*prng_data));
+	(void)memset_s(prng_data, sizeof(*prng_data), 0, sizeof(*prng_data));
 
 	prng_data->pool_index = BUFFER_WORDS; // Buffer is Empty
-	memscpy(&prng_data->key, sizeof(prng_data->key), hypervisor_prng_seed,
-		sizeof(prng_data->key));
+	(void)memscpy(&prng_data->key, sizeof(prng_data->key),
+		      hypervisor_prng_seed, sizeof(prng_data->key));
 
 	// Ensure no stale copies remain in ram
-	memset_s(hypervisor_prng_seed, sizeof(hypervisor_prng_seed), 0,
-		 sizeof(hypervisor_prng_seed));
+	assert(hypervisor_prng_seed != NULL);
+	(void)memset_s(hypervisor_prng_seed, sizeof(hypervisor_prng_seed), 0,
+		       sizeof(hypervisor_prng_seed));
 	CACHE_CLEAN_INVALIDATE_OBJECT(hypervisor_prng_seed);
 
 	prng_data->key_timestamp = platform_timer_get_current_ticks();
@@ -123,12 +125,12 @@ prng_simple_handle_boot_runtime_first_init(void)
 	prng_data->nonce[2] = serial[2];
 
 	// Add in some chip specific noise
-	prng_data->nonce[1] ^= hypervisor_prng_nonce & 0xffffffffU;
-	prng_data->nonce[2] ^= hypervisor_prng_nonce >> 32;
+	prng_data->nonce[1] ^= (uint32_t)(hypervisor_prng_nonce & 0xffffffffU);
+	prng_data->nonce[2] ^= (uint32_t)(hypervisor_prng_nonce >> 32);
 
 	// Ensure no stale copies remain in ram
-	memset_s(&hypervisor_prng_nonce, sizeof(hypervisor_prng_nonce), 0,
-		 sizeof(hypervisor_prng_nonce));
+	(void)memset_s(&hypervisor_prng_nonce, sizeof(hypervisor_prng_nonce), 0,
+		       sizeof(hypervisor_prng_nonce));
 	CACHE_CLEAN_INVALIDATE_OBJECT(hypervisor_prng_nonce);
 
 	prng_initialized = true;
@@ -138,6 +140,7 @@ prng_simple_handle_boot_runtime_first_init(void)
 void
 prng_simple_handle_boot_hypervisor_start(void)
 {
+	// FIXME:
 	// Post boot prng_data protection
 	//  * allocate an unmapped 4K page for the prng_data
 	//  * Aarch64 PAN implementation:
@@ -167,7 +170,7 @@ add_platform_entropy(void) REQUIRE_SPINLOCK(prng_lock)
 		prng_data->key[7] ^= new.word[7];
 
 		// Ensure no stale copy remains on the stack
-		memset_s(&new, sizeof(new), 0, sizeof(new));
+		(void)memset_s(&new, sizeof(new), 0, sizeof(new));
 		CACHE_CLEAN_INVALIDATE_OBJECT(new);
 
 		success = true;
@@ -218,15 +221,15 @@ prng_update(void) REQUIRE_SPINLOCK(prng_lock)
 	}
 
 	// Fast key update from block 0
-	memscpy(prng_data->key, sizeof(prng_data->key),
-		&prng_data->entropy_pool[0],
-		sizeof(prng_data->entropy_pool[0]));
+	(void)memscpy(prng_data->key, sizeof(prng_data->key),
+		      &prng_data->entropy_pool[0],
+		      sizeof(prng_data->entropy_pool[0]));
 	// Ensure no stale copies remain in ram
 	CACHE_CLEAN_FIXED_RANGE(prng_data->key, 32U);
 	// Clear the used bytes just in case
-	memset_s(&prng_data->entropy_pool[0],
-		 sizeof(prng_data->entropy_pool[0]), 0,
-		 BUFFER_DATA_OFFSET * sizeof(uint32_t));
+	(void)memset_s(&prng_data->entropy_pool[0],
+		       sizeof(prng_data->entropy_pool[0]), 0,
+		       BUFFER_DATA_OFFSET * sizeof(uint32_t));
 	// Ensure no stale copies remain in ram
 	CACHE_CLEAN_FIXED_RANGE(&prng_data->entropy_pool[0],
 				BUFFER_DATA_OFFSET * sizeof(uint32_t));
@@ -245,12 +248,12 @@ prng_get64(void)
 
 	count_t index = prng_data->pool_index;
 
-	if (index > (BUFFER_WORDS - (64 / WORD_BITS))) {
+	if (index > (BUFFER_WORDS - (64U / WORD_BITS))) {
 		// Not enough buffered randomness, get more
 		prng_update();
 		index = prng_data->pool_index;
 	}
-	prng_data->pool_index += (64 / WORD_BITS);
+	prng_data->pool_index += (64U / WORD_BITS);
 
 	index_t	  block = index / BLOCK_WORDS;
 	index_t	  word	= index % BLOCK_WORDS;
@@ -260,13 +263,14 @@ prng_get64(void)
 	ret.r |= (uint64_t)data[1] << 32;
 
 	ret.e = OK;
+	// Pointer difference in bytes
+	ptrdiff_t len = (char *)data - (char *)prng_data->entropy_pool[0];
+
+	assert(len >= 0);
 
 	// Clear used bits
-	memset_s(data,
-		 sizeof(prng_data->entropy_pool) -
-			 ((uintptr_t)data -
-			  (uintptr_t)&prng_data->entropy_pool[0]),
-		 0, sizeof(ret.r));
+	(void)memset_s(data, sizeof(prng_data->entropy_pool) - (size_t)len, 0,
+		       sizeof(ret.r));
 	// Ensure used bits are cleared from caches
 	CACHE_CLEAN_FIXED_RANGE(data, sizeof(ret.r));
 

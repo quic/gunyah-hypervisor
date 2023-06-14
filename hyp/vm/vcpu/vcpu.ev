@@ -13,6 +13,21 @@ subscribe object_create_thread
 subscribe object_activate_thread
 	priority -100
 
+subscribe thread_exited
+	require_preempt_disabled
+
+#if defined(MODULE_VM_VCPU_RUN)
+subscribe vcpu_run_check(vcpu, state_data_0)
+	priority last
+#endif
+
+subscribe virq_set_mode[VIRQ_TRIGGER_VCPU_HALT]
+	handler vcpu_handle_virq_set_mode()
+
+subscribe vcpu_bind_virq[VCPU_VIRQ_TYPE_HALT](vcpu, vic, virq)
+
+subscribe vcpu_unbind_virq[VCPU_VIRQ_TYPE_HALT](vcpu)
+
 interface vcpu
 
 setup_event vcpu_activate_thread

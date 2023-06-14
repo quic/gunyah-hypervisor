@@ -13,12 +13,13 @@ from ir import (
     AlternativeDefinition, BitFieldDefinition, StructureDefinition,
     EnumerationDefinition, EnumerationConstant, EnumerationExtension,
     ObjectType, ObjectDeclaration, ObjectDefinition, BitFieldExtension,
-    ObjectExtension, Qualifier, AlignedQualifier, AtomicQualifier,
-    PackedQualifier, ConstantExpression, ConstantReference, UnaryOperation,
-    SizeofOperation, AlignofOperation, BinaryOperation, ConditionalOperation,
-    UnionType, UnionDefinition, UnionExtension, StructureExtension,
-    MinofOperation, MaxofOperation, ContainedQualifier, WriteonlyQualifier,
-    PureFunctionCall, LockableQualifier, GlobalDefinition,
+    ObjectExtension, Qualifier, AlignedQualifier, GroupQualifier,
+    AtomicQualifier, PackedQualifier, ConstantExpression, ConstantReference,
+    UnaryOperation, SizeofOperation, AlignofOperation, BinaryOperation,
+    ConditionalOperation, UnionType, UnionDefinition, UnionExtension,
+    StructureExtension, MinofOperation, MaxofOperation, ContainedQualifier,
+    WriteonlyQualifier, PureFunctionCall, LockableQualifier, GlobalDefinition,
+    OptimizeQualifier
 )
 from exceptions import DSLError
 
@@ -547,9 +548,11 @@ class qualifier_list(CommonListener):
             "atomic_qualifier",
             "packed_qualifier",
             "aligned_qualifier",
+            "group_qualifier",
             "contained_qualifier",
             "writeonly_qualifier",
             "lockable_qualifier",
+            "optimize_qualifier",
         ]
         self.action_list.take_all(self, al)
         self.actions = [Action(self.set_qualifiers, "qualifier_list")]
@@ -595,6 +598,15 @@ class aligned_qualifier(CommonListener):
         obj.qualifiers.add(self.qualifier)
 
 
+class group_qualifier(CommonListener):
+    def init_interfaces(self):
+        self.qualifier = GroupQualifier(self, self.children)
+        self.actions = [Action(self.add_qualifier, "group_qualifier")]
+
+    def add_qualifier(self, obj):
+        obj.qualifiers.add(self.qualifier)
+
+
 class contained_qualifier(CommonListener):
     def init_interfaces(self):
         self.qualifier = ContainedQualifier(self)
@@ -628,6 +640,21 @@ class lockable_qualifier(CommonListener):
         self.qualifier.resource_name = ' '.join((obj.type_name, obj.category))
 
 
+class optimize_qualifier(CommonListener):
+    def init_interfaces(self):
+        self.qualifier = OptimizeQualifier(self)
+        self.actions = [
+            Action(self.add_qualifier, "optimize_qualifier"),
+            Action(self.set_category, "describe_optimized_type"),
+        ]
+
+    def add_qualifier(self, obj):
+        obj.qualifiers.add(self.qualifier)
+
+    def set_category(self, obj):
+        self.qualifier.category = obj.category
+
+
 class array_size(CommonListener):
     def init_interfaces(self):
         self.value = self.children[0].value
@@ -641,14 +668,11 @@ class array_size(CommonListener):
 
 class array(CommonListener):
     def init_interfaces(self):
-        self.length = NotImplemented
         self.compound_type = ArrayType(self)
 
-        al = ["array_size"]
-        self.action_list.take_all(self, al)
-        self.compound_type.length = self.length
-        al = ["object_type_set_complex"]
+        al = ["array_size", "qualifier_list", "object_type_set_complex"]
         self.action_list.take_all(self.compound_type, accept_list=al)
+
         self.actions = [Action(self.set_type, "array")]
 
     def set_type(self, declaration):
@@ -789,7 +813,7 @@ class bitfield_bit_range(CommonListener):
         self.actions = [
             Action(self.add_range, "bitfield_bit_range"),
         ]
-        assert(len(self.children) <= 2)
+        assert (len(self.children) <= 2)
 
     def add_range(self, specifier):
         specifier.add_bit_range(self)
@@ -1119,6 +1143,7 @@ class structure_definition(IABISpecific, ITypeDefinition):
         self.action_list.take(d, "qualifier_list")
         self.action_list.take(d, "public")
         self.action_list.take(d, "describe_lockable_type")
+        self.action_list.take(d, "describe_optimized_type")
 
 
 class union_definition(ITypeDefinition):
@@ -1131,6 +1156,7 @@ class union_definition(ITypeDefinition):
         self.action_list.take(d, "declaration", single=False)
         self.action_list.take(d, "qualifier_list")
         self.action_list.take(d, "public")
+        self.action_list.take(d, "describe_lockable_type")
 
 
 class enumeration_definition(IABISpecific, ITypeDefinition):
@@ -1158,6 +1184,7 @@ class object_definition(IABISpecific, ITypeDefinition):
         self.action_list.take(d, "qualifier_list")
         self.action_list.take(d, "public")
         self.action_list.take(d, "describe_lockable_type")
+        self.action_list.take(d, "describe_optimized_type")
 
         rl = ["object_type_has_object"]
         self.action_list.remove_all(rl)

@@ -2,10 +2,23 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define cpu_power_state enumeration(explicit) {
-	off	= 0;	// never booted
-	boot	= 1;	// boot CPU in cold boot
-	suspend	= 2;
-	offline	= 3;	// hotplugged
-	online	= 4;
+define power_voting structure {
+	// Spinlock protecting the rest of this structure, and also the
+	// CPU's entry in the power state array.
+	lock		structure spinlock;
+	// Number of votes to keep this core powered on.
+	vote_count	type count_t;
+	// Timer that is enqueued when an ERROR_RETRY error is returned
+	// from platform_cpu_on().
+	retry_timer	structure timer(contained);
+	// Number of consecutive retries.
+	retry_count	type count_t;
 };
+
+// Action for the timer above.
+extend timer_action enumeration {
+	power_cpu_on_retry;
+};
+
+define POWER_CPU_ON_RETRY_DELAY_NS constant type nanoseconds_t = 100000;
+define MAX_CPU_ON_RETRIES constant type count_t = 2;

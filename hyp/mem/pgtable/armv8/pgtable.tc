@@ -6,8 +6,8 @@
 define vmid_t public newtype uint16;
 
 #if defined(ARCH_AARCH64_USE_S2FWB)
-#if !defined(ARCH_ARM_8_4_S2FWB)
-#error S2FWB requires ARCH_ARM_8_4_S2FWB
+#if !defined(ARCH_ARM_FEAT_S2FWB)
+#error S2FWB requires ARCH_ARM_FEAT_S2FWB
 #endif
 #error S2FWB support not implemented
 #else
@@ -46,7 +46,7 @@ define vmsa_block_entry bitfield<64> {
 	1:0		type			uint8(const) = 0b1;
 	11:2		lower_attrs		type vmsa_lower_attrs_t = 0;
 	15:12		unknown = 0;
-#if defined(ARCH_ARM_8_4_TTREM)
+#if defined(ARCH_ARM_FEAT_BBM)
 	16		nT			bool = 0;
 #else
 	16		unknown = 0;
@@ -82,6 +82,15 @@ define vmsa_page_and_block_attrs_entry bitfield<64> {
 	63:48		upper_attrs		type vmsa_upper_attrs_t = 0;
 };
 
+// union type for use where the entry type is unknown
+define vmsa_entry union {
+		base bitfield vmsa_general_entry;
+		page bitfield vmsa_page_entry;
+		block bitfield vmsa_block_entry;
+		table bitfield vmsa_table_entry;
+		attrs bitfield vmsa_page_and_block_attrs_entry;
+};
+
 // common lower attribute structure
 define vmsa_common_lower_attrs bitfield<10> {
 	5:0		unknown;
@@ -103,7 +112,7 @@ define vmsa_common_upper_attrs bitfield<16> {
 
 // page and block stage-1 upper attributes
 define vmsa_stg1_upper_attrs bitfield<16> {
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 	1:0		res0			uint8(const) = 0;
 	2		GP			bool = 0;
 #else
@@ -111,7 +120,7 @@ define vmsa_stg1_upper_attrs bitfield<16> {
 #endif
 	3		DBM			bool = 0;
 	4		cont			bool = 0;
-#if defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_FEAT_VHE)
 	5		PXN			bool = 1;
 	6		UXN			bool = 1;
 #else
@@ -152,7 +161,7 @@ define vmsa_stg2_upper_attrs bitfield<16> {
 	2:0		unknown = 0;
 	3		DBM			bool = 0;
 	4		cont			bool = 0;
-#if defined(ARCH_ARM_8_2_TTS2UXN)
+#if defined(ARCH_ARM_FEAT_XNX)
 	5		PXNxorUXN		bool;
 	6		UXN			bool;
 #else
@@ -180,13 +189,19 @@ define vmsa_stg2_lower_attrs bitfield<10> {
 	9		unknown = 0;
 };
 
-define vmsa_tlbi_vae2_input bitfield<64> {
+define vmsa_tlbi_va_input bitfield<64> {
 	43:0		VA			type vmaddr_t lsl(12);
 	47:44		TTL			uint8 = 0;
 	63:48		ASID			uint16 = 0;
 };
 
-define vmsa_tlbi_ipas2e1is_input bitfield<64> {
+define vmsa_tlbi_vaa_input bitfield<64> {
+	43:0		VA			type vmaddr_t lsl(12);
+	47:44		TTL			uint8 = 0;
+	63:48		unknown = 0;
+};
+
+define vmsa_tlbi_ipa_input bitfield<64> {
 	35:0		IPA			type vmaddr_t lsl(12);
 	// without LPA implemented, or it's IPA
 	39:36		unknown = 0;
@@ -197,8 +212,8 @@ define vmsa_tlbi_ipas2e1is_input bitfield<64> {
 	63		NS			bool = 0;
 };
 
-#ifdef ARCH_ARM_8_4_TLBI
-define vmsa_tlbi_vae2_range_input bitfield<64> {
+#ifdef ARCH_ARM_FEAT_TLBIRANGE
+define vmsa_tlbi_va_range_input bitfield<64> {
 	36:0		BaseADDR		uint64;
 	38:37		TTL			uint8 = 0;
 	43:39		NUM			uint8;
@@ -207,7 +222,7 @@ define vmsa_tlbi_vae2_range_input bitfield<64> {
 	63:48		ASID			uint16 = 0;
 };
 
-define vmsa_tlbi_ipas2e1_range_input bitfield<64> {
+define vmsa_tlbi_ipa_range_input bitfield<64> {
 	36:0		BaseADDR		uint64;
 	38:37		TTL			uint8 = 0;
 	43:39		NUM			uint8;
@@ -217,8 +232,8 @@ define vmsa_tlbi_ipas2e1_range_input bitfield<64> {
 	63		NS			bool = 0;
 };
 
-define TLBI_RANGE_NUM_MAX	constant = (1 << 5) - 1;
-define TLBI_RANGE_SCALE_MAX	constant = (1 << 2) - 1;
+define TLBI_RANGE_NUM_MAX	constant uint8 = (1 << 5) - 1;
+define TLBI_RANGE_SCALE_MAX	constant uint8 = (1 << 2) - 1;
 #endif
 
 // Gunyah extensions to table entries (software bit usage)
@@ -247,22 +262,15 @@ define pgtable_stage_type enumeration(noprefix) {
 	PGTABLE_VM_STAGE_2;
 };
 
-define pgtable_entry_types_t newtype uint32;
-
-define vmsa_entry_type enumeration(explicit) {
-	NEXT_LEVEL_TABLE = 0x1;
-	PAGE = 0x2;
-	BLOCK = 0x4;
-	INVALID = 0x8;
-	// Non-legal entry types
-	RESERVED = 0x10;
-	// Legal entry types in the wrong level (i.e. blocks in level 0 or 3,
-	// pages above level 3)
-	ERROR = 0x20;
+define pgtable_entry_types bitfield<8> {
+	auto next_level_table bool;
+	auto page bool;
+	auto block bool;
+	auto invalid bool;
+	auto reserved bool;
+	auto error bool;
+	others unknown = 0;
 };
-
-// Alias for bitmap accepting no entry types
-define VMSA_ENTRY_TYPE_NONE constant enumeration vmsa_entry_type = 0;
 
 define pgtable_level enumeration(noprefix) {
 	PGTABLE_LEVEL_0 = 0;
@@ -272,7 +280,7 @@ define pgtable_level enumeration(noprefix) {
 	PGTABLE_LEVEL_OFFSET;
 };
 
-define PGTABLE_INVALID_LEVEL constant = 0xFFFFFFFF;
+define PGTABLE_INVALID_LEVEL constant type index_t = -1;
 
 define pgtable_level_info structure {
 	// [msb:lsb], range identifies the index in the address
@@ -285,7 +293,7 @@ define pgtable_level_info structure {
 	// useless bits
 	block_and_page_output_address_mask type paddr_t;
 	is_offset bool;
-	allowed_types type pgtable_entry_types_t;
+	allowed_types bitfield pgtable_entry_types;
 	// the address range size of each entry on this level
 	addr_size size;
 	entry_cnt type count_t;
@@ -305,6 +313,7 @@ define pgtable structure {
 	start_level_size size;
 
 	root_pgtable type paddr_t;
+	// FIXME:
 	// root pointer type vmsa_level_table_t;
 	root pointer bitfield vmsa_general_entry(atomic);
 
@@ -319,7 +328,9 @@ extend pgtable_vm structure {
 };
 
 define pgtable_hyp object {
+#if defined(ARCH_ARM_FEAT_VHE)
 	top_control structure pgtable;
+#endif
 	bottom_control structure pgtable;
 	lock structure spinlock;
 };
@@ -345,7 +356,6 @@ define pgtable_translation_table_walk_event enumeration {
 };
 
 define pgtable_map_modifier_args structure {
-	error enumeration error;
 	orig_virtual_address type vmaddr_t;
 	orig_size size;
 	phys type paddr_t;
@@ -359,26 +369,19 @@ define pgtable_map_modifier_args structure {
 	// With value == -1 means there's no new page table allocated since
 	// level 0 page table is always there.
 	new_page_start_level type index_t;
-	is_failed bool;
 	partially_mapped_size size;
-	try_map bool;
+	merge_limit size;
+	error enumeration error;
 	stage enumeration pgtable_stage_type;
+	try_map bool;
+	outer_shareable bool;
 };
 
 define pgtable_lookup_modifier_args structure {
 	phys type paddr_t;
 	size size;
 	// must be a block/page entry
-	entry bitfield vmsa_general_entry;
-};
-
-define pgtable_remap_region structure {
-	is_valid bool;
-	virtual_address type vmaddr_t;
-	upper_attrs type vmsa_upper_attrs_t;
-	lower_attrs type vmsa_lower_attrs_t;
-	phys type paddr_t;
-	size size;
+	entry union vmsa_entry;
 };
 
 define pgtable_unmap_modifier_args structure {
@@ -386,13 +389,13 @@ define pgtable_unmap_modifier_args structure {
 	// original virtual address, unchanged
 	preserved_size size;
 	stack array(maxof(enumeration pgtable_level) + 1) type paddr_t;
-	stage enumeration pgtable_stage_type;
 	phys type paddr_t;
 	size size;
+	stage enumeration pgtable_stage_type;
+	outer_shareable bool;
 };
 
 define pgtable_prealloc_modifier_args structure {
-	error enumeration error;
 	partition pointer object partition;
 	// It needs to alloc new page table level during mapping, this start
 	// index records the last level whose sub level needs to alloc page
@@ -401,4 +404,5 @@ define pgtable_prealloc_modifier_args structure {
 	// With value == -1 means there's no new page table allocated since
 	// level 0 page table is always there.
 	new_page_start_level type index_t;
+	error enumeration error;
 };

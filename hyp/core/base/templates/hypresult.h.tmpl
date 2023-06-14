@@ -60,7 +60,7 @@ ${name}_ptr_result_ok(${type_name} * ret);
 #set category = $basic_type.category
 #end if
 #end if
-#if $category in ['enumeration', 'primitive', 'bitfield', 'structure']
+#if $category in ['enumeration', 'primitive', 'bitfield', 'structure'] and $d.size != 0
 $declare_result(d.indicator, type_name)
 $declare_result_ptr(d.indicator, type_name)
 #else if $category in ['union', 'object']

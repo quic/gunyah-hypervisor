@@ -15,6 +15,8 @@ subscribe rootvm_init
 	// which is priority 10.
 	priority 1
 
+subscribe rootvm_init_late(root_thread, hyp_env)
+
 subscribe object_create_vic
 	priority last
 
@@ -31,10 +33,12 @@ subscribe object_deactivate_hwirq
 subscribe object_create_thread
 
 subscribe object_activate_thread
-	unwinder vgic_handle_object_deactivate_thread(thread)
+	unwinder vgic_unwind_object_activate_thread(thread)
 	// Run early so other modules (timer, etc) can bind to virtual PPIs.
 	// Must run after PSCI, which is priority 10.
 	priority 1
+
+subscribe object_deactivate_thread
 
 subscribe object_cleanup_thread(thread)
 
@@ -84,8 +88,13 @@ subscribe thread_load_state()
 
 subscribe scheduler_affinity_changed(thread, next_cpu)
 
+subscribe addrspace_attach_vdevice
+
+subscribe vdevice_access[VDEVICE_TYPE_VGIC_GICD]
+
+subscribe vdevice_access[VDEVICE_TYPE_VGIC_GICR]
+
 subscribe vdevice_access_fixed_addr
-	handler vgic_handle_vdevice_access
 	// Raise priority as this is more likely to be performance-critical
 	// than other vdevices. This can be removed once we have proper
 	// device-kind tracking for vdevices
@@ -104,4 +113,47 @@ subscribe vcpu_trap_wfi()
 
 subscribe vcpu_pending_wakeup
 
-subscribe vcpu_poweredoff()
+subscribe vcpu_stopped()
+
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI
+
+// When switching away from a VCPU, deschedule it in the GICR.
+subscribe thread_context_switch_pre()
+	// Run early, to give vPE descheduling time to complete during the
+	// rest of the context switch.
+	priority 100
+	require_preempt_disabled
+
+// When switching to a VCPU, schedule it in the GICR.
+subscribe thread_load_state
+	handler vgic_handle_thread_load_state_vpe()
+	// Run early, to give vPE scheduling time to complete before we return
+	// to userspace.
+	priority 100
+	require_preempt_disabled
+
+// When blocking for the VCPU, mark the vPE as descheduled. This allows us to
+// check for pending vLPIs / vSGIs now, and also to receive a doorbell if one
+// arrives later.
+subscribe vcpu_block_start()
+	unwinder vgic_vpe_schedule_current()
+	require_preempt_disabled
+
+subscribe vcpu_block_finish
+	handler vgic_vpe_schedule_current()
+	require_preempt_disabled
+
+subscribe vcpu_pending_wakeup
+	handler vgic_vpe_handle_vcpu_pending_wakeup()
+	// Run early, because this is a relatively cheap check and might fail
+	// repeatedly.
+	priority 100
+	require_preempt_disabled
+
+subscribe vcpu_trap_wfi
+	handler vgic_vpe_handle_vcpu_trap_wfi()
+	// Run early, because this is a relatively cheap check and might fail
+	// repeatedly.
+	priority 200
+
+#endif // VGIC_HAS_LPI && GICV3_HAS_VLPI

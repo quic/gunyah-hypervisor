@@ -1,0 +1,7 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier; BSD-3-Clause
+
+#if defined(ARCH_ARM_FEAT_FGT)
+HFGWTR_EL2
+#endif

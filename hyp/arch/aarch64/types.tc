@@ -6,16 +6,16 @@ define asm_ordering_dummy structure {
 	dummy char;
 };
 
-define AARCH64_INST_EXCEPTION_VAL constant = 0xd4000000;
-define AARCH64_INST_EXCEPTION_MASK constant = 0xff000000;
+define AARCH64_INST_EXCEPTION_VAL constant uint32 = 0xd4000000;
+define AARCH64_INST_EXCEPTION_MASK constant uint32 = 0xff000000;
 
-define AARCH64_INST_EXCEPTION_IMM16_MASK constant = 0x001fffe0;
+define AARCH64_INST_EXCEPTION_IMM16_MASK constant uint32 = 0x001fffe0;
 define AARCH64_INST_EXCEPTION_IMM16_SHIFT constant = 5;
 
-define AARCH64_INST_EXCEPTION_SUBTYPE_HLT_VAL constant = 0x00400000;
-define AARCH64_INST_EXCEPTION_SUBTYPE_MASK constant = 0x00e0001f;
+define AARCH64_INST_EXCEPTION_SUBTYPE_HLT_VAL constant uint32 = 0x00400000;
+define AARCH64_INST_EXCEPTION_SUBTYPE_MASK constant uint32 = 0x00e0001f;
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 define aarch64_pauth_key structure(aligned(16)) {
 	lo	uint64;
 	hi	uint64;
@@ -28,4 +28,4 @@ define aarch64_pauth_keys structure(aligned(16)) {
 	ib	structure aarch64_pauth_key;
 	ga	structure aarch64_pauth_key;
 };
-#endif // defined(ARCH_ARM_8_3_PAUTH)
+#endif // defined(ARCH_ARM_FEAT_PAuth)

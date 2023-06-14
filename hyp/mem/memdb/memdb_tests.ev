@@ -9,4 +9,5 @@ subscribe tests_init
 
 subscribe tests_start
 	priority last
+	require_preempt_disabled
 #endif

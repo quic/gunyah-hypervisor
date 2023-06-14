@@ -1,0 +1,80 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module memextent_sparse
+
+subscribe gpt_value_add_offset[GPT_TYPE_MEMEXTENT_MAPPING]
+	handler memextent_mapping_add_offset(value, offset)
+
+subscribe gpt_values_equal[GPT_TYPE_MEMEXTENT_MAPPING]
+	handler memextent_mappings_equal(x, y)
+
+subscribe memextent_activate[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_activate_sparse(me)
+
+subscribe memextent_activate_derive[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_activate_derive_sparse(me)
+
+subscribe memextent_supports_donation[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_supports_donation_sparse()
+
+subscribe memextent_donate_child[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_donate_child_sparse(me, phys, size, reverse)
+
+subscribe memextent_donate_sibling[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_donate_sibling_sparse(from, to, phys, size)
+
+subscribe memextent_map[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_map_sparse(extent, addrspace, vm_base, map_attrs)
+
+subscribe memextent_map_partial[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_map_partial_sparse(extent, addrspace, vm_base, offset, size, map_attrs)
+
+subscribe memextent_unmap[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_unmap_sparse(extent, addrspace, vm_base)
+
+subscribe memextent_unmap_partial[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_unmap_partial_sparse(extent, addrspace, vm_base, offset, size)
+
+subscribe memextent_unmap_all[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_unmap_all_sparse(extent)
+
+subscribe memextent_update_access[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_update_access_sparse(extent, addrspace, vm_base, access_attrs)
+
+subscribe memextent_update_access_partial[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_update_access_partial_sparse(extent, addrspace, vm_base,
+							offset, size, access_attrs)
+
+subscribe memextent_is_mapped[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_is_mapped_sparse(me, addrspace, exclusive)
+
+subscribe memextent_deactivate[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_deactivate_sparse(extent)
+
+subscribe memextent_cleanup[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_cleanup_sparse(extent)
+
+subscribe memextent_retain_mappings[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_retain_mappings_sparse(me)
+
+subscribe memextent_release_mappings[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_release_mappings_sparse(me, clear)
+
+subscribe memextent_lookup_mapping[MEMEXTENT_TYPE_SPARSE]
+	handler memextent_lookup_mapping_sparse(me, phys, size, i)
+
+subscribe object_create_addrspace
+	handler memextent_create_addrspace_sparse
+
+subscribe object_deactivate_addrspace
+	handler memextent_deactivate_addrspace_sparse
+
+#if defined(UNIT_TESTS)
+subscribe tests_init
+	handler tests_memextent_sparse_init()
+
+subscribe tests_start
+	handler tests_memextent_sparse_start()
+#endif

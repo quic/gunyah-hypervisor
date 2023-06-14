@@ -4,14 +4,27 @@
 
 interface rootvm
 
+include <qcbor.h>
+
 event rootvm_init
 	param root_partition: partition_t *
 	param root_thread: thread_t *
 	param root_cspace: cspace_t *
-	param env_data: boot_env_data_t *
+	param hyp_env: hyp_env_data_t *
+	param qcbor_enc_ctxt: qcbor_enc_ctxt_t *
+
+event rootvm_init_late
+	param root_partition: partition_t *
+	param root_thread: thread_t *
+	param root_cspace: cspace_t *
+	param hyp_env: const hyp_env_data_t *
+
+event rootvm_started
+	param root_thread: thread_t *
 
 module rootvm
 
 subscribe boot_hypervisor_start
 	handler rootvm_init()
 	priority last
+	require_preempt_disabled

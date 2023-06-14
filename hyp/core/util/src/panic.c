@@ -16,8 +16,8 @@
 
 #include <asm/event.h>
 
-noreturn void NOINLINE
-panic(const char *str)
+noreturn void NOINLINE COLD
+panic(const char *str) LOCK_IMPL
 {
 	void *from  = __builtin_return_address(0);
 	void *frame = __builtin_frame_address(0);
@@ -25,7 +25,7 @@ panic(const char *str)
 	// Stop all cores and disable preemption
 	trigger_scheduler_stop_event();
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	__asm__("xpaci %0;" : "+r"(from));
 #endif
 

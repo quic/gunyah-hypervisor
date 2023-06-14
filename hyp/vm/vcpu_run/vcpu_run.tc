@@ -1,0 +1,30 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object module vcpu_run {
+	wakeup_virq		structure virq_source(contained);
+	wakeup_virq_task	structure task_queue_entry(contained);
+
+	// Protected by the scheduler lock and the SCHEDULER_BLOCK_VCPU_RUN
+	// flag; only a thread that has cleared that flag can run the VCPU and
+	// update this state (even after dropping the lock). Also, any state
+	// variables maintained by handlers for the resume & check events are
+	// protected the same way.
+	last_state		enumeration vcpu_run_state;
+
+	// Protected by the scheduler lock.
+	enabled			bool;
+};
+
+extend virq_trigger enumeration {
+	vcpu_run_wakeup;
+};
+
+extend task_queue_class enumeration {
+	vcpu_run_wakeup_virq;
+};
+
+extend scheduler_block enumeration {
+	vcpu_run;
+};

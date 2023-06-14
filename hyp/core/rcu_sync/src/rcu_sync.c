@@ -124,6 +124,8 @@ rcu_sync_handle_update(rcu_entry_t *entry)
 }
 
 #if defined(UNITTESTS) && UNITTESTS
+#include <util.h>
+
 static _Atomic count_t rcu_sync_test_ready_count;
 static _Atomic bool    rcu_sync_test_start_flag;
 static _Atomic bool    rcu_sync_test_success_flag;
@@ -135,9 +137,6 @@ rcu_sync_handle_tests_init(void)
 	atomic_init(&rcu_sync_test_start_flag, false);
 	atomic_init(&rcu_sync_test_success_flag, false);
 }
-
-static_assert((1U << ((PLATFORM_MAX_CORES - 1U) * 3U)) != 0U,
-	      "Spin count will overflow");
 
 bool
 rcu_sync_handle_tests_start(void)
@@ -172,7 +171,9 @@ rcu_sync_handle_tests_start(void)
 		}
 
 		// Spin for a while to give rcu_sync() time to return early
-		for (count_t i = 0; i < (1U << (my_order * 3U)); i++) {
+		for (count_t i = 0;
+		     i < util_bit((24 * (my_order + 1)) / PLATFORM_MAX_CORES);
+		     i++) {
 			asm_yield();
 		}
 

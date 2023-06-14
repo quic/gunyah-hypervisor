@@ -1,0 +1,36 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define gpt structure {
+};
+
+define gpt_type enumeration {
+	empty = 0;
+};
+
+define gpt_value union {
+};
+
+define gpt_entry structure {
+	type	enumeration gpt_type;
+	value	union gpt_value;
+};
+
+define gpt_lookup_result structure {
+	entry	structure gpt_entry;
+	size	size;
+};
+
+define gpt_callback enumeration {
+	reserved = 0;
+};
+
+define gpt_arg union {
+	raw	uintptr;
+};
+
+define gpt_config bitfield<32> {
+	7:0	max_bits	type count_t;
+	8	rcu_read	bool;
+};

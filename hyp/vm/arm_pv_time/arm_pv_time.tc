@@ -1,0 +1,71 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define pv_time_data structure(aligned(64)) {
+	revision	uint32;
+	attributes	uint32;
+
+	// Stolen time after conversion to nanoseconds.
+	//
+	// The specification requires accesses to this variable to be
+	// (single-copy) atomic, but does not require explicit ordering.
+	stolen_ns	uint64(atomic);
+};
+
+// Packed self-unblock state.
+define arm_pv_time_self_block_state bitfield<64> {
+	// The last block state the thread put itself into. This is only valid
+	// if last_unblocked is 0.
+	//
+	// At initialisation, this is set to SCHEDULER_BLOCK_THREAD_LIFECYCLE.
+	// VCPU activation changes it to SCHEDULER_BLOCK_VCPU_OFF.
+	auto		block		enumeration scheduler_block;
+
+	// Time at which the thread was last unblocked from a self-imposed
+	// block state (i.e. one in in which the thread voluntarily gave up
+	// the CPU and which should not be counted as stolen).
+	//
+	// This is zero while the thread is in a self-imposed block state.
+	// The thread's initial block state (prior to first starting) is
+	// considered self-imposed for this purpose.
+	auto<60>	last_unblocked	type ticks_t;
+};
+
+define arm_pv_time structure {
+	// Pointer to the hypervisor mapping of the VM-accessible stolen time.
+	//
+	// If non-NULL, this has the same lifetime as the thread itself, and
+	// should only be accessed while holding a reference to the thread.
+	data			pointer structure pv_time_data;
+
+	// Stolen time in ticks. Must only be accessed by the thread.
+	stolen_ticks		type ticks_t;
+
+	// Time spent in a directed yield since the thread last ran. Must only
+	// be accessed by the thread, or by a CPU that is in a directed yield
+	// from the thread.
+	yield_time		type ticks_t;
+
+	// The packed last-block state, as defined above.
+	//
+	// This can only be accessed by the thread itself during context
+	// switch or entry into a block state, or while unblocking the thread
+	// while holding its scheduler lock. It is therefore ordered, but not
+	// directly protected, by the scheduler lock, so it needs to be atomic
+	// but can use relaxed ordering.
+	self_block		bitfield arm_pv_time_self_block_state(atomic);
+};
+
+extend thread object {
+	arm_pv_time structure arm_pv_time;
+};
+
+extend smccc_standard_hyp_function enumeration {
+	PV_TIME_FEATURES = 0x20;
+	PV_TIME_ST = 0x21;
+};
+
+extend addrspace_info_area_layout structure {
+	pv_time_data	array(PLATFORM_MAX_CORES) structure pv_time_data;
+};

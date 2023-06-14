@@ -79,3 +79,15 @@ __asm__(".error");
 // the static determination can be made after inlining by LTO.
 #define compiler_sizeof_object(ptr)    __builtin_object_size((ptr), 1)
 #define compiler_sizeof_container(ptr) __builtin_object_size((ptr), 0)
+
+// Mark a break statement as unreachable. This expected to be used at the end of
+// switch cases to comply with MISRA rule 16.3, which requires a break statement
+// to end the case regardless of whether it is reachable.
+
+// clang-format off
+#define compiler_unreachable_break \
+	_Pragma("clang diagnostic push")                                       \
+	_Pragma("clang diagnostic ignored \"-Wunreachable-code\"")             \
+	break                                                                  \
+	_Pragma("clang diagnostic pop")
+// clang-format on

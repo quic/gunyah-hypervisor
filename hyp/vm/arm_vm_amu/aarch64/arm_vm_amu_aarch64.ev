@@ -4,6 +4,18 @@
 
 module arm_vm_amu
 
-#if defined(ARCH_ARM_8_4_AMU)
-subscribe object_activate_thread
+#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
+subscribe boot_cpu_cold_init
+
+subscribe vcpu_activate_thread
+
+subscribe thread_context_switch_pre(next)
+
+subscribe thread_context_switch_post(prev)
+
+// The AMU counters are read often, give them a higher priority
+subscribe vcpu_trap_sysreg_read
+	priority 10
+
+subscribe vcpu_trap_sysreg_write
 #endif

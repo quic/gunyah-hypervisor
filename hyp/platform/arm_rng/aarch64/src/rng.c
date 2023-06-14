@@ -16,8 +16,8 @@
 
 #include <asm/barrier.h>
 
-#if !defined(ARCH_ARM_8_5_RNG) || !ARCH_ARM_8_5_RNG
-#error ARCH_ARM_8_5_RNG not set
+#if !defined(ARCH_ARM_FEAT_RNG) || !ARCH_ARM_FEAT_RNG
+#error ARCH_ARM_FEAT_RNG not set
 #endif
 
 // We use a per-cpu counter in case the implementation is not shared, and we
@@ -50,7 +50,8 @@ platform_get_entropy(platform_prng_data256_t *data)
 	} while ((i < 4U) && (retries != 0U));
 
 	if (i == 4U) {
-		memscpy(data, sizeof(*data), &prng_data, sizeof(prng_data));
+		(void)memscpy(data, sizeof(*data), &prng_data,
+			      sizeof(prng_data));
 		ret = OK;
 
 		// Issue a reseed read, ignoring the result.
@@ -101,8 +102,7 @@ platform_get_random32(uint32_t *data)
 error_t
 platform_get_rng_uuid(uint32_t data[4])
 {
-	// uuidgen -s -n @url -N "qualcomm.com/gunyah/trng/rndr"
-	// UUID: 16397d4e-a2ea-5fe2-92a1-433d45546e21
+	// Gunyah generic RNDR - ARM TRNG interface UUID
 	data[0] = 0x45546e21U;
 	data[1] = 0x92a1433dU;
 	data[2] = 0xa2ea5fe2U;

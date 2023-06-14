@@ -124,3 +124,12 @@ partition_add_heap(partition_t *partition, paddr_t base, size_t size);
 // back to.
 error_t
 partition_map_and_add_heap(partition_t *partition, paddr_t base, size_t size);
+
+#if defined(PLATFORM_TRACE_STANDALONE_REGION)
+// Map range and add memory to the partition's trace area
+//
+// The memory must have been allocated from the partition that is it is freed
+// back to.
+uintptr_result_t
+partition_map_and_add_trace(partition_t *partition, paddr_t base, size_t size);
+#endif

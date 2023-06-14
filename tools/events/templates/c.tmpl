@@ -19,10 +19,11 @@
 #end for
 
 \#include <events/${name}.h>
-#for h in $called_handlers
+#for h in $declared_handlers
 #set empty=False
 
-$h.return_type
+#set noreturn = 'noreturn ' if $h.noreturn else ''
+$noreturn$h.return_type
 ${h.name}(#slurp
 #set sep = ''
 #set params = list($h.params)
@@ -35,14 +36,15 @@ ${sep}${p.type}${space}${p.name}#slurp
 #else
 void#slurp
 #end if
-)
+)#slurp
 #for l in $h.lock_opts
  ${l.action.upper()}_${l.kind.upper()}(${l.lock})#slurp
 #end for
 ;
 #end for
 #def prototype(e)
-$e.return_type
+#set noreturn = 'noreturn ' if $e.noreturn else ''
+$noreturn$e.return_type
 trigger_${e.name}_event(#slurp
 #set sep = ''
 #if $e.params
@@ -56,11 +58,20 @@ void#slurp
 #end if
 )#slurp
 #end def
-#def call(s)
+#def call(s, r)
+#if r is not None
+#set ret_assign = r + ' = '
+#else
+#set ret_assign = ''
+#end if
 #if s.handler is not None
+#if s.handler.noreturn
 ${s.handler.name}(${', '.join(s.handler.args)})#slurp
+#else
+$ret_assign${s.handler.name}(${', '.join(s.handler.args)})#slurp
+#end if
 #elif s.constant is not None
-${s.constant}#slurp
+$ret_assign${s.constant}#slurp
 #else
 #raise Exception("No handler or constant for subscription " + str($s))
 #end if
@@ -73,7 +84,7 @@ $prototype(e)
     (void)$p;
 #end for
 #for s in e.subscribers
-    $call(s);
+    $call(s, None);
 #end for
 }
 #end for
@@ -88,7 +99,7 @@ $prototype(e)
     $e.return_type ret;
 
 #for s in e.subscribers
-    ret = $call(s);
+    $call(s, 'ret');
     if (ret != $e.default) {
         goto out;
     }
@@ -112,7 +123,7 @@ $prototype(e)
     $e.count.type _ret;
 #end if
 #for s in e.subscribers
-    _ret = $call(s);
+    $call(s, '_ret');
     if (_ret >= $e.count.name) {
         return ($e.count.type)0;
     }
@@ -130,29 +141,33 @@ $prototype(e)
 #end for
     $e.result.type $e.result.name = $e.result.default;
 
+#set indent = ' '*4
 #set first = True
 #for s in e.subscribers
 #if first
 #set first = False
 #else
-    if (compiler_expected($e.result.name == $e.success)) {
+${indent}if (compiler_expected($e.result.name == $e.success)) {
+#set indent = indent + ' '*4
 #end if
-    $e.result.name = $call(s);
+${indent}$call(s, $e.result.name);
 #end for
 
 #for s in tuple(reversed(e.subscribers))[1:]
 #if s.unwinder is not None
-    if (compiler_unexpected($e.result.name != $e.success)) {
-        ${s.unwinder.name}(${', '.join(s.unwinder.args)});
-    }
+${indent}if (compiler_unexpected($e.result.name != $e.success)) {
+${indent}    ${s.unwinder.name}(${', '.join(s.unwinder.args)});
+${indent}}
 #end if
-    }
+#set indent = indent[:-4]
+${indent}}
 #end for
 
     return $e.result.name;
 }
 #end for
 #for e in $selector_events
+#set void=$e.return_type=='void'
 
 \#pragma clang diagnostic push
 \#pragma clang diagnostic ignored "-Wswitch-enum"
@@ -162,27 +177,42 @@ $prototype(e)
 #for p in sorted(e.unused_param_names)
     (void)$p;
 #end for
+#if not $void
     $e.return_type ret;
-
+#set ret='ret'
+#else
+#set ret=None
+#end if
     switch ($e.selector.name) {
 #for s in e.subscribers
 #for selector in $s.selectors
     case $selector:
 #end for
-        ret = $call(s);
+        $call(s, ret);
+#if s.handler and s.handler.noreturn
+        // ${s.handler}() does not return
+        compiler_unreachable_break;
+#else
         break;
+#end if
 #end for
     default:
-        ret = $e.result.default;
+#if $void
+	// Nothing to do
+#else
+        $ret = $e.result.default;
+#end if
         break;
     }
 
+#if not $void
     return ret;
+#end if
 }
 
 \#pragma clang diagnostic pop
 #end for
 #if empty
-inline void
-events_dummy_function(void);
+void
+${name}_events_dummy_function(void);
 #end if

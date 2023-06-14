@@ -97,7 +97,12 @@ define ICH_HCR_EL2 bitfield<64> {
 	5		VGrp0DIE	bool;
 	6		VGrp1EIE	bool;
 	7		VGrp1DIE	bool;
+#if GICV3_HAS_VLPI_V4_1
+	// Note: despite the name, this is negated (1 means not counted)
+	8		vSGIEOICount	bool;
+#else
 	8		unknown=0;
+#endif
 	9		unknown=0;
 	10		TC		bool;
 	11		TALL0		bool;

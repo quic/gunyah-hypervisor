@@ -4,23 +4,17 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#import math
+
 #set $ns_in_s = 1000000000
-#set freq_shift = 0
-#set ns_shift = 0
-#set $freq = $PLATFORM_ARCH_TIMER_FREQ
-#while freq / ($ns_in_s << $ns_shift) > 1
-#set ns_shift += 1
-#end while
-#while $ns_in_s / ($freq << $freq_shift) > 1
-#set freq_shift += 1
-#end while
+#set $gcd = math.gcd(ns_in_s, $PLATFORM_ARCH_TIMER_FREQ)
 
-\#define NS_IN_S (uint64_t)${ns_in_s}U
+#set $ns_to_freq_mult = $PLATFORM_ARCH_TIMER_FREQ//$gcd
+#set $freq_to_ns_mult = $ns_in_s//$gcd
 
-\#define PLATFORM_TIMER_FREQ_SHIFT $freq_shift
-\#define PLATFORM_TIMER_NS_SHIFT $ns_shift
+## Ensure that we can have at least 20 yrs uptime without timer overflow
+#set $secs_per_year = 60*60*24*365.25
+#assert ($PLATFORM_ARCH_TIMER_FREQ * $freq_to_ns_mult * $secs_per_year * 20) < (1 << 64)
 
-\#define PLATFORM_TIMER_FREQ_SCALE					       \
-	 (uint64_t)(((__uint128_t)$freq << 64) / ($ns_in_s << $ns_shift))
-\#define PLATFORM_TIMER_NS_SCALE					       \
-	 (uint64_t)(((__uint128_t)$ns_in_s << 64) / ($freq << $freq_shift))
+\#define PLATFORM_TIMER_NS_TO_FREQ_MULT (uint64_t)$ns_to_freq_mult
+\#define PLATFORM_TIMER_FREQ_TO_NS_MULT (uint64_t)$freq_to_ns_mult

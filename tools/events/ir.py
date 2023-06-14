@@ -139,9 +139,16 @@ class Priority(float, IRObject):
 
 
 class Result(IRObject):
-    def __init__(self, children):
-        self.type = _first_of_type(children, Type)
-        self.default = _first_of_type(children, ConstExpr)
+    def __init__(self, children, void=False):
+        try:
+            self.type = _first_of_type(children, Type)
+            self.default = _first_of_type(children, ConstExpr)
+        except StopIteration:
+            if void:
+                self.type = Type('void')
+                self.default = None
+            else:
+                raise StopIteration
 
 
 class ExpectedArgs(list, IRObject):
@@ -173,7 +180,8 @@ class AbstractEvent(IRObject, metaclass=abc.ABCMeta):
             (c.name, c) for c in children if isinstance(c, Param))
 
     def set_owner(self, module):
-        self.module = module
+        self.module_name = module.name
+        self.module_includes = module.includes
 
     @abc.abstractmethod
     def subscribe(self, subscription):
@@ -192,6 +200,10 @@ class AbstractEvent(IRObject, metaclass=abc.ABCMeta):
 
     @abc.abstractproperty
     def return_type(self):
+        raise NotImplementedError
+
+    @abc.abstractproperty
+    def noreturn(self):
         raise NotImplementedError
 
     def param(self, name):
@@ -272,15 +284,40 @@ class AbstractSortedEvent(AbstractEvent):
             for lock_opt in s.lock_opts:
                 lock_opt.apply(acquires, releases, requires, excludes, kinds)
         lock_opts = []
-        for lock in acquires:
+        for lock in sorted(acquires):
             lock_opts.append(LockAnnotation('acquire', kinds[lock], lock))
-        for lock in releases:
+        for lock in sorted(releases):
             lock_opts.append(LockAnnotation('release', kinds[lock], lock))
-        for lock in requires:
+        for lock in sorted(requires):
             lock_opts.append(LockAnnotation('require', kinds[lock], lock))
-        for lock in excludes:
+        for lock in sorted(excludes):
             lock_opts.append(LockAnnotation('exclude', kinds[lock], lock))
         self._lock_opts = tuple(lock_opts)
+
+        noreturn = (self._subscribers and self._subscribers[-1].handler and
+                    self._subscribers[-1].handler.noreturn)
+        if noreturn and self.return_type != 'void':
+            s = self._subscribers[-1]
+            n = s.handler.noreturn
+            logger.error("%s:%d:%d: error: last handler %s for event %s must "
+                         "return, but is declared as noreturn",
+                         n.meta.filename, n.meta.line, n.meta.column,
+                         s.handler, self.name)
+            raise DSLError()
+        for s in self._subscribers[:-1]:
+            if s.handler is not None and s.handler.noreturn:
+                n = s.handler.noreturn
+                logger.error("%s:%d:%d: error: handler %s for event %s does "
+                             "not return, but is not the last handler (%s)",
+                             n.meta.filename, n.meta.line, n.meta.column,
+                             s.handler, self.name,
+                             self._subscribers[-1].handler)
+                raise DSLError()
+        self._noreturn = noreturn
+
+    @property
+    def noreturn(self):
+        return self._noreturn
 
     @property
     def subscribers(self):
@@ -431,6 +468,12 @@ class SelectorEvent(AbstractEvent):
         return self.result.type
 
     @property
+    def noreturn(self):
+        # Note: this could  be true if the selector is a enum type that is
+        # covered by noreturn handlers. We're not likely to ever do that.
+        return False
+
+    @property
     def unused_param_names(self):
         return super().unused_param_names - {self.selector.name}
 
@@ -443,6 +486,10 @@ class Public(IRObject):
     pass
 
 
+class NoReturn(IRObject):
+    pass
+
+
 class Subscription(IRObject):
     def __init__(self, children):
         self.event_name = _first_of_type(children, Symbol)
@@ -451,13 +498,14 @@ class Subscription(IRObject):
         self.handler = _first_of_type_opt(children, Handler)
         self.constant = _first_of_type_opt(children, Constant)
         if self.handler is None and self.constant is None:
-            self.handler = Handler(_first_of_type_opt(children, ExpectedArgs))
+            self.handler = Handler(_first_of_type_opt(children, ExpectedArgs),
+                                   _first_of_type_opt(children, NoReturn))
         self.unwinder = _first_of_type_opt(children, Unwinder)
         self.priority = _first_of_type_opt(children, Priority)
         self.lock_opts = _all_of_type(children, LockAnnotation)
 
     def set_owner(self, module):
-        self.module = module
+        self.module_name = module.name
 
     def resolve(self, events):
         try:
@@ -490,10 +538,11 @@ class AbstractFunction(IRObject, metaclass=abc.ABCMeta):
         self.name = _first_of_type_opt(children, Symbol)
         self.args = _first_of_type_opt(children, ExpectedArgs)
         self.public = any(c for c in children if isinstance(c, Public))
+        self._noreturn = _first_of_type_opt(children, NoReturn)
 
     def resolve(self, subscription):
         self.subscription = subscription
-        self.module = subscription.module
+        self.module_name = subscription.module_name
         self.event = subscription.event
 
         if self.name is None:
@@ -519,8 +568,12 @@ class AbstractFunction(IRObject, metaclass=abc.ABCMeta):
         return self.event.param_names
 
     @property
+    def noreturn(self):
+        return self._noreturn
+
+    @property
     def return_type(self):
-        return self.event.return_type
+        return self.event.return_type if not self.noreturn else 'void'
 
     @property
     def params(self):
@@ -538,17 +591,22 @@ class AbstractFunction(IRObject, metaclass=abc.ABCMeta):
     def __str__(self):
         return self.name
 
+    def __hash__(self):
+        """Generate a unique hash for the function."""
+        return hash((self.name, self.return_type) +
+                    tuple((p.name, p.type) for p in self.params))
+
 
 class Handler(AbstractFunction):
     @property
     def _default_name(self):
-        return "{:s}_handle_{:s}".format(self.module.name, self.event.name)
+        return "{:s}_handle_{:s}".format(self.module_name, self.event.name)
 
 
 class Unwinder(AbstractFunction):
     @property
     def _default_name(self):
-        return "{:s}_unwind_{:s}".format(self.module.name, self.event.name)
+        return "{:s}_unwind_{:s}".format(self.module_name, self.event.name)
 
     @property
     def _available_params(self):
@@ -617,30 +675,34 @@ class Module(IRObject):
         # Each of these may be used by multiple subscriptions, either to
         # different events, or to the same selector event with different
         # selections, or even repeatedly for one event.
-        #
-        # Currently we do not check that the arguments are consistent, since
-        # this means determining whether C types are compatible — we leave
-        # that to the C compiler.
-        seen_handlers = set()
+        seen_handlers = dict()
         for s in self.subscriptions:
             for h in s.all_handlers:
-                if h in seen_handlers:
+                if h.name in seen_handlers:
+                    if seen_handlers[h.name] != hash(h):
+                        logger.error("handler decl mismatch: %s",
+                                     h.name)
+                        raise DSLError()
                     continue
-                seen_handlers.add(h)
+                seen_handlers[h.name] = hash(h)
                 yield h
 
     @property
-    def called_handlers(self):
-        # Unique event handlers called by this module's events.
-        seen_handlers = set()
+    def declared_handlers(self):
+        # Unique event handlers declared by this module's events.
+        seen_handlers = dict()
         for e in self.events:
             for s in e.subscribers:
                 for h in s.all_handlers:
-                    if h in seen_handlers:
+                    if h.name in seen_handlers:
+                        if seen_handlers[h.name] != hash(h):
+                            logger.error("handler decl mismatch: %s",
+                                         h.name)
+                            raise DSLError()
                         continue
                     if h.public:
                         continue
-                    seen_handlers.add(h)
+                    seen_handlers[h.name] = hash(h)
                     yield h
 
     @property
@@ -652,12 +714,12 @@ class Module(IRObject):
             if e is NotImplemented:
                 continue
 
-            m = e.module
+            m = e.module_name
             if m in seen_modules:
                 continue
             seen_modules.add(m)
 
-            for i in m.includes:
+            for i in e.module_includes:
                 if i in seen_includes:
                     continue
                 seen_includes.add(i)

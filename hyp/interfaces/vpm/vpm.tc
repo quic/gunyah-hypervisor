@@ -9,7 +9,18 @@ extend hyp_api_flags0 bitfield {
 };
 #endif
 
-define vpm_state enumeration(explicit) {
+extend cap_rights_vpm_group bitfield {
+	0	attach_vcpu	bool;
+	1	bind_virq	bool;
+	2	query		bool;
+};
+
+define vpm_group_option_flags public bitfield<64> {
+	0	no_aggregation	bool;
+	others	unknown=0;
+};
+
+define vpm_state public enumeration(explicit) {
 	no_state = 0;		// Invalid / non existent
 	running = 1;		// VPM is active
 	cpus_suspended = 2;	// VPM is suspended after a CPU_SUSPEND call

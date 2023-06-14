@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <hyptypes.h>
 
+#include <addrspace.h>
 #include <atomic.h>
 #include <bitmap.h>
 #include <compiler.h>
@@ -23,7 +24,7 @@
 #include <spinlock.h>
 #include <trace.h>
 
-#include <events/memextent.h>
+#include <events/object.h>
 
 #include "event_handlers.h"
 
@@ -43,9 +44,14 @@ extern void
 pgtable_vm_dump(pgtable_vm_t *pgtable);
 #endif
 
+rcu_update_status_t
+partition_destroy_memextent(rcu_entry_t *entry);
+
 void
 tests_memextent_init(void)
 {
+	spinlock_init(&test_memextent_spinlock);
+
 	partition = partition_get_root();
 
 	addrspace_ptr_result_t ret;
@@ -68,24 +74,22 @@ tests_memextent_init(void)
 
 	as2 = ret.r;
 
-	spinlock_init(&as->mapping_list_lock);
-	spinlock_init(&as->pgtable_lock);
-	list_init(&as->mapping_list);
-	spinlock_init(&as2->mapping_list_lock);
-	spinlock_init(&as2->pgtable_lock);
-	list_init(&as2->mapping_list);
-
 	// Dummy vmids
-	ret.e = pgtable_vm_init(partition, &as->vm_pgtable, 65U);
-	if (ret.e != OK) {
-		panic("Error pgtable_vm_init as");
-	}
-	ret.e = pgtable_vm_init(partition, &as2->vm_pgtable, 66U);
-	if (ret.e != OK) {
-		panic("Error pgtable_vm_init as 2");
+	if (addrspace_configure(as, 65U) != OK) {
+		panic("Failed addrspace configuration");
 	}
 
-	tests_memextent_count = 0;
+	if (addrspace_configure(as2, 66U) != OK) {
+		panic("Failed addrspace 2 configuration");
+	}
+
+	if (object_activate_addrspace(as) != OK) {
+		panic("Failed addrspace activation");
+	}
+
+	if (object_activate_addrspace(as2) != OK) {
+		panic("Failed addrspace 2 activation");
+	}
 }
 
 static error_t
@@ -353,27 +357,24 @@ tests_memextent_test1(paddr_t phys_base)
 
 	// Uncomment to make the destruction now and be able to see the pgtable
 	// update instead of doing it sometime later by the rcu_update
-#if 1
-	trigger_memextent_deactivate_event(me_dd2->type, me_dd2);
-	trigger_memextent_deactivate_event(me_dd->type, me_dd);
-	trigger_memextent_deactivate_event(me_d2->type, me_d2);
-	trigger_memextent_deactivate_event(me_d->type, me_d);
-	trigger_memextent_deactivate_event(me2->type, me2);
-	trigger_memextent_deactivate_event(me->type, me);
+#if 0
+	trigger_object_deactivate_memextent_event(me_dd2);
+	(void)partition_destroy_memextent(&me_dd2->header.rcu_entry);
 
-	partition_free(partition, me_dd2, sizeof(memextent_t));
-	partition_free(partition, me_dd, sizeof(memextent_t));
-	partition_free(partition, me_d2, sizeof(memextent_t));
-	partition_free(partition, me_d, sizeof(memextent_t));
-	partition_free(partition, me2, sizeof(memextent_t));
-	partition_free(partition, me, sizeof(memextent_t));
+	trigger_object_deactivate_memextent_event(me_dd);
+	(void)partition_destroy_memextent(&me_dd->header.rcu_entry);
 
-	object_put_partition(partition);
-	object_put_partition(partition);
-	object_put_partition(partition);
-	object_put_partition(partition);
-	object_put_partition(partition);
-	object_put_partition(partition);
+	trigger_object_deactivate_memextent_event(me_d2);
+	(void)partition_destroy_memextent(&me_d2->header.rcu_entry);
+
+	trigger_object_deactivate_memextent_event(me_d);
+	(void)partition_destroy_memextent(&me_d->header.rcu_entry);
+
+	trigger_object_deactivate_memextent_event(me2);
+	(void)partition_destroy_memextent(&me2->header.rcu_entry);
+
+	trigger_object_deactivate_memextent_event(me);
+	(void)partition_destroy_memextent(&me->header.rcu_entry);
 #else
 	object_put_memextent(me_dd2);
 	object_put_memextent(me_dd);
@@ -489,27 +490,23 @@ tests_memextent_test2(paddr_t phys_base)
 
 	// Uncomment to make the destruction now and be able to see the pgtable
 	// update instead of doing it sometime later by the rcu_update
-#if 1
-	trigger_memextent_deactivate_event(me_d->type, me_d);
-	partition_free(partition, me_d, sizeof(memextent_t));
-	object_put_partition(partition);
+#if 0
+	trigger_object_deactivate_memextent_event(me_d);
+	(void)partition_destroy_memextent(&me_d->header.rcu_entry);
 
 #if !defined(NDEBUG)
 	LOG(DEBUG, INFO, "+--------------- deactivate me_d pgtable 1:\n");
 	pgtable_vm_dump(&as->vm_pgtable);
 #endif
-	trigger_memextent_deactivate_event(me->type, me);
-	partition_free(partition, me, sizeof(memextent_t));
-	object_put_partition(partition);
+	trigger_object_deactivate_memextent_event(me);
+	(void)partition_destroy_memextent(&me->header.rcu_entry);
 
 #if !defined(NDEBUG)
 	LOG(DEBUG, INFO, "+--------------- deactivate me pgtable 1:\n");
 	pgtable_vm_dump(&as->vm_pgtable);
 #endif
-
-	trigger_memextent_deactivate_event(me2->type, me2);
-	partition_free(partition, me2, sizeof(memextent_t));
-	object_put_partition(partition);
+	trigger_object_deactivate_memextent_event(me2);
+	(void)partition_destroy_memextent(&me2->header.rcu_entry);
 
 #if !defined(NDEBUG)
 	LOG(DEBUG, INFO, "+--------------- deactivate me2 pgtable 1:\n");
@@ -530,19 +527,19 @@ tests_memextent(void)
 	bool wait_all_cores_end	  = true;
 	bool wait_all_cores_start = true;
 
-	spinlock_acquire(&test_memextent_spinlock);
+	spinlock_acquire_nopreempt(&test_memextent_spinlock);
 	tests_memextent_count++;
-	spinlock_release(&test_memextent_spinlock);
+	spinlock_release_nopreempt(&test_memextent_spinlock);
 
 	// Wait until all cores have reached this point to start.
 	while (wait_all_cores_start) {
-		spinlock_acquire(&test_memextent_spinlock);
+		spinlock_acquire_nopreempt(&test_memextent_spinlock);
 
 		if (tests_memextent_count == (PLATFORM_MAX_CORES)) {
 			wait_all_cores_start = false;
 		}
 
-		spinlock_release(&test_memextent_spinlock);
+		spinlock_release_nopreempt(&test_memextent_spinlock);
 	}
 
 	if (cpulocal_get_index() != 0U) {
@@ -558,22 +555,22 @@ tests_memextent(void)
 	phys_base = tests_find_free_range();
 
 	tests_memextent_test2(phys_base);
-	spinlock_acquire(&test_memextent_spinlock);
+	spinlock_acquire_nopreempt(&test_memextent_spinlock);
 	tests_memextent_count++;
-	spinlock_release(&test_memextent_spinlock);
+	spinlock_release_nopreempt(&test_memextent_spinlock);
 
 	LOG(DEBUG, INFO, "Memextent tests finished");
 wait:
 
 	// Make all threads wait for test to end
 	while (wait_all_cores_end) {
-		spinlock_acquire(&test_memextent_spinlock);
+		spinlock_acquire_nopreempt(&test_memextent_spinlock);
 
 		if (tests_memextent_count == PLATFORM_MAX_CORES + 1) {
 			wait_all_cores_end = false;
 		}
 
-		spinlock_release(&test_memextent_spinlock);
+		spinlock_release_nopreempt(&test_memextent_spinlock);
 	}
 
 	return false;

@@ -1,0 +1,18 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vtbre
+
+subscribe boot_cpu_cold_init()
+
+// Lower priority than vcpu_arch_handle_object_create_thread so it can set up
+// MDCR_EL2 properly after it has been initialised to the default value.
+subscribe object_create_thread
+	priority -10
+
+subscribe vcpu_trap_sysreg_read
+	handler vtbre_handle_vcpu_trap_sysreg
+
+subscribe vcpu_trap_sysreg_write
+	handler vtbre_handle_vcpu_trap_sysreg

@@ -2,8 +2,12 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define ticks_t newtype uint64;
+define ticks_t public newtype uint64;
 define nanoseconds_t public newtype uint64;
+define microseconds_t public newtype uint64;
+
+define TIMER_NANOSECS_IN_SECOND constant type nanoseconds_t = 1000000000;
+define TIMER_MICROSECS_IN_SECOND constant type microseconds_t = 1000000;
 
 define timer structure {
 };

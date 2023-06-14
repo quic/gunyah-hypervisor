@@ -2,6 +2,12 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#if defined(ARCH_ARM_FEAT_VHE) && defined(ARCH_ARM_FEAT_PAN)
+define ARCH_AARCH64_USE_PAN constant = 1;
+#else
+define ARCH_AARCH64_USE_PAN constant = 0;
+#endif
+
 define virt_range structure {
 	base uintptr;
 	size size;

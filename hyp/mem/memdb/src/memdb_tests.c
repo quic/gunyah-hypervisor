@@ -16,6 +16,7 @@
 #include <panic.h>
 #include <partition.h>
 #include <partition_init.h>
+#include <rcu.h>
 #include <spinlock.h>
 #include <trace.h>
 #include <util.h>
@@ -54,7 +55,7 @@ memdb_test_add_free_range(paddr_t base, size_t size, void *arg)
 		first_entry = false;
 	}
 
-	if (first_entry == false) {
+	if (!first_entry) {
 		index++;
 	}
 	if (index >= MEMDB_RANGES_NUM) {
@@ -98,7 +99,7 @@ get_inserted_ranges(memdb_data_t *memdb_data, uintptr_t object,
 			LOG(DEBUG, INFO,
 			    "<<< BUG!! range {:#x}..{:#x} should be contiguouos",
 			    start_addr, end_addr);
-			assert(cont == true);
+			assert(cont);
 		}
 	}
 }
@@ -160,9 +161,9 @@ memdb_test1(void)
 
 	// Use addresses in: (0x300000000..0x5FFFFFFFFF)
 
-	partition_t	    *root_partition = partition_get_root();
-	partition_t	    *hyp_partition  = partition_get_private();
-	allocator_t	    *root_allocator = &root_partition->allocator;
+	partition_t	       *root_partition = partition_get_root();
+	partition_t	       *hyp_partition  = partition_get_private();
+	allocator_t	       *root_allocator = &root_partition->allocator;
 	paddr_t			start_addr     = 0U;
 	paddr_t			end_addr       = 0U;
 	uintptr_t		obj;
@@ -174,7 +175,7 @@ memdb_test1(void)
 	bool			cont;
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -199,10 +200,12 @@ memdb_test1(void)
 
 	bool is_range_used =
 		is_range_in_memdb(memdb_data, start_addr, end_addr);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	start_addr = 0x3000000000;
 	end_addr   = 0x300003FFFF;
@@ -228,10 +231,12 @@ memdb_test1(void)
 	// Lookup an address from root_partition that I know it is not
 	// explicitly in an entry since it is in a skipped level due to a guard;
 	paddr_t addr = 0x3000100000;
-	res	     = memdb_lookup(addr);
+	rcu_read_start();
+	res = memdb_lookup(addr);
 	assert(res.e == OK);
 	assert(res.r.object == obj);
 	assert(res.r.type == type);
+	rcu_read_finish();
 
 	// Update ownership of range in skipped levels
 
@@ -323,7 +328,7 @@ memdb_test1(void)
 
 	cont = memdb_is_ownership_contiguous(start_addr, end_addr, prev_obj,
 					     prev_type);
-	assert(cont == true);
+	assert(cont);
 
 	// Check if rollback left everything correct
 	check_ranges_in_memdb(memdb_data);
@@ -358,7 +363,7 @@ memdb_test1(void)
 
 	cont = memdb_is_ownership_contiguous(start_addr, end_addr, prev_obj,
 					     prev_type);
-	assert(cont == true);
+	assert(cont);
 
 	start_addr = 0x3040000000;
 	end_addr   = 0x30FFFFFFFF;
@@ -366,7 +371,7 @@ memdb_test1(void)
 	type	   = MEMDB_TYPE_ALLOCATOR;
 
 	cont = memdb_is_ownership_contiguous(start_addr, end_addr, obj, type);
-	assert(cont == true);
+	assert(cont);
 	partition_free(hyp_partition, memdb_data, memdb_data_size);
 }
 
@@ -393,7 +398,7 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 	partition_t *hyp_partition  = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -412,10 +417,12 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 	check_ranges_in_memdb(memdb_data);
 
 	bool is_range_used = is_range_in_memdb(memdb_data, start, end);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	memdb_obj_type_result_t res = memdb_lookup(start);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	for (index_t i = 0; i < test_data->ranges_count; i++) {
 		paddr_t start_addr = test_data->ranges[i].base;
@@ -447,14 +454,16 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		}
 		assert(err == OK);
 
+		rcu_read_start();
 		res = memdb_lookup(start_addr);
 		assert(res.e == OK);
 		assert(res.r.object == obj);
 		assert(res.r.type == type);
+		rcu_read_finish();
 
 		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
 							  obj, type);
-		assert(cont == true);
+		assert(cont);
 
 		// Failure cases:
 		err = memdb_insert(root_partition, start_addr, end_addr, obj,
@@ -478,7 +487,7 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		// Verify that the failure cases did not modify the memdb
 		cont = memdb_is_ownership_contiguous(start_addr, end_addr, obj,
 						     type);
-		assert(cont == true);
+		assert(cont);
 	}
 
 	// Check all ranges in memdb to see if everything has been done
@@ -495,7 +504,7 @@ memdb_test2(void)
 	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *test_data;
+	memdb_data_t	 *test_data;
 	size_t		  test_data_size = sizeof(*test_data);
 
 	alloc_ret = partition_alloc(hyp_partition, test_data_size,
@@ -538,7 +547,7 @@ memdb_test3(void)
 	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *test_data;
+	memdb_data_t	 *test_data;
 	size_t		  test_data_size = sizeof(*test_data);
 
 	alloc_ret = partition_alloc(hyp_partition, test_data_size,
@@ -591,7 +600,7 @@ memdb_test4(void)
 	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *test_data;
+	memdb_data_t	 *test_data;
 	size_t		  test_data_size = sizeof(*test_data);
 
 	alloc_ret = partition_alloc(hyp_partition, test_data_size,
@@ -652,7 +661,7 @@ memdb_test5(void)
 	partition_t *hyp_partition  = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *test_data;
+	memdb_data_t	 *test_data;
 	size_t		  test_data_size = sizeof(*test_data);
 
 	alloc_ret = partition_alloc(hyp_partition, test_data_size,
@@ -706,7 +715,7 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 	partition_t *hyp_partition  = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -723,10 +732,12 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 	check_ranges_in_memdb(memdb_data);
 
 	bool is_range_used = is_range_in_memdb(memdb_data, start, end);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	memdb_obj_type_result_t res = memdb_lookup(start);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	LOG(DEBUG, INFO, "<<< Adding range: {:#x}-{:#x}", start, end);
 
@@ -757,14 +768,16 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 		uintptr_t    obj  = test_data->ranges[i].obj;
 		memdb_type_t type = test_data->ranges[i].type;
 
+		rcu_read_start();
 		res = memdb_lookup(start_addr);
 		assert(res.e == OK);
 		assert(res.r.object == obj);
 		assert(res.r.type == type);
+		rcu_read_finish();
 
 		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
 							  obj, type);
-		assert(cont == true);
+		assert(cont);
 	}
 
 	// Check all ranges in memdb to see if everything has been done
@@ -784,14 +797,16 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 		assert(err == OK);
 	}
 
+	rcu_read_start();
 	res = memdb_lookup(start);
 	assert(res.e == OK);
 	assert(res.r.object == initial_obj);
 	assert(res.r.type == initial_type);
+	rcu_read_finish();
 
 	bool cont = memdb_is_ownership_contiguous(start, end, initial_obj,
 						  initial_type);
-	assert(cont == true);
+	assert(cont);
 
 	// Check all ranges in memdb to see if everything has been done
 	// correctly
@@ -812,7 +827,7 @@ memdb_test0(void)
 	partition_t *hyp_partition  = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *test_data;
+	memdb_data_t	 *test_data;
 	size_t		  test_data_size = sizeof(*test_data);
 
 	alloc_ret = partition_alloc(hyp_partition, test_data_size,
@@ -856,13 +871,15 @@ memdb_test0(void)
 				   MEMDB_TYPE_PARTITION);
 	assert(err == OK);
 
+	rcu_read_start();
 	memdb_obj_type_result_t res = memdb_lookup(start_addr);
 	assert(res.e == OK);
+	rcu_read_finish();
 
 	bool cont = memdb_is_ownership_contiguous(start_addr, end_addr2,
 						  (uintptr_t)root_partition,
 						  MEMDB_TYPE_PARTITION);
-	assert(cont == true);
+	assert(cont);
 
 	paddr_t start_addr3 = 0x380000000;
 	paddr_t end_addr3   = 0x3D4FFFFFF;
@@ -871,13 +888,15 @@ memdb_test0(void)
 			   (uintptr_t)root_partition, MEMDB_TYPE_PARTITION);
 	assert(err == OK);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr3);
 	assert(res.e == OK);
+	rcu_read_finish();
 
 	cont = memdb_is_ownership_contiguous(start_addr3, end_addr2,
 					     (uintptr_t)root_partition,
 					     MEMDB_TYPE_PARTITION);
-	assert(cont == true);
+	assert(cont);
 }
 
 static void
@@ -885,8 +904,8 @@ memdb_test6(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 6:");
 
-	partition_t	    *root_partition = partition_get_root();
-	partition_t	    *hyp_partition  = partition_get_private();
+	partition_t	       *root_partition = partition_get_root();
+	partition_t	       *hyp_partition  = partition_get_private();
 	paddr_t			start_addr     = 0U;
 	paddr_t			end_addr       = 0U;
 	uintptr_t		obj;
@@ -897,7 +916,7 @@ memdb_test6(void)
 	memdb_obj_type_result_t res;
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -916,10 +935,12 @@ memdb_test6(void)
 
 	bool is_range_used =
 		is_range_in_memdb(memdb_data, start_addr, end_addr);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	start_addr = 0x2000000000000;
 	end_addr   = 0x201ffffffffff;
@@ -995,8 +1016,8 @@ memdb_test7(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 7:");
 
-	partition_t	    *root_partition = partition_get_root();
-	partition_t	    *hyp_partition  = partition_get_private();
+	partition_t	       *root_partition = partition_get_root();
+	partition_t	       *hyp_partition  = partition_get_private();
 	paddr_t			start_addr     = 0U;
 	paddr_t			end_addr       = 0U;
 	uintptr_t		obj;
@@ -1007,7 +1028,7 @@ memdb_test7(void)
 	memdb_obj_type_result_t res;
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -1026,10 +1047,12 @@ memdb_test7(void)
 
 	bool is_range_used =
 		is_range_in_memdb(memdb_data, start_addr, end_addr);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	start_addr = 0x3000000000000;
 	end_addr   = 0x300001fffffff;
@@ -1105,8 +1128,8 @@ memdb_test8(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 8:");
 
-	partition_t	    *root_partition = partition_get_root();
-	partition_t	    *hyp_partition  = partition_get_private();
+	partition_t	       *root_partition = partition_get_root();
+	partition_t	       *hyp_partition  = partition_get_private();
 	paddr_t			start_addr     = 0U;
 	paddr_t			end_addr       = 0U;
 	uintptr_t		obj;
@@ -1117,7 +1140,7 @@ memdb_test8(void)
 	memdb_obj_type_result_t res;
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -1136,10 +1159,12 @@ memdb_test8(void)
 
 	bool is_range_used =
 		is_range_in_memdb(memdb_data, start_addr, end_addr);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	start_addr = 0x4000000000000;
 	end_addr   = 0x400001fffffff;
@@ -1270,8 +1295,8 @@ memdb_test9(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 9:");
 
-	partition_t	    *root_partition = partition_get_root();
-	partition_t	    *hyp_partition  = partition_get_private();
+	partition_t	       *root_partition = partition_get_root();
+	partition_t	       *hyp_partition  = partition_get_private();
 	paddr_t			start_addr     = 0U;
 	paddr_t			end_addr       = 0U;
 	uintptr_t		obj;
@@ -1280,7 +1305,7 @@ memdb_test9(void)
 	memdb_obj_type_result_t res;
 
 	void_ptr_result_t alloc_ret;
-	memdb_data_t     *memdb_data;
+	memdb_data_t	 *memdb_data;
 	size_t		  memdb_data_size = sizeof(*memdb_data);
 
 	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
@@ -1321,10 +1346,12 @@ memdb_test9(void)
 
 	bool is_range_used =
 		is_range_in_memdb(memdb_data, start_addr, end_addr);
-	assert(is_range_used == false);
+	assert(!is_range_used);
 
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	obj  = (uintptr_t)root_partition;
 	type = MEMDB_TYPE_PARTITION;
@@ -1340,11 +1367,79 @@ memdb_test9(void)
 	partition_free(root_partition, dummy_region, dummy_size);
 
 	// Verify that the address does not exist in the memdb
+	rcu_read_start();
 	res = memdb_lookup(start_addr);
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
+	rcu_read_finish();
 
 	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
+}
+
+static error_t
+verify_range(paddr_t base, size_t size, void *arg)
+{
+	memdb_data_t *memdb_data = (memdb_data_t *)arg;
+	index_t	      i		 = memdb_data->ranges_index;
+
+	assert(i < memdb_data->ranges_count);
+	assert(base == memdb_data->ranges[i].base);
+	assert(size == memdb_data->ranges[i].size);
+
+	memdb_data->ranges_index++;
+
+	return OK;
+}
+
+static void
+memdb_test10(void)
+{
+	LOG(DEBUG, INFO, " Start TEST 10:");
+
+	error_t	     err;
+	partition_t *hyp_partition  = partition_get_private();
+	partition_t *fake_partition = (partition_t *)0x123124;
+
+	void_ptr_result_t alloc_ret;
+	memdb_data_t	 *memdb_data;
+	size_t		  memdb_data_size = sizeof(*memdb_data);
+
+	alloc_ret = partition_alloc(hyp_partition, memdb_data_size,
+				    alignof(*memdb_data));
+	if (alloc_ret.e != OK) {
+		panic("memdb_test: allocate memdb_data failed");
+	}
+
+	memdb_data = (memdb_data_t *)alloc_ret.r;
+	memset(memdb_data, 0, memdb_data_size);
+
+	paddr_t base0 = 0x1082800000U;
+	size_t	size0 = 0x55800000U;
+
+	err = memdb_insert(hyp_partition, base0, base0 + size0 - 1U,
+			   (uintptr_t)fake_partition, MEMDB_TYPE_PARTITION);
+	assert(err == OK);
+
+	paddr_t base1 = 0x10D8200000U;
+	size_t	size1 = 0xE0000U;
+
+	err = memdb_insert(hyp_partition, base1, base1 + size1 - 1U,
+			   (uintptr_t)fake_partition, MEMDB_TYPE_PARTITION);
+	assert(err == OK);
+
+	memdb_data->ranges[0].base = base0;
+	memdb_data->ranges[0].size = size0;
+	memdb_data->ranges[1].base = base1;
+	memdb_data->ranges[1].size = size1;
+	memdb_data->ranges_count   = 2U;
+
+	err = memdb_walk((uintptr_t)fake_partition, MEMDB_TYPE_PARTITION,
+			 verify_range, memdb_data);
+	assert(err == OK);
+
+	assert(memdb_data->ranges_index == memdb_data->ranges_count);
+
+	partition_free(hyp_partition, memdb_data, memdb_data_size);
 }
 
 bool
@@ -1353,19 +1448,19 @@ memdb_handle_tests_start(void)
 	bool wait_all_cores_end	  = true;
 	bool wait_all_cores_start = true;
 
-	spinlock_acquire(&test_memdb_spinlock);
+	spinlock_acquire_nopreempt(&test_memdb_spinlock);
 	test_memdb_count++;
-	spinlock_release(&test_memdb_spinlock);
+	spinlock_release_nopreempt(&test_memdb_spinlock);
 
 	// Wait until all cores have reached this point to start.
 	while (wait_all_cores_start) {
-		spinlock_acquire(&test_memdb_spinlock);
+		spinlock_acquire_nopreempt(&test_memdb_spinlock);
 
 		if (test_memdb_count == (PLATFORM_MAX_CORES)) {
 			wait_all_cores_start = false;
 		}
 
-		spinlock_release(&test_memdb_spinlock);
+		spinlock_release_nopreempt(&test_memdb_spinlock);
 	}
 
 	if (cpulocal_get_index() != 0U) {
@@ -1402,9 +1497,12 @@ memdb_handle_tests_start(void)
 	// Test handling of out of memory error
 	memdb_test9();
 
-	spinlock_acquire(&test_memdb_spinlock);
+	// Test walk over two ranges with empty space from guard.
+	memdb_test10();
+
+	spinlock_acquire_nopreempt(&test_memdb_spinlock);
 	test_memdb_count++;
-	spinlock_release(&test_memdb_spinlock);
+	spinlock_release_nopreempt(&test_memdb_spinlock);
 
 	LOG(DEBUG, INFO, "Memdb tests successfully finished ");
 
@@ -1412,13 +1510,13 @@ wait:
 
 	// Make all threads wait for test to end
 	while (wait_all_cores_end) {
-		spinlock_acquire(&test_memdb_spinlock);
+		spinlock_acquire_nopreempt(&test_memdb_spinlock);
 
 		if (test_memdb_count == PLATFORM_MAX_CORES + 1) {
 			wait_all_cores_end = false;
 		}
 
-		spinlock_release(&test_memdb_spinlock);
+		spinlock_release_nopreempt(&test_memdb_spinlock);
 	}
 
 	return false;

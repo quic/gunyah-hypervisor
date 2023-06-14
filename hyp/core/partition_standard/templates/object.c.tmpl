@@ -8,6 +8,7 @@
 \#include <hypcontainers.h>
 
 \#include <atomic.h>
+\#include <assert.h>
 \#include <object.h>
 \#include <partition.h>
 \#include <partition_alloc.h>
@@ -36,6 +37,8 @@ partition_allocate_${o}(partition_t *parent, ${o}_create_t create)
 #if o == "thread"
 	const size_t size = thread_size;
 	const size_t align = thread_align;
+
+	assert(size >= sizeof(${o}_t));
 #else
 	const size_t size = sizeof(${o}_t);
 	const size_t align = alignof(${o}_t);
@@ -46,9 +49,9 @@ partition_allocate_${o}(partition_t *parent, ${o}_create_t create)
 		obj_ret = ${o}_ptr_result_error(alloc_ret.e);
 		goto allocate_${o}_error;
 	}
-	memset(alloc_ret.r, 0, size);
 
 	${o} = (${o}_t *)alloc_ret.r;
+	(void)memset_s(${o}, size, 0, size);
 
 	refcount_init(&${o}->header.refcount);
 	spinlock_init(&${o}->header.lock);
@@ -84,9 +87,9 @@ partition_destroy_${o}(rcu_entry_t *entry)
 
 	partition_t *parent = ${o}->header.partition;
 #if o == "thread"
-	partition_free(parent, ${o}, thread_size);
+	(void)partition_free(parent, ${o}, thread_size);
 #else
-	partition_free(parent, ${o}, sizeof(${o}_t));
+	(void)partition_free(parent, ${o}, sizeof(${o}_t));
 #end if
 	object_put_partition(parent);
 

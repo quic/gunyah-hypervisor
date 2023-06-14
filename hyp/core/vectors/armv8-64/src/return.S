@@ -39,7 +39,7 @@ function vectors_kernel_return
 	mov	sp, x1
 	ldp	x0, x1, [x0, OFS_KERNEL_TRAP_FRAME_X(0)]
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// Matching PACIA is in save_kernel_context
 	eretaa
 #else

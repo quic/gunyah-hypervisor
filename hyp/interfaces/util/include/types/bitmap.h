@@ -5,7 +5,7 @@
 // Bitmap definitions for the type DSL. This is also included by C code to
 // get BITMAP_NUM_WORDS().
 
-#define BITMAP_NUM_WORDS(x) (((x) + BITMAP_WORD_BITS - 1) / BITMAP_WORD_BITS)
+#define BITMAP_NUM_WORDS(x) (((x) + BITMAP_WORD_BITS - 1U) / BITMAP_WORD_BITS)
 
 #if defined(__TYPED_DSL__)
 #define BITMAP(bits, ...)                                                      \

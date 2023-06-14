@@ -63,7 +63,7 @@
 bool
 pgtable_hyp_lookup(uintptr_t virt, paddr_t *mapped_base, size_t *mapped_size,
 		   pgtable_hyp_memtype_t *mapped_memtype,
-		   pgtable_access_t	    *mapped_access);
+		   pgtable_access_t	 *mapped_access);
 
 // Returns false if there is no mapping in the specified range. If a mapping
 // is found and can be efficiently determined to be the last mapping in the
@@ -73,10 +73,10 @@ pgtable_hyp_lookup(uintptr_t virt, paddr_t *mapped_base, size_t *mapped_size,
 bool
 pgtable_hyp_lookup_range(uintptr_t virt_base, size_t virt_size,
 			 uintptr_t *mapped_virt, paddr_t *mapped_phys,
-			 size_t		*mapped_size,
+			 size_t		       *mapped_size,
 			 pgtable_hyp_memtype_t *mapped_memtype,
-			 pgtable_access_t	  *mapped_access,
-			 bool		      *remainder_unmapped);
+			 pgtable_access_t      *mapped_access,
+			 bool		       *remainder_unmapped);
 
 // Creates page table levels owned by the given partition which are able to
 // directly map entries covering the given size, but don't actually map
@@ -91,19 +91,61 @@ extern opaque_lock_t pgtable_hyp_map_lock;
 void
 pgtable_hyp_start(void) ACQUIRE_LOCK(pgtable_hyp_map_lock);
 
-// Creates a new mapping, assuming no existing mappings in the range. May
-// use the given partition to allocate levels if needed.
+// Creates a new mapping, possibly merging adjacent mappings into large blocks.
+//
+// An error will be returned if there are any existing mappings in the given
+// region that are not exactly identical to the requested mapping.
+//
+// If merge_limit is nonzero, then this will attempt to merge page table levels
+// that become congruent as a result of this operation into larger pages, as
+// long as the new size is less than merge_limit. Any page table levels freed by
+// this will be freed into the specified partition, so merge_limit should be no
+// greater than preserved_prealloc would be for an unmap operation in the same
+// region.
+//
+// Note that this operation may cause transient translation aborts or TLB
+// conflict aborts in the affected range or within a merge_limit aligned region
+// around it. The caller is responsible for not making calls with a nonzero
+// merge_limit that might have those effects on the hypervisor code, the stack
+// of any hypervisor thread, or any other address that may be touched during the
+// handling of a transient hypervisor fault.
 error_t
+pgtable_hyp_map_merge(partition_t *partition, uintptr_t virt, size_t size,
+		      paddr_t phys, pgtable_hyp_memtype_t memtype,
+		      pgtable_access_t access, vmsa_shareability_t shareability,
+		      size_t merge_limit) REQUIRE_LOCK(pgtable_hyp_map_lock);
+
+// Creates a new mapping. No attempt will be made to merge adjacent mappings.
+static inline error_t
 pgtable_hyp_map(partition_t *partition, uintptr_t virt, size_t size,
 		paddr_t phys, pgtable_hyp_memtype_t memtype,
 		pgtable_access_t access, vmsa_shareability_t shareability)
+	REQUIRE_LOCK(pgtable_hyp_map_lock)
+{
+	return pgtable_hyp_map_merge(partition, virt, size, phys, memtype,
+				     access, shareability, 0U);
+}
+
+// Creates a new mapping, replacing any existing mappings in the region, and
+// possibly merging adjacent mappings into large blocks. The merge_limit
+// argument has the same semantics as for @see pgtable_hyp_map_merge().
+error_t
+pgtable_hyp_remap_merge(partition_t *partition, uintptr_t virt, size_t size,
+			paddr_t phys, pgtable_hyp_memtype_t memtype,
+			pgtable_access_t    access,
+			vmsa_shareability_t shareability, size_t merge_limit)
 	REQUIRE_LOCK(pgtable_hyp_map_lock);
 
-error_t
+// Creates a new mapping, replacing any existing mappings in the region.
+static inline error_t
 pgtable_hyp_remap(partition_t *partition, uintptr_t virt, size_t size,
 		  paddr_t phys, pgtable_hyp_memtype_t memtype,
 		  pgtable_access_t access, vmsa_shareability_t shareability)
-	REQUIRE_LOCK(pgtable_hyp_map_lock);
+	REQUIRE_LOCK(pgtable_hyp_map_lock)
+{
+	return pgtable_hyp_remap_merge(partition, virt, size, phys, memtype,
+				       access, shareability, 0U);
+}
 
 // Removes all mappings in the given range. Frees levels into the specified
 // partition's allocators, but only if they cannot be used to create mappings
@@ -150,8 +192,8 @@ pgtable_vm_lookup_range(pgtable_vm_t *pgtable, vmaddr_t virt_base,
 			size_t virt_size, vmaddr_t *mapped_virt,
 			paddr_t *mapped_phys, size_t *mapped_size,
 			pgtable_vm_memtype_t *mapped_memtype,
-			pgtable_access_t	 *mapped_vm_kernel_access,
-			pgtable_access_t	 *mapped_vm_user_access,
+			pgtable_access_t     *mapped_vm_kernel_access,
+			pgtable_access_t     *mapped_vm_user_access,
 			bool		     *remainder_unmapped);
 
 extern opaque_lock_t pgtable_vm_map_lock;
@@ -161,15 +203,22 @@ void
 pgtable_vm_start(pgtable_vm_t *pgtable) ACQUIRE_LOCK(pgtable)
 	ACQUIRE_LOCK(pgtable_vm_map_lock);
 
-// Creates a new mapping. If try_map is set, it returns an error if any existing
-// mappings are present in the range. If try_map is false, any existing mappings
-// in the specified range are removed or updated.
+// Creates a new mapping.
+//
+// If try_map is true, it returns an error if any existing mappings are present
+// in the range that are not exactly identical to the requested mapping. If
+// try_map is false, any existing mappings in the specified range are removed or
+// updated.
+//
+// If allow_merge is true, then any page table levels that become congruent as a
+// result of this operation will be merged into larger pages.
+//
 // pgtable_vm_start() must have been called before this call.
 error_t
 pgtable_vm_map(partition_t *partition, pgtable_vm_t *pgtable, vmaddr_t virt,
 	       size_t size, paddr_t phys, pgtable_vm_memtype_t memtype,
 	       pgtable_access_t vm_kernel_access,
-	       pgtable_access_t vm_user_access, bool try_map)
+	       pgtable_access_t vm_user_access, bool try_map, bool allow_merge)
 	REQUIRE_LOCK(pgtable) REQUIRE_LOCK(pgtable_vm_map_lock);
 
 // Removes all mappings in the given range. pgtable_vm_start() must have been
@@ -194,3 +243,19 @@ pgtable_vm_commit(pgtable_vm_t *pgtable) RELEASE_LOCK(pgtable)
 // Set VTCR and VTTBR registers with page table vtcr and vttbr bitfields values.
 void
 pgtable_vm_load_regs(pgtable_vm_t *vm_pgtable);
+
+// Validate page table access
+bool
+pgtable_access_check(pgtable_access_t access, pgtable_access_t access_check);
+
+// Mask a pagetable access
+pgtable_access_t
+pgtable_access_mask(pgtable_access_t access, pgtable_access_t access_mask);
+
+// Check if input page table accesses are equal
+bool
+pgtable_access_is_equal(pgtable_access_t access, pgtable_access_t access_check);
+
+// Get combined access
+pgtable_access_t
+pgtable_access_combine(pgtable_access_t access1, pgtable_access_t access2);

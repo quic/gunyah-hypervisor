@@ -7,6 +7,12 @@ module partition_standard
 subscribe boot_cold_init()
 	priority first
 
+subscribe boot_cold_init
+	handler partition_standard_boot_add_private_heap()
+	// This must run after hyp_aspace_handle_boot_cold_init (priority 20)
+	// and memdb_handle_boot_cold_init (priority 10)
+	priority 9
+
 subscribe boot_hypervisor_start()
 	// Run this early since it can add more heap memory
 	priority 100

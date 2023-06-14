@@ -30,8 +30,9 @@
 // compare-exchange, at both levels. Empty levels are never freed, on the
 // assumption that IRQ numbers are set by hardware and therefore are likely to
 // be reused.
-#define IRQ_TABLE_L2_SIZE    PGTABLE_HYP_PAGE_SIZE
-#define IRQ_TABLE_L2_ENTRIES (IRQ_TABLE_L2_SIZE / sizeof(hwirq_t *_Atomic))
+#define IRQ_TABLE_L2_SIZE PGTABLE_HYP_PAGE_SIZE
+#define IRQ_TABLE_L2_ENTRIES                                                   \
+	(count_t)((IRQ_TABLE_L2_SIZE / sizeof(hwirq_t *_Atomic)))
 static hwirq_t *_Atomic *_Atomic *irq_table_l1;
 #else
 // Dynamically allocated array of RCU-protected pointers to hwirq objects.
@@ -67,29 +68,29 @@ irq_handle_boot_cold_init(void)
 	if (ptr_r.e != OK) {
 		panic("Unable to allocate IRQ table");
 	}
-	assert(ptr_r.r != NULL);
 
 #if IRQ_SPARSE_IDS
-	irq_table_l1 = memset(ptr_r.r, 0, alloc_size);
+	irq_table_l1 = ptr_r.r;
+	(void)memset_s(irq_table_l1, alloc_size, 0, alloc_size);
 #else
-	irq_table		  = memset(ptr_r.r, 0, alloc_size);
+	irq_table		  = ptr_r.r;
+	(void)memset_s(irq_table, alloc_size, 0, alloc_size);
 #endif
 
 #if IRQ_HAS_MSI
 	irq_msi_bitmap_size =
 		platform_irq_msi_max() - platform_irq_msi_base + 1U;
 	count_t msi_bitmap_words = BITMAP_NUM_WORDS(irq_msi_bitmap_size);
+	alloc_size		 = msi_bitmap_words * sizeof(register_t);
 
-	ptr_r = partition_alloc(partition_get_private(),
-				msi_bitmap_words * sizeof(register_t),
+	ptr_r = partition_alloc(partition_get_private(), alloc_size,
 				alignof(register_t));
 	if (ptr_r.e != OK) {
 		panic("Unable to allocate MSI allocator bitmap");
 	}
-	assert(ptr_r.r != NULL);
 
-	irq_msi_bitmap =
-		memset(ptr_r.r, 0, msi_bitmap_words * sizeof(register_t));
+	irq_msi_bitmap = ptr_r.r;
+	(void)memset_s(irq_msi_bitmap, alloc_size, 0, alloc_size);
 #endif
 }
 
@@ -111,8 +112,7 @@ irq_find_entry(irq_t irq, bool allocate)
 			      partition_get_private(), alloc_size, alloc_align);
 
 		if (ptr_r.e == OK) {
-			assert(ptr_r.r != NULL);
-			memset(ptr_r.r, 0, alloc_size);
+			(void)memset_s(ptr_r.r, alloc_size, 0, alloc_size);
 
 			if (atomic_compare_exchange_strong_explicit(
 				    &irq_table_l1[irq_l1_index], &irq_table_l2,
@@ -122,8 +122,8 @@ irq_find_entry(irq_t irq, bool allocate)
 				irq_table_l2 = (hwirq_t *_Atomic *)ptr_r.r;
 			} else {
 				assert(irq_table_l2 != NULL);
-				partition_free(partition_get_private(), ptr_r.r,
-					       alloc_size);
+				(void)partition_free(partition_get_private(),
+						     ptr_r.r, alloc_size);
 			}
 		}
 	}
@@ -186,7 +186,7 @@ irq_handle_object_activate_hwirq(hwirq_t *hwirq)
 
 	// The IRQ is fully registered; give the handler an opportunity to
 	// enable it if desired.
-	trigger_irq_registered_event(hwirq->action, hwirq->irq, hwirq);
+	(void)trigger_irq_registered_event(hwirq->action, hwirq->irq, hwirq);
 
 out:
 	return err;
@@ -277,63 +277,76 @@ irq_handle_object_deactivate_hwirq(hwirq_t *hwirq)
 	atomic_store_relaxed(entry, NULL);
 }
 
+static void
+disable_unhandled_irq(irq_result_t irq_r) REQUIRE_PREEMPT_DISABLED
+{
+	TRACE(DEBUG, WARN, "disabling unhandled HW IRQ {:d}", irq_r.r);
+	if (platform_irq_is_percpu(irq_r.r)) {
+		platform_irq_disable_local(irq_r.r);
+	} else {
+		platform_irq_disable(irq_r.r);
+	}
+	platform_irq_priority_drop(irq_r.r);
+	platform_irq_deactivate(irq_r.r);
+}
+
+static bool
+irq_interrupt_dispatch_one(void) REQUIRE_PREEMPT_DISABLED
+{
+	irq_result_t irq_r = platform_irq_acknowledge();
+	bool	     ret   = true;
+
+	if (irq_r.e == ERROR_RETRY) {
+		// IRQ handled by the platform, probably an IPI
+		goto out;
+	} else if (compiler_unexpected(irq_r.e == ERROR_IDLE)) {
+		// No IRQs are pending; exit
+		ret = false;
+		goto out;
+	} else {
+		assert(irq_r.e == OK);
+		TRACE(DEBUG, INFO, "acknowledged HW IRQ {:d}", irq_r.r);
+
+		// The entire IRQ delivery is an RCU critical section.
+		//
+		// Note that this naturally true anyway if we don't
+		// allow interrupt nesting.
+		//
+		// Also, the alternative is to take a reference to the
+		// hwirq, which might force us to tear down the hwirq
+		// (and potentially the whole partition) in the
+		// interrupt handler.
+		rcu_read_start();
+		hwirq_t *hwirq = irq_lookup_hwirq(irq_r.r);
+
+		if (compiler_unexpected(hwirq == NULL)) {
+			disable_unhandled_irq(irq_r);
+			rcu_read_finish();
+			goto out;
+		}
+
+		assert(hwirq->irq == irq_r.r);
+
+		bool handled = trigger_irq_received_event(hwirq->action,
+							  irq_r.r, hwirq);
+		platform_irq_priority_drop(irq_r.r);
+		if (handled) {
+			platform_irq_deactivate(irq_r.r);
+		}
+		rcu_read_finish();
+	}
+
+out:
+	return ret;
+}
+
 bool
 irq_interrupt_dispatch(void)
 {
 	bool spurious = true;
 
-	while (true) {
-		irq_result_t irq_r = platform_irq_acknowledge();
-
-		if (irq_r.e == ERROR_RETRY) {
-			// IRQ handled by the platform, probably an IPI
-			spurious = false;
-			continue;
-		} else if (compiler_unexpected(irq_r.e == ERROR_IDLE)) {
-			// No IRQs are pending; exit
-			break;
-		} else {
-			assert(irq_r.e == OK);
-
-			spurious = false;
-			TRACE(DEBUG, INFO, "acknowledged HW IRQ {:d}", irq_r.r);
-
-			// The entire IRQ delivery is an RCU critical section.
-			//
-			// Note that this naturally true anyway if we don't
-			// allow interrupt nesting.
-			//
-			// Also, the alternative is to take a reference to the
-			// hwirq, which might force us to tear down the hwirq
-			// (and potentially the whole partition) in the
-			// interrupt handler.
-			rcu_read_start();
-			hwirq_t *hwirq = irq_lookup_hwirq(irq_r.r);
-
-			if (compiler_unexpected(hwirq == NULL)) {
-				TRACE(DEBUG, WARN,
-				      "disabling unhandled HW IRQ {:d}",
-				      irq_r.r);
-				if (platform_irq_is_percpu(irq_r.r)) {
-					platform_irq_disable_local(irq_r.r);
-				} else {
-					platform_irq_disable(irq_r.r);
-				}
-				platform_irq_priority_drop(irq_r.r);
-				platform_irq_deactivate(irq_r.r);
-				rcu_read_finish();
-				continue;
-			}
-			assert(hwirq->irq == irq_r.r);
-
-			bool handled = trigger_irq_received_event(
-				hwirq->action, irq_r.r, hwirq);
-			platform_irq_priority_drop(irq_r.r);
-			if (handled) {
-				platform_irq_deactivate(irq_r.r);
-			}
-			rcu_read_finish();
-		}
+	while (irq_interrupt_dispatch_one()) {
+		spurious = false;
 	}
 
 	if (spurious) {

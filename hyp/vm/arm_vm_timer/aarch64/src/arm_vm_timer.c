@@ -43,16 +43,11 @@ arm_vm_timer_init(arm_vm_timer_type_t tt)
 	CNT_CTL_init(&cnt_ctl);
 	CNT_CTL_set_IMASK(&cnt_ctl, true);
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		register_CNTV_CTL_EL0_write_ordered(cnt_ctl, &asm_ordering);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		register_CNTP_CTL_EL0_write_ordered(cnt_ctl, &asm_ordering);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 }
@@ -62,18 +57,13 @@ arm_vm_timer_is_irq_enabled(arm_vm_timer_type_t tt)
 {
 	CNT_CTL_t cnt_ctl;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_ctl = register_CNTV_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		cnt_ctl = register_CNTP_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -85,18 +75,13 @@ arm_vm_timer_is_irq_pending(arm_vm_timer_type_t tt)
 {
 	CNT_CTL_t cnt_ctl;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_ctl = register_CNTV_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		cnt_ctl = register_CNTP_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -112,16 +97,11 @@ arm_vm_timer_cancel_timeout(arm_vm_timer_type_t tt)
 	CNT_CTL_init(&cnt_ctl);
 	CNT_CTL_set_ENABLE(&cnt_ctl, false);
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		register_CNTV_CTL_EL0_write_ordered(cnt_ctl, &asm_ordering);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		register_CNTP_CTL_EL0_write_ordered(cnt_ctl, &asm_ordering);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 }
@@ -131,18 +111,13 @@ arm_vm_timer_get_is_expired(arm_vm_timer_type_t tt)
 {
 	CNT_CTL_t cnt_ctl;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_ctl = register_CNTV_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		cnt_ctl = register_CNTP_CTL_EL0_read_volatile_ordered(
 			&asm_ordering);
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -151,7 +126,7 @@ arm_vm_timer_get_is_expired(arm_vm_timer_type_t tt)
 }
 
 uint32_t
-arm_vm_timer_get_freqeuncy()
+arm_vm_timer_get_freqeuncy(void)
 {
 	CNTFRQ_EL0_t cntfrq = register_CNTFRQ_EL0_read();
 
@@ -159,7 +134,7 @@ arm_vm_timer_get_freqeuncy()
 }
 
 uint64_t
-arm_vm_timer_get_ticks()
+arm_vm_timer_get_ticks(void)
 {
 	// This register read below is allowed to occur speculatively at any
 	// time after the most recent context sync event. If caller the wants
@@ -176,16 +151,11 @@ arm_vm_timer_get_timeout(arm_vm_timer_type_t tt)
 {
 	CNT_CVAL_t cnt_cval;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_cval = register_CNTV_CVAL_EL0_read_volatile();
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		cnt_cval = register_CNTP_CVAL_EL0_read_volatile();
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -195,8 +165,8 @@ arm_vm_timer_get_timeout(arm_vm_timer_type_t tt)
 void
 arm_vm_timer_arch_timer_hw_irq_activated(arm_vm_timer_type_t tt)
 {
-	if ((tt <= ENUM_ARM_VM_TIMER_TYPE_MAX_VALUE) &&
-	    (tt >= ENUM_ARM_VM_TIMER_TYPE_MIN_VALUE)) {
+	if ((tt == ARM_VM_TIMER_TYPE_PHYSICAL) ||
+	    (tt == ARM_VM_TIMER_TYPE_VIRTUAL)) {
 		CPULOCAL(arm_vm_timer_irq_active)[tt] = true;
 	} else {
 		panic("Invalid timer");
@@ -206,14 +176,14 @@ arm_vm_timer_arch_timer_hw_irq_activated(arm_vm_timer_type_t tt)
 void
 arm_vm_timer_arch_timer_hw_irq_deactivate(arm_vm_timer_type_t tt)
 {
-	if ((tt <= ENUM_ARM_VM_TIMER_TYPE_MAX_VALUE) &&
-	    (tt >= ENUM_ARM_VM_TIMER_TYPE_MIN_VALUE)) {
+	if ((tt == ARM_VM_TIMER_TYPE_PHYSICAL) ||
+	    (tt == ARM_VM_TIMER_TYPE_VIRTUAL)) {
 		if (CPULOCAL(arm_vm_timer_irq_active)[tt]) {
 			CPULOCAL(arm_vm_timer_irq_active)[tt] = false;
 			irq_deactivate(arm_vm_timer_hwirq[tt]);
 		}
 	} else {
-		panic("Invalis timer");
+		panic("Invalid timer");
 	}
 }
 
@@ -227,7 +197,7 @@ arm_vm_timer_handle_boot_cpu_cold_init(void)
 }
 
 void
-arm_vm_timer_handle_boot_hypervisor_start()
+arm_vm_timer_handle_boot_hypervisor_start(void)
 {
 	hwirq_ptr_result_t ret;
 	hwirq_create_t	   params[] = {
@@ -270,7 +240,7 @@ arm_vm_timer_handle_boot_cpu_warm_init(void)
 	arm_vm_timer_init(ARM_VM_TIMER_TYPE_VIRTUAL);
 	arm_vm_timer_init(ARM_VM_TIMER_TYPE_PHYSICAL);
 
-#if defined(ARCH_ARM_8_1_VHE)
+#if defined(ARCH_ARM_FEAT_VHE)
 	CNTHCTL_EL2_E2H1_t cnthctl;
 	CNTHCTL_EL2_E2H1_init(&cnthctl);
 
@@ -287,6 +257,14 @@ arm_vm_timer_handle_boot_cpu_warm_init(void)
 	CNTHCTL_EL2_E2H1_set_EL0VTEN(&cnthctl, true);
 	CNTHCTL_EL2_E2H1_set_EL0VCTEN(&cnthctl, true);
 	CNTHCTL_EL2_E2H1_set_EL0PCTEN(&cnthctl, true);
+
+#if defined(ARCH_ARM_FEAT_ECV)
+	// Explicitly disable the ECV feature and the access traps for the
+	// virtual timer and counter registers.
+	CNTHCTL_EL2_E2H1_set_ECV(&cnthctl, false);
+	CNTHCTL_EL2_E2H1_set_EL1TVT(&cnthctl, false);
+	CNTHCTL_EL2_E2H1_set_EL1TVCT(&cnthctl, false);
+#endif
 
 	register_CNTHCTL_EL2_E2H1_write(cnthctl);
 #else
@@ -305,6 +283,14 @@ arm_vm_timer_handle_boot_cpu_warm_init(void)
 	CNTHCTL_EL2_E2H0_set_EVNTDIR(&cnthctl, false);
 	CNTHCTL_EL2_E2H0_set_EVNTEN(&cnthctl, false);
 
+#if defined(ARCH_ARM_FEAT_ECV)
+	// Explicitly disable the ECV feature and the access traps for the
+	// virtual timer and counter registers.
+	CNTHCTL_EL2_E2H0_set_ECV(&cnthctl, false);
+	CNTHCTL_EL2_E2H0_set_EL1TVT(&cnthctl, false);
+	CNTHCTL_EL2_E2H0_set_EL1TVCT(&cnthctl, false);
+#endif
+
 	register_CNTHCTL_EL2_E2H0_write(cnthctl);
 #endif
 
@@ -315,8 +301,10 @@ arm_vm_timer_handle_boot_cpu_warm_init(void)
 		CNTPCT_EL0_raw(register_CNTPCT_EL0_read_volatile_ordered(
 			&asm_ordering)),
 		CNT_CTL_raw(register_CNTV_CTL_EL0_read_ordered(&asm_ordering)),
-		CPULOCAL(arm_vm_timer_irq_active)[ARM_VM_TIMER_TYPE_VIRTUAL],
-		CPULOCAL(arm_vm_timer_irq_active)[ARM_VM_TIMER_TYPE_PHYSICAL]);
+		(register_t)CPULOCAL(
+			arm_vm_timer_irq_active)[ARM_VM_TIMER_TYPE_VIRTUAL],
+		(register_t)CPULOCAL(
+			arm_vm_timer_irq_active)[ARM_VM_TIMER_TYPE_PHYSICAL]);
 #endif
 
 	register_CNTVOFF_EL2_write(CNTVOFF_EL2_cast(0U));
@@ -334,16 +322,11 @@ arm_vm_timer_is_irq_enabled_thread(thread_t *thread, arm_vm_timer_type_t tt)
 {
 	CNT_CTL_t cnt_ctl;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_ctl = thread->vcpu_regs_el1.cntv_ctl_el0;
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
 		cnt_ctl = thread->vcpu_regs_el1.cntp_ctl_el0;
-		break;
-
-	default:
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -355,16 +338,11 @@ arm_vm_timer_get_timeout_thread(thread_t *thread, arm_vm_timer_type_t tt)
 {
 	CNT_CVAL_t cnt_cval;
 
-	switch (tt) {
-	case ARM_VM_TIMER_TYPE_VIRTUAL:
+	if (tt == ARM_VM_TIMER_TYPE_VIRTUAL) {
 		cnt_cval = thread->vcpu_regs_el1.cntv_cval_el0;
-		break;
-
-	case ARM_VM_TIMER_TYPE_PHYSICAL:
-		cnt_cval = thread->vcpu_regs_el1.cntv_cval_el0;
-		break;
-
-	default:
+	} else if (tt == ARM_VM_TIMER_TYPE_PHYSICAL) {
+		cnt_cval = thread->vcpu_regs_el1.cntp_cval_el0;
+	} else {
 		panic("Invalid timer");
 	}
 
@@ -391,7 +369,7 @@ arm_vm_timer_handle_thread_save_state(void)
 {
 	thread_t *thread = thread_get_self();
 
-	if (thread->kind == THREAD_KIND_VCPU &&
+	if ((compiler_expected(thread->kind == THREAD_KIND_VCPU)) &&
 	    !scheduler_is_blocked(thread, SCHEDULER_BLOCK_VCPU_OFF)) {
 		thread->vcpu_regs_el1.cntkctl_el1 = register_CNTKCTL_EL1_read();
 		thread->vcpu_regs_el1.cntv_ctl_el0 =

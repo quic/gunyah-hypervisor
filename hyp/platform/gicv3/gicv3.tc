@@ -13,6 +13,7 @@ define irq_t newtype uint32;
 // We always allocate one fixed collection per physical CPU. They're
 // apparently intended for group rerouting of IRQs but that is not terribly
 // useful in practice.
+// FIXME:
 //define gic_its_ic_id_t newtype type cpu_index_t;
 define gic_its_ic_id_t newtype uint16;
 
@@ -32,6 +33,10 @@ define gic_its_rdbase union {
 	// Used if the GITS_TYPER.PTA bit is 0
 	pta0	type gic_its_rdbase_pta0_t;
 };
+
+#if GICV3_HAS_VLPI
+define gic_its_vpe_id_t newtype uint16;
+#endif
 
 #endif // GICV3_HAS_ITS
 
@@ -152,6 +157,17 @@ define gicr_rd_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	syncr @ 0x00C0		bitfield GICR_SYNCR(atomic);
 };
 
+#if GICV3_HAS_VLPI
+define gicr_vlpi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	vpropbaser @ 0x0070	bitfield GICR_VPROPBASER(atomic);
+	vpendbaser @ 0x0078	bitfield GICR_VPENDBASER(atomic);
+#if GICV3_HAS_VLPI_V4_1
+	vsgir @ 0x0080		bitfield GICR_VSGIR(atomic);
+	vsgipendr @ 0x0088	bitfield GICR_VSGIPENDR(atomic);
+#endif
+};
+#endif
+
 define gicr_sgi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	reserved @ 0x0000	uint32(atomic);
 	igroupr0 @ 0x0080	uint32(atomic);
@@ -181,12 +197,45 @@ define gicr structure(aligned(65536)) {
 	rd @ 0	structure gicr_rd_base;
 	PIDR2 @ 0xFFE8		uint32(atomic);
 	sgi @ 0x10000	structure gicr_sgi_base;
+#if GICV3_HAS_VLPI
+	vlpi @ 0x20000	structure gicr_vlpi_base;
+#endif
 };
+
+define gicr_cpu structure {
+	icc_sgi1r		bitfield ICC_SGIR_EL1;
+	gicr			pointer structure gicr;
+#if GICV3_HAS_LPI
+	lpi_pending_bitmap	pointer type register_t;
+	lpi_pendbase		bitfield GICR_PENDBASER;
+#if defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE && GICV3_HAS_VLPI_V4_1
+	vsgi_query_lock		structure spinlock;
+#endif
+#endif
+
+	// False if the CPU is powering down
+	// Protect this with the SPI lock when we enable, route or migrate
+	// a SPI
+	online			bool;
+};
+
+#if GICV3_HAS_LPI
+define gic_lpi_prop bitfield<8> {
+	0	enable		bool;
+	1	res1		bool(const)=1;
+	7:2	priority	uint8 lsl(2);
+};
+#endif
 
 define GICR_PAGE_MASK	constant = ((1 << 16) - 1);
 
+#if GICV3_HAS_VLPI
+// GIC Redistributor stride (four 64k pages per core)
+define GICR_STRIDE_SHIFT	constant uint8 = 16 + 2;
+#else
 // GIC Redistributor stride (two 64k pages per core)
-define GICR_STRIDE_SHIFT	constant = 16 + 1;
+define GICR_STRIDE_SHIFT	constant uint8 = 16 + 1;
+#endif
 
 define gicv3_irq_type enumeration {
 	sgi;
@@ -196,6 +245,9 @@ define gicv3_irq_type enumeration {
 #if GICV3_EXT_IRQS
 	ppi_ext;
 	spi_ext;
+#endif
+#if GICV3_HAS_LPI
+	lpi;
 #endif
 	reserved;
 };
@@ -336,12 +388,24 @@ define GICR_IIDR bitfield<32> {
 
 define GICR_INVALLR bitfield<64> {
 	31:0		unknown=0;
+#if GICV3_HAS_VLPI_V4_1
+	47:32		vPEID		type gic_its_vpe_id_t;
+	62:48		unknown=0;
+	63		V		bool;
+#else
 	63:32		unknown=0;
+#endif
 };
 
 define GICR_INVLPIR bitfield<64> {
 	31:0		pINTID		type irq_t;
+#if GICV3_HAS_VLPI_V4_1
+	47:32		vPEID		type gic_its_vpe_id_t;
+	62:48		unknown=0;
+	63		V		bool;
+#else
 	63:32		unknown=0;
+#endif
 };
 
 define GICR_PENDBASER bitfield<64> {
@@ -406,6 +470,46 @@ define GICR_TYPER bitfield<64> {
 	63:56		Aff3		uint8;
 };
 
+#if GICV3_HAS_VLPI_V4_1
+
+define GICR_VPENDBASER bitfield<64> {
+	15:0		vPEID		type gic_its_vpe_id_t;
+	57:16		unknown=0;
+	58		vGrp1En		bool;
+	59		vGrp0En		bool;
+	60		Dirty		bool;
+	61		PendingLast	bool;
+	62		Doorbell	bool;
+	63		Valid		bool;
+};
+
+define GICR_VPROPBASER bitfield<64> {
+	6:0	Size			type count_t;
+	9:7	InnerCache		uint8;
+	11:10	Shareability		uint8;
+	51:12	Physical_Address	type paddr_t lsl(12);
+	52	Z			bool;
+	54:53	Page_Size		enumeration GITS_BASER_Page_Size;
+	55	Indirect		bool;
+	58:56	OuterCache		uint8;
+	61:59	Entry_Size		size;
+	62	unknown=0;
+	63	Valid			bool;
+};
+
+define GICR_VSGIR bitfield<32> {
+	15:0		vPEID		type gic_its_vpe_id_t;
+	31:16		unknown=0;
+};
+
+define GICR_VSGIPENDR bitfield<32> {
+	15:0		Pending		uint32;
+	30:16		unknown=0;
+	31		Busy		bool;
+};
+
+#else
+
 define GICR_VPENDBASER bitfield<64> {
 	6:0		unknown=0;
 	9:7		InnerCache	uint8;
@@ -431,6 +535,8 @@ define GICR_VPROPBASER bitfield<64> {
 	58:56		OuterCache	uint8;
 	63:59		unknown=0;
 };
+
+#endif
 
 define GICR_WAKER bitfield<32> {
 	0		IMPDEF		bool;
@@ -525,6 +631,9 @@ define gits_ctl_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	typer @ 0x8		bitfield GITS_TYPER(atomic);
 	mpamidr @ 0x10		bitfield GITS_MPAMIDR(atomic);
 	partidr @ 0x14		bitfield GITS_PARTIDR(atomic);
+#if GICV3_HAS_VLPI_V4_1
+	mpidr @ 0x18		bitfield GITS_MPIDR(atomic);
+#endif
 	cbaser @ 0x80		bitfield GITS_CBASER(atomic);
 	cwriter @ 0x88		bitfield GITS_CWRITER(atomic);
 	creadr @ 0x90		bitfield GITS_CREADR(atomic);
@@ -535,14 +644,28 @@ define gits_xlate_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	translater @ 0x40	bitfield GITS_TRANSLATER(atomic);
 };
 
+#if GICV3_HAS_VLPI_V4_1
+define gits_vsgi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
+	sgir @ 0x20		bitfield GITS_SGIR(atomic);
+};
+#endif
+
 define gits structure(aligned(65536)) {
 	ctl @ 0			structure gits_ctl_base;
 	PIDR2 @ 0xFFE8		uint32(atomic);
 	xlate @ 0x10000		structure gits_xlate_base;
+#if GICV3_HAS_VLPI_V4_1
+	vsgi @ 0x20000		structure gits_vsgi_base;
+#endif
 };
 
+#if GICV3_HAS_VLPI_V4_1
+// GIC ITS stride (three 64k pages per ITS, rounded up to four)
+define GITS_STRIDE_SHIFT	constant = 16 + 2;
+#else
 // GIC ITS stride (two 64k pages per ITS)
 define GITS_STRIDE_SHIFT	constant = 16 + 1;
+#endif
 
 // ITS memory-mapped registers
 
@@ -555,6 +678,9 @@ define GITS_BASER_Page_Size enumeration(explicit) {
 define GITS_BASER_Type enumeration(explicit) {
 	Unimplemented = 0b000;
 	Devices = 0b001;
+#if GICV3_HAS_VLPI_V4_1
+	vPEs = 0b010;
+#endif
 	Collections = 0b100;
 };
 
@@ -635,11 +761,29 @@ define GITS_MPAMIDR bitfield<32> {
 	31:24		unknown=0;
 };
 
+#if GICV3_HAS_VLPI_V4_1
+define GITS_MPIDR bitfield<32> {
+	7:0		unknown=0;
+	15:8		Aff1		uint8;
+	23:16		Aff2		uint8;
+	31:24		Aff3		uint8;
+};
+#endif // GICV3_HAS_VLPI_V4_1
+
 define GITS_PARTIDR bitfield<32> {
 	15:0		PARTID		uint16;
 	23:16		PMG		uint8;
 	31:24		unknown=0;
 };
+
+#if GICV3_HAS_VLPI_V4_1
+define GITS_SGIR bitfield<64> {
+	3:0		vINTID		type virq_t;
+	31:4		unknown=0;
+	47:32		vPEID		type gic_its_vpe_id_t;
+	63:48		unknown=0;
+};
+#endif // GICV3_HAS_VLPI_V4_1
 
 define GITS_TRANSLATER bitfield<32> {
 	31:0		event_id	type platform_msi_event_id_t;
@@ -678,12 +822,16 @@ define GITS_TYPER bitfield<64> {
 // ITS commands
 
 // Note: these are duplicated in the type definitions below.
+// FIXME:
 define gic_its_cmd_id enumeration {
 	clear = 0x4;
 	discard = 0xf;
 	int = 0x3;
 	inv = 0xc;
 	invall = 0xd;
+#if GICV3_HAS_VLPI_V4_1
+	invdb = 0x2e;
+#endif
 	mapc = 0x9;
 	mapd = 0x8;
 	mapi = 0xb;
@@ -691,6 +839,17 @@ define gic_its_cmd_id enumeration {
 	movall = 0xe;
 	movi = 0x1;
 	sync = 0x5;
+#if GICV3_HAS_VLPI
+	vinvall = 0x2d;
+	vmapi = 0x2b;
+	vmapp = 0x29;
+	vmapti = 0x2a;
+	vmovi = 0x21;
+	vmovp = 0x22;
+#if GICV3_HAS_VLPI_V4_1
+	vsgi = 0x23;
+#endif
+#endif
 };
 
 define gic_its_cmd_base bitfield<256> {
@@ -736,6 +895,17 @@ define gic_its_cmd_invall bitfield<256> {
 	143:128	icid		type gic_its_ic_id_t;
 	255:144	unknown=0;
 };
+
+#if GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_invdb bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x2e;
+	95:8	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	255:112	unknown=0;
+};
+
+#endif // GICV3_HAS_VLPI_V4_1
 
 define gic_its_cmd_mapc bitfield<256> {
 	7:0	cmd		enumeration gic_its_cmd_id(const)=0x9;
@@ -805,6 +975,151 @@ define gic_its_cmd_sync bitfield<256> {
 	255:180 unknown=0;
 };
 
+#if GICV3_HAS_VLPI
+
+define gic_its_cmd_vinvall bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x2d;
+	95:8	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	255:112	unknown=0;
+};
+
+define gic_its_cmd_vmapi bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x2b;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	159:112 unknown=0;
+	191:160	db_lpi		type irq_t;
+	255:192 unknown=0;
+};
+
+#if !GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vmapp bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x29;
+	95:8	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	143:112	unknown=0;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	190:180 unknown=0;
+	191	valid		bool;
+	// Note: the VPT_size field in the GICv4.1 VMAPP command is _not_
+	// offset by 1, so we deviate from the naming in the spec to ensure
+	// that this field is used correctly.
+	196:192	vpt_size_minus_one	type count_t;
+	207:197	unknown=0;
+	243:208	vpt_addr	type paddr_t lsl(16);
+	255:244 unknown=0;
+};
+
+#else // GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vmapp bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x29;
+	8	alloc		bool;
+	9	ptz		bool;
+	15:10	unknown=0;
+	51:16	vconf_addr	type paddr_t lsl(16);
+	63:52	unknown=0;
+	95:64	db_lpi		type irq_t;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	143:112	unknown=0;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	190:180 unknown=0;
+	191	valid		bool;
+	199:192	vpt_size	type count_t;
+	207:200	unknown=0;
+	243:208	vpt_addr	type paddr_t lsl(16);
+	255:244 unknown=0;
+};
+
+#endif // GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vmapti bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x2a;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	127:112	unknown=0;
+	159:128 vlpi		type virq_t;
+	191:160	db_lpi		type irq_t;
+	255:192 unknown=0;
+};
+
+define gic_its_cmd_vmovi bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x21;
+	31:8	unknown=0;
+	63:32	device_id	type platform_msi_device_id_t;
+	95:64	event_id	type platform_msi_event_id_t;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	127:112	unknown=0;
+	128	db		bool;
+	159:129	unknown=0;
+	191:160	db_lpi		type irq_t;
+	255:192 unknown=0;
+};
+
+#if !GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vmovp bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x22;
+	31:8	unknown=0;
+	47:32	seqnum		uint16;
+	63:48	unknown=0;
+	79:64	itslist		uint16;
+	95:80	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	143:112	unknown=0;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	255:180 unknown=0;
+};
+
+#else // GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vmovp bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x22;
+	31:8	unknown=0;
+	47:32	seqnum		uint16;
+	63:48	unknown=0;
+	79:64	itslist		uint16;
+	95:80	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	143:112	unknown=0;
+	179:144	rdbase		uregister; // union gic_its_rdbase;
+	190:180 unknown=0;
+	191	db		bool;
+	223:192	db_lpi		type irq_t;
+	255:224 unknown=0;
+};
+
+define gic_its_cmd_vsgi bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x23;
+	8	enable		bool;
+	9	clear		bool;
+	10	group1		bool;
+	19:11	unknown=0;
+	23:20	priority	uint8 lsl(4);
+	31:24	unknown=0;
+	35:32	sgi		type irq_t;
+	95:36	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	255:112	unknown=0;
+};
+
+#endif // GICV3_HAS_VLPI_V4_1
+
+define gic_its_cmd_vsync bitfield<256> {
+	7:0	cmd		enumeration gic_its_cmd_id(const)=0x25;
+	95:8	unknown=0;
+	111:96	vpe_id		type gic_its_vpe_id_t;
+	255:112	unknown=0;
+};
+
+#endif // GICV3_HAS_VLPI
+
 define gic_its_cmd union(aligned(32)) {
 	clear		bitfield gic_its_cmd_clear;
 	discard		bitfield gic_its_cmd_discard;
@@ -812,6 +1127,9 @@ define gic_its_cmd union(aligned(32)) {
 	int_		bitfield gic_its_cmd_int;
 	inv		bitfield gic_its_cmd_inv;
 	invall		bitfield gic_its_cmd_invall;
+#if GICV3_HAS_VLPI_V4_1
+	invdb		bitfield gic_its_cmd_invdb;
+#endif
 	mapc		bitfield gic_its_cmd_mapc;
 	mapd		bitfield gic_its_cmd_mapd;
 	mapi		bitfield gic_its_cmd_mapi;
@@ -819,6 +1137,18 @@ define gic_its_cmd union(aligned(32)) {
 	movall		bitfield gic_its_cmd_movall;
 	movi		bitfield gic_its_cmd_movi;
 	sync		bitfield gic_its_cmd_sync;
+#if GICV3_HAS_VLPI
+	vinvall		bitfield gic_its_cmd_vinvall;
+	vmapi		bitfield gic_its_cmd_vmapi;
+	vmapp		bitfield gic_its_cmd_vmapp;
+	vmapti		bitfield gic_its_cmd_vmapti;
+	vmovi		bitfield gic_its_cmd_vmovi;
+	vmovp		bitfield gic_its_cmd_vmovp;
+#if GICV3_HAS_VLPI_V4_1
+	vsgi		bitfield gic_its_cmd_vsgi;
+#endif
+	vsync		bitfield gic_its_cmd_vsync;
+#endif // GICV3_HAS_VLPI
 
 	// Used to read the command ID when parsing commands
 	base		bitfield gic_its_cmd_base;
@@ -840,8 +1170,6 @@ define gicv3_its_driver_state structure {
 	// Level 1 tables for indirect bases. NULL if indirection is not used.
 	indirect_device_table	structure gicv3_its_indirect_table;
 
-	// Lock protecting the command queue
-	cmd_queue_lock	structure spinlock;
 	// Virtual and physical pointers to this ITS's command queue
 	cmd_queue	pointer array(GICV3_ITS_QUEUE_LEN) union gic_its_cmd;
 	cmd_queue_phys	type paddr_t;
@@ -849,6 +1177,8 @@ define gicv3_its_driver_state structure {
 	cmd_queue_head	type count_t;
 	// Next sequence number to be processed by the ITS
 	cmd_queue_cached_tail	type count_t;
+	// Lock protecting the command queue
+	cmd_queue_lock	structure spinlock;
 	// True if commands need to be cache-flushed before submission
 	cmd_queue_flush	bool;
 
@@ -871,5 +1201,49 @@ define gicv3_its_indirect_table structure {
 	entries_l1	type count_t;
 	entries_l2	type count_t;
 };
+
+#if GICV3_HAS_VLPI
+
+// Per-VCPU state
+extend thread object module gicv3_its {
+	// Globally unique VPE ID, allocated by the ITS driver
+	vpe_id		type gic_its_vpe_id_t;
+
+	// Physical CPU to which this VPE was last mapped in the ITS
+	mapped_cpu	type cpu_index_t;
+
+#if GICV3_HAS_VLPI_V4_1
+	// Doorbell LPI, allocated by the ITS driver
+	doorbell	pointer object hwirq;
+
+	// True if the GICR may not have finished reading the pending tables
+	// yet after waking this VCPU with a doorbell, so there may be a
+	// pending vSGI or vLPI that is not yet delivered.
+	//
+	// In this case it is not safe to allow the VCPU to enter a low-power
+	// state, because doing so might trap the VCPU in a loop where a
+	// pending vSGI or vLPI repeatedly wakes it but it never stays awake
+	// long enough to actually receive the interrupt.
+	need_wakeup_check	bool;
+#else // !GICV3_HAS_VLPI_V4_1
+	// LPI configuration and pending table physical addresses, provided by
+	// the VGITS. For GICv4.1 these are passed to the hardware with VMAPP
+	// and don't need to be stored in software (though the virtual GICR
+	// will store the corresponding virtual addresses).
+	config_table	type paddr_t;
+	pending_table	type paddr_t;
+#endif // !GICV3_HAS_VLPI_V4_1
+};
+
+extend hwirq_action enumeration {
+	gicv3_its_doorbell;
+};
+
+extend hwirq object module gicv3_its {
+	// RCU-protected pointer to the VCPU woken by this doorbell
+	vcpu		pointer(atomic) object thread;
+};
+
+#endif // GICV3_HAS_VLPI
 
 #endif // GICV3_HAS_ITS

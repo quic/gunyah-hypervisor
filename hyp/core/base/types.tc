@@ -52,6 +52,9 @@ define sregister_t public newtype sregister;
 define count_t public newtype uint32;
 define index_t public newtype uint32;
 
+define COUNT_INVALID constant type count_t = -1;
+define INDEX_INVALID constant type index_t = -1;
+
 // Dummy lockable structure used for thread safety analysis of public lock
 // APIs that lock static variables, without having to expose the static
 // variable. These are always declared extern; they don't need to be defined.

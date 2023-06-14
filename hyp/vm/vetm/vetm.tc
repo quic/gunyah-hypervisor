@@ -15,5 +15,5 @@ extend thread object module vetm {
 };
 
 extend trace_class enumeration {
-	VETM;
+	VETM = 20;
 };

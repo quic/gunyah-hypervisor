@@ -22,30 +22,59 @@ extend esr_ec enumeration {
 	BRK			= 0x3c;
 };
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 extend esr_ec enumeration {
 	PAUTH			= 0x09;
-#if defined(ARCH_ARM_8_3_NV)
+#if defined(ARCH_ARM_FEAT_NV)
 	ERET			= 0x1a;
 #endif
-#if defined(ARCH_ARM_8_3_FPAC)
+#if defined(ARCH_ARM_FEAT_FPAC)
 	FPAC			= 0x1c;
 #endif
 };
 #endif
 
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 extend esr_ec enumeration {
 	BTI			= 0x0d;
 };
 #endif
 
-#if defined(ARCH_ARM_8_2_SVE)
+#if defined(ARCH_ARM_FEAT_SVE)
 extend esr_ec enumeration {
 	SVE			= 0x19;
 };
 #endif
 
+#if defined(ARCH_ARM_FEAT_LS64)
+extend esr_ec enumeration {
+	LD64B_ST64B		= 0x0a;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_TME)
+extend esr_ec enumeration {
+	TSTART			= 0x1b;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SME)
+extend esr_ec enumeration {
+	SME			= 0x1d;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_RME)
+extend esr_ec enumeration {
+	RME			= 0x1e;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_MOPS)
+extend esr_ec enumeration {
+	MOPS			= 0x27;
+};
+#endif
 
 extend iss_da_ia_fsc enumeration {
 	TRANSLATION_0		= 0x04;
@@ -59,7 +88,7 @@ extend iss_da_ia_fsc enumeration {
 	PAGE_DOMAIN		= 0x3e;
 };
 
-#if defined(ARCH_ARM_8_1_TTHM)
+#if defined(ARCH_ARM_FEAT_HAFDBS)
 extend iss_da_ia_fsc enumeration {
 	ATOMIC_HW_UPDATE	= 0x31;
 };
@@ -134,7 +163,7 @@ define tcr_ps enumeration {
 	SIZE_52BITS = 0b110;
 };
 
-#ifdef ARCH_ARM_8_4_TLBI
+#ifdef ARCH_ARM_FEAT_TLBIRANGE
 define tlbi_range_tg enumeration {
 	GRANULE_SIZE_4KB	= 0b01;
 	GRANULE_SIZE_16KB	= 0b10;
@@ -147,3 +176,10 @@ define cptr_zen enumeration {
 	trap_all		= 0x02;
 	trap_none		= 0x03;
 };
+
+#if defined(ARCH_ARM_FEAT_WFxT)
+extend iss_wfx_ti enumeration {
+	WFIT		= 0b10;
+	WFET		= 0b11;
+};
+#endif

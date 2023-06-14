@@ -35,7 +35,12 @@ panic(const char *str);
 _Noreturn void
 assert_failed(const char *file, int line, const char *func, const char *err);
 #define assert(x)                                                              \
-	(assert_if_const(x)                                                    \
-		 ? (void)0                                                     \
-		 : assert_failed(__BUILD_FILE__, __LINE__, __func__, #x))
+	(assert_if_const(x) ? (void)0                                          \
+			    : assert_failed(__FILE__, __LINE__, __func__, #x))
+#endif
+
+#if defined(VERBOSE) && VERBOSE
+#define assert_debug assert
+#else
+#define assert_debug(x) (void)assert_if_const(x)
 #endif

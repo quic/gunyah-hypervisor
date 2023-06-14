@@ -27,7 +27,7 @@ useraccess_copy_from_to_guest_va(gvaddr_t gvaddr, void *hvaddr, size_t size,
 	error_t	 ret	   = OK;
 	size_t	 remaining = size;
 	gvaddr_t guest_va  = gvaddr;
-	void    *hyp_buf   = hvaddr;
+	void	*hyp_buf   = hvaddr;
 
 	assert(hyp_buf != NULL);
 	assert(remaining != 0U);
@@ -75,10 +75,11 @@ useraccess_copy_from_to_guest_va(gvaddr_t gvaddr, void *hvaddr, size_t size,
 			size_t mapped_size = page_size - page_offset;
 			void  *va = partition_phys_map(guest_pa, mapped_size);
 
-			MAIR_ATTR_t attr = PAR_EL1_F0_get_ATTR(&par.f0);
-			bool writeback	 = (attr | MAIR_ATTR_ALLOC_HINT_MASK) ==
-					 MAIR_ATTR_NORMAL_WB;
-#if defined(ARCH_ARM_8_5_MEMTAG)
+			MAIR_ATTR_t attr      = PAR_EL1_F0_get_ATTR(&par.f0);
+			bool	    writeback = ((index_t)attr |
+						 (index_t)MAIR_ATTR_ALLOC_HINT_MASK) ==
+					 (index_t)MAIR_ATTR_NORMAL_WB;
+#if defined(ARCH_ARM_FEAT_MTE)
 			writeback = writeback ||
 				    (attr == MAIR_ATTR_TAGGED_NORMAL_WB);
 #endif
@@ -202,9 +203,10 @@ useraccess_copy_from_to_guest_ipa(addrspace_t *addrspace, vmaddr_t ipa,
 			break;
 		}
 
-		if (!force_access && (mapped_vm_kernel_access &
-				      (from_guest ? PGTABLE_ACCESS_R
-						  : PGTABLE_ACCESS_W)) == 0U) {
+		if (!force_access &&
+		    !pgtable_access_check(mapped_vm_kernel_access,
+					  (from_guest ? PGTABLE_ACCESS_R
+						      : PGTABLE_ACCESS_W))) {
 			rcu_read_finish();
 			ret = ERROR_DENIED;
 			break;

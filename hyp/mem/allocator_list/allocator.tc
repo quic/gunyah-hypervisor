@@ -10,4 +10,6 @@ define allocator_node structure {
 extend allocator structure {
 	heap pointer structure allocator_node;
 	lock structure spinlock;
+	total_size size;
+	alloc_size size;
 };

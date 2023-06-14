@@ -16,7 +16,7 @@
 
 #include "event_handlers.h"
 
-// FIXME: ABI checks disabled due to spec issue.
+// FIXME: ABI checks disabled since Linux driver is non-compliant.
 #define LINUX_TRNG_WORKAROUND
 
 static void NOINLINE
@@ -32,12 +32,12 @@ arm_trng_fi_read(vcpu_gpr_t *regs, uint64_t bits, bool smc64)
 	} else {
 		uint32_t data[192 / 32] = { 0 };
 		count_t	 remain		= (count_t)bits;
-		int32_t	 i;
+		int32_t	 i		= (int32_t)util_array_size(data) - 1;
 
 		assert(bits <= 192);
 
 		// Read N-bits of entropy
-		for (i = util_array_size(data) - 1; remain != 0U; i--) {
+		while (remain != 0U) {
 			assert(i >= 0);
 
 			error_t err = platform_get_random32(&data[i]);
@@ -46,12 +46,12 @@ arm_trng_fi_read(vcpu_gpr_t *regs, uint64_t bits, bool smc64)
 			}
 			if (remain < 32U) {
 				// Mask any unrequested bits
-				uint32_t mask = (1U << remain) - 1U;
-				data[i] &= mask;
+				data[i] &= (uint32_t)util_mask(remain);
 				remain = 0U;
 			} else {
 				remain -= 32U;
 			}
+			i--;
 		}
 		if (remain != 0U) {
 			regs->x[0] = (uint64_t)ARM_TRNG_RET_NO_ENTROPY;
@@ -68,7 +68,7 @@ arm_trng_fi_read(vcpu_gpr_t *regs, uint64_t bits, bool smc64)
 			regs->x[1] = data[3];
 		}
 		// Erase entropy from the stack
-		memset_s(data, sizeof(data), 0U, sizeof(data));
+		(void)memset_s(data, sizeof(data), 0, sizeof(data));
 		CACHE_CLEAN_INVALIDATE_OBJECT(data);
 
 		regs->x[0] = (uint64_t)ARM_TRNG_RET_SUCCESS;
@@ -109,7 +109,7 @@ static bool
 arm_trng_fi_handle_call(void)
 {
 	bool		    handled = false;
-	thread_t		 *current = thread_get_self();
+	thread_t	   *current = thread_get_self();
 	smccc_function_id_t function_id =
 		smccc_function_id_cast((uint32_t)current->vcpu_regs_gpr.x[0]);
 	smccc_interface_id_t interface =
@@ -121,12 +121,12 @@ arm_trng_fi_handle_call(void)
 			      (!smccc_function_id_get_is_fast(&function_id)))) {
 		goto out;
 	}
-	if ((function < ARM_TRNG_FUNCTION__MIN) ||
-	    (function > ARM_TRNG_FUNCTION__MAX)) {
+	if ((function < (smccc_function_t)ARM_TRNG_FUNCTION__MIN) ||
+	    (function > (smccc_function_t)ARM_TRNG_FUNCTION__MAX)) {
 		goto out;
 	}
 
-	arm_trng_function_t f = function;
+	arm_trng_function_t f = (arm_trng_function_t)function;
 	bool is_smc64	      = smccc_function_id_get_is_smc64(&function_id);
 
 	// Setup the default return
@@ -156,6 +156,7 @@ arm_trng_fi_handle_call(void)
 		case ARM_TRNG_FUNCTION_TRNG_GET_UUID:
 		case ARM_TRNG_FUNCTION_LAST_ID:
 		default:
+			// Unimplemented
 			break;
 		}
 	} else {
@@ -191,7 +192,9 @@ arm_trng_fi_handle_call(void)
 			    (smccc_function_id_get_res0(&fid) != 0U)) {
 				break;
 			}
-			switch (smccc_function_id_get_function(&fid)) {
+			smccc_function_t fn =
+				smccc_function_id_get_function(&fid);
+			switch ((arm_trng_function_t)fn) {
 			case ARM_TRNG_FUNCTION_TRNG_VERSION:
 			case ARM_TRNG_FUNCTION_TRNG_FEATURES:
 			case ARM_TRNG_FUNCTION_TRNG_GET_UUID:
@@ -203,6 +206,10 @@ arm_trng_fi_handle_call(void)
 			case ARM_TRNG_FUNCTION_TRNG_RNG:
 				current->vcpu_regs_gpr.x[0] =
 					(uint64_t)ARM_TRNG_RET_SUCCESS;
+				break;
+			case ARM_TRNG_FUNCTION_LAST_ID:
+			default:
+				// Nothing to do
 				break;
 			}
 			break;
@@ -242,6 +249,7 @@ arm_trng_fi_handle_call(void)
 			break;
 		case ARM_TRNG_FUNCTION_LAST_ID:
 		default:
+			// Nothing to do
 			break;
 		}
 	}

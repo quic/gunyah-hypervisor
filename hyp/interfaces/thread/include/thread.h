@@ -22,10 +22,14 @@ thread_get_self(void);
 // stops running. If the switch fails, the reference will be released
 // immediately before returning.
 //
+// The second argument is the absolute time at which the scheduler made the
+// decision to run this thread. It is not used directly by this module, but is
+// passed to context switch event handlers for use in time accounting.
+//
 // This function will fail if the specified thread is already running on another
 // CPU. The scheduler is responsible for guaranteeing this.
 error_t
-thread_switch_to(thread_t *thread) REQUIRE_PREEMPT_DISABLED;
+thread_switch_to(thread_t *thread, ticks_t curticks) REQUIRE_PREEMPT_DISABLED;
 
 // Kill a thread. This marks it as exiting, sends an interrupt to any CPU that
 // is currently running it, and switches to it on the current CPU if it is not
@@ -43,10 +47,25 @@ thread_kill(thread_t *thread);
 
 // Return true if the specified thread has had thread_kill() called on it.
 //
+// This function has relaxed memory semantics. If the thread may be running on a
+// remote CPU, or may have been killed by a remote CPU, it is the caller's
+// responsibility to ensure that the memory access is ordered correctly.
+//
 // The caller must either be the specified thread, or hold a reference to the
 // specified thread, or be in an RCU read-side critical section.
 bool
 thread_is_dying(const thread_t *thread);
+
+// Return true if the specified thread has exited.
+//
+// This function has relaxed memory semantics. If the thread may be running on a
+// remote CPU, or may have just exited on a remote CPU, it is the caller's
+// responsibility to ensure that the memory access is ordered correctly.
+//
+// The caller must either hold a reference to the specified thread, or be in an
+// RCU read-side critical section.
+bool
+thread_has_exited(const thread_t *thread);
 
 // Block until a specified thread has exited.
 //

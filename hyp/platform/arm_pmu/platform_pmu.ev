@@ -14,5 +14,7 @@ subscribe boot_hypervisor_start
 
 subscribe irq_received[HWIRQ_ACTION_PMU]
 	handler platform_pmu_handle_irq_received()
+	require_preempt_disabled
 
 subscribe power_cpu_suspend()
+	require_preempt_disabled

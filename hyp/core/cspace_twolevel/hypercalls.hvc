@@ -6,6 +6,6 @@ define cspace_configure hypercall {
 	call_num	0x25;
 	cspace		input type cap_id_t;
 	max_caps	input type count_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };

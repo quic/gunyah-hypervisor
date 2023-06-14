@@ -13,9 +13,9 @@ define virq_trigger enumeration {
 define virq_source structure {
 	virq		type virq_t;
 	trigger		enumeration virq_trigger;
-	is_private	bool;
 	// RCU-protected pointer to the targeted controller.
 	vic		pointer(atomic) object vic;
+	is_private	bool;
 };
 
 extend error enumeration {

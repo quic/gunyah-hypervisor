@@ -1,6 +1,15 @@
-![Qualcomm Innovation Center.](docs/images/logo-quic-on%40h68.png)
+[<img src="docs/images/logo-quic-on%40h68.png" height="68px" width="393px" alt="Qualcomm Innovation Center" align="right"/>](https://github.com/quic)
 
 # Gunyah Hypervisor
+
+Gunyah is a high performance, scalable and flexible hypervisor built for
+demanding battery powered, real-time, safety and security use cases.
+
+The Gunyah Hypervisor open source project provides a reference Type-1
+hypervisor configuration suitable for general purpose hosting of multiple
+trusted and dependent VMs.
+
+## Gunyah Origins
 
 *Gunyah* is an Australian Aboriginal word. See: https://en.wiktionary.org/wiki/gunyah
 
@@ -8,11 +17,11 @@ The Gunyah Hypervisor was developed by Qualcomm in Sydney Australia.
 
 ## Type-1 Hypervisor Concept
 
-Gunyah is a Type-1 hypervisor, meaning that it is independent of any high-level
-OS kernel, and runs in a higher CPU privilege level. It does not depend on any
-lower-privileged OS kernel/code for its core functionality. This increases its
-security and can support a much smaller trusted computing base than a Type-2
-hypervisor.
+Gunyah is a Type-1 hypervisor, meaning that it runs independently of any
+high-level OS kernel - such as Linux, and runs in a higher CPU privilege level
+than VMs. It does not depend on any lower-privileged OS kernel/code for its
+core functionality. This increases its security and can support a much smaller
+trusted computing base than a Type-2 like hosted-hypervisors.
 
 Gunyah's design principle is not dissimilar to a traditional microkernel in
 that it provides only a minimal set of critical services to its clients, and
@@ -21,15 +30,16 @@ less-privileged) processes, wherever this is possible without an adverse impact
 on performance or security.
 
 The hypervisor uses the CPU's virtualization mode and features to isolate
-itself from OS kernels in VMs. On ARM, this includes trapping privileged
-registers, using GIC virtualization support, and the Stage-2 MMU to provide
-isolated VMs in EL1/0.
+itself from OS kernels in VMs and isolate VMs from each other. On ArM, this
+includes trapping and emulating registers as required, virtualizing core
+platform devices, Arm's GIC virtualization support, and the CPU's Stage-2 MMU
+to provide isolated VMs in EL1/0.
 
 ## Why Gunyah
 
-- **strong security**: Mobile payments, secure user-interface, and many more security sensitive use-cases all require strong security. Gunyah's design is suited to providing strong isolation guarantees and its small size is conducive to audit.
-- **performance**: Mobile devices are particularly demanding. Battery powered devices demand low software overheads to get the most performance per-watt. Gunyah is designed to have high performance with minimal impact to high-level operating systems.
-- **modularity**: The hypervisor is designed to be modular, allowing customization and enhancement by swapping out module implementations and adding new feature via new modules.
+- **Strong security**: Mobile payments, secure user-interface, and many more security sensitive use-cases all require strong security. Gunyah's design is suited to providing strong isolation guarantees and its small size is conducive to audit.
+- **Performance**: Mobile devices are particularly demanding. Battery powered devices demand low software overheads to get the most performance per-watt. Gunyah is designed to have high performance with minimal impact to high-level operating systems.
+- **Modularity**: The hypervisor is designed to be modular, allowing customization and enhancement by swapping out module implementations and adding new feature via new modules.
 
 ## Features
 
@@ -41,17 +51,23 @@ isolated VMs in EL1/0.
 
 ## Platform Support
 
-Gunyah is architected to support other CPU architectures, so its core design ensures architecture independence and portability in non-architecture specific areas.
+Gunyah is architected to support multiple CPU architectures, so its core design
+ensures architecture independence and portability in non-architecture specific
+areas.
 
-Gunyah currently supports ARMv8.2+ platforms as it uses AArch64 EL2 in VHE mode. Some porting is required to support ARMv8.0.
+Gunyah currently supports the ARM64 (ARMv8+) architecure, it uses AArch64 EL2
+in VHE mode by default.
 
-We have developed an initial port of Gunyah to the QEMU ARMv8 simulator. *Note QEMU v5+ is required*. Additional platforms are expected to be supported in future contributions.
+We have developed an initial port of Gunyah to the QEMU Arm System emulator.
+*Note QEMU v7+ is recommended*. Additional platforms are expected to be
+supported in future contributions.
 
 ## Getting Started
+- [Terminology](docs/terminology.md)
 - [Setup Instructions](docs/setup.md)
+    + [Quick Start Instructions](https://github.com/quic/gunyah-support-scripts/blob/develop/quickstart.md)
 - [Build Instructions](docs/build.md)
-- [Testing Instructions](docs/test.md)
-- [Changelog](CHANGELOG.md)
+- [Status and Changelog](CHANGELOG.md)
 
 ## Resources
 - [Gunyah Hypercall API](docs/api/gunyah_api.md)

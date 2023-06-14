@@ -1,0 +1,134 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#set loop_counts = set()
+#set loop_cores = dict()
+#set unaffected_cores = dict()
+#set unhandled_cores = dict()
+#set hwworkaround_cores = dict()
+#set target_cpu_ids = $ARCH_CORE_IDS.split(',')
+##
+#for cpu_id in $ARCH_CORE_IDS.split(',')
+#set _nospec = 'SPECTRE_{:s}_NO_SPECULATION'.format(cpu_id)
+#set _loops = 'SPECTRE_{:s}_BHB_LOOP_FLUSH'.format(cpu_id)
+#set _bpiall = 'SPECTRE_{:s}_BPIALL'.format(cpu_id)
+#set _hwwrk = 'SPECTRE_{:s}_BHB_HW_WORKAROUND'.format(cpu_id)
+#if self.varExists($_loops)
+#set loops=int(self.getVar($_loops))
+#silent loop_counts.add($loops)
+#silent loop_cores[$cpu_id] = $loops
+#elif self.varExists($_bpiall)
+#silent unhandled_cores[$cpu_id] = 1
+#elif self.varExists($_hwwrk)
+#silent hwworkaround_cores[$cpu_id] = 1
+#elif self.varExists($_nospec)
+#silent unaffected_cores[$cpu_id] = 1
+#else
+#silent print('Spectre BHB config missing for', cpu_id)
+#silent sys.exit(1)
+#end if
+#end for
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypregisters.h>
+
+\#include <base.h>
+\#include <compiler.h>
+\#include <cpulocal.h>
+\#include <log.h>
+\#include <panic.h>
+\#include <trace.h>
+
+\#include "event_handlers.h"
+\#include "vectors_vcpu.h"
+
+CPULOCAL_DECLARE(uintptr_t, vcpu_aarch64_vectors);
+
+extern uintptr_t vcpu_aarch64_vectors;
+extern uintptr_t vcpu_aarch64_vectors_tramp_clrbhb;
+
+#for loop_count in sorted(loop_counts)
+extern uintptr_t vcpu_aarch64_vectors_tramp_bhb_loop_${loop_count};
+#end for
+
+void
+vcpu_arch_handle_boot_cpu_cold_init(cpu_index_t cpu)
+{
+	core_id_t core_id = get_current_core_id();
+
+	ID_AA64MMFR1_EL1_t mmfr1 = register_ID_AA64MMFR1_EL1_read();
+\#if defined(ARCH_ARM_FEAT_CLRBHB)
+	ID_AA64ISAR2_EL1_t isar2 = register_ID_AA64ISAR2_EL1_read();
+\#endif
+
+	if (ID_AA64MMFR1_EL1_get_ECBHB(&mmfr1) == 1U) {
+		CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+			(uintptr_t)&vcpu_aarch64_vectors;
+	}
+\#if defined(ARCH_ARM_FEAT_CLRBHB)
+	else if (ID_AA64ISAR2_EL1_get_CLRBHB(&isar2) == 1U) {
+		CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+			(uintptr_t)&vcpu_aarch64_vectors_tramp_clrbhb;
+	}
+\#endif
+	else {
+\#pragma clang diagnostic push
+\#pragma clang diagnostic ignored "-Wswitch-enum"
+		switch(core_id) {
+#for cpu_id in sorted(loop_cores):
+		case CORE_ID_${cpu_id}:
+			// BHB eviction loop in vector entry, ${loop_cores[cpu_id]} iterations
+			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+				(uintptr_t)&vcpu_aarch64_vectors_tramp_bhb_loop_${loop_cores[cpu_id]};
+			break;
+#end for
+#if len(unaffected_cores)
+#for cpu_id in sorted(unaffected_cores):
+		case CORE_ID_${cpu_id}:
+#end for
+			// Not vulnerable to Spectre-BHB
+			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+				(uintptr_t)&vcpu_aarch64_vectors;
+			break;
+#end if
+#if len(unhandled_cores):
+#for cpu_id in sorted(unhandled_cores):
+		case CORE_ID_${cpu_id}:
+#end for
+			// Needs an SMC call or switch to AArch32
+			panic("No firmware support for spectre-BHB yet!");
+#end if
+#if len($hwworkaround_cores)
+#for cpu_id in sorted(hwworkaround_cores):
+		case CORE_ID_${cpu_id}:
+#end for
+			// Core is expected to have a HW workaround, ECBHB or
+			// CLRBHB
+\#if defined(ARCH_ARM_SPECTRE_BHB_WARN) && !defined(NDEBUG) && defined(VERBOSE) && VERBOSE
+			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+				(uintptr_t)&vcpu_aarch64_vectors;
+			LOG(ERROR, WARN,
+			    "No spectre-BHB mitigation for unexpected core {:d}:{:d}",
+			    cpu, (register_t)core_id);
+			break;
+\#else
+			panic("No spectre-BHB mitigation for unexpected core");
+\#endif
+#end if
+		default:
+\#if defined(ARCH_ARM_SPECTRE_BHB_WARN) && !defined(NDEBUG) && defined(VERBOSE) && VERBOSE
+			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+				(uintptr_t)&vcpu_aarch64_vectors;
+			LOG(ERROR, WARN,
+			    "No spectre-BHB mitigation registered for unknown core {:d}:{:d}",
+			    cpu, (register_t)core_id);
+			break;
+\#else
+			panic("No spectre-BHB mitigation registered for unknown core");
+\#endif
+		}
+\#pragma clang diagnostic pop
+	}
+}

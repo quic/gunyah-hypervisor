@@ -31,7 +31,7 @@ publish_multi_event : "multi_event" symbol count_param _event_params?  _END_DECL
 
 publish_setup_event : "setup_event" symbol _event_params? result success _END_DECL
 
-publish_selector_event : "selector_event" symbol selector_param _event_params?  result? _END_DECL
+publish_selector_event : "selector_event" symbol selector_param _event_params?  void_result? _END_DECL
 
 symbol : IDENTIFIER
 
@@ -46,25 +46,30 @@ _param : symbol ":" type_decl
 
 _RESULT : _CONT_DECL "return" WS_INLINE? ":"
 result : _RESULT type_decl "=" constexpr
+void_result : _RESULT type_decl "=" constexpr | _RESULT "void"
 _SUCCESS : _CONT_DECL "success" WS_INLINE? ":"
 success : _SUCCESS constexpr
 
 type_decl: _type_decl
-_type_decl: (IDENTIFIER POINTER?)+
+_type_decl: (QUALIFIER* IDENTIFIER (POINTER QUALIFIER*)*)
 	| LPAREN _type_decl RPAREN
 	| _type_decl LPAREN POINTER RPAREN LPAREN _arg_type_list? RPAREN
 _arg_type_list: _arg_type_list COMMA _type_decl | _type_decl
+_type_cast: LPAREN _type_decl RPAREN
 
 subscribe : "subscribe" optional? symbol selector? _subscriber? _subscribe_opts _END_DECL
 subscribe_public : "subscribe" optional? symbol selector? _subscriber_public _subscribe_opts _END_DECL
 
 optional : "optional"
 selector : "[" _selector_list "]"
-_subscriber : expected_args unwinder? | handler unwinder? | unwinder | constant
+// Note, the syntax, "subscribe event_name(args)" without an explicit 'handler'
+// is a short-hand for "subscribe event_name handler default_name().. With a
+// handler, the braces for arguments should go with the handler_name.
+_subscriber : expected_args noreturn? unwinder? | handler unwinder? | unwinder | constant
 _subscriber_public : handler_public unwinder_public? | constant
 _HANDLER : ":" | _CONT_DECL "handler"
-handler : _HANDLER symbol expected_args? public?
-handler_public : _HANDLER symbol expected_args? public
+handler : _HANDLER symbol expected_args? public? noreturn?
+handler_public : _HANDLER symbol expected_args? public noreturn?
 _UNWINDER : _CONT_DECL "unwinder"
 unwinder : _UNWINDER symbol? expected_args? public?
 unwinder_public : _UNWINDER symbol? expected_args? public
@@ -73,6 +78,7 @@ constant : _CONSTANT constexpr
 public : _CONT_DECL? "public"
 expected_args : "(" _NL_INDENT? _expected_arg_list? ")"
 _expected_arg_list : symbol ("," _NL_INDENT? symbol)*
+noreturn : _CONT_DECL? "noreturn"
 %import common.SIGNED_NUMBER -> NUMBER
 _PRIORITY : _CONT_DECL "priority"
 priority : _PRIORITY (NUMBER | /min|max|first|last|default/)
@@ -84,6 +90,7 @@ lock_opt : _lock_opt_kind lock_name
 _subscribe_opts : priority? lock_opt*
 
 IDENTIFIER : /[a-zA-Z_][a-zA-Z0-9_]*/
+QUALIFIER.2 : "const" | "volatile" | "_Atomic"
 POINTER : "*"
 ARROW : "->"
 constexpr : _constexpr
@@ -93,7 +100,8 @@ RPAREN : ")"
 COMMA : ","
 _args : LPAREN _arg_list? RPAREN
 _arg_list : _NL_INDENT? _constexpr [COMMA _arg_list]
-_selector_list : _NL_INDENT? _constexpr ["," _selector_list]
+selector_const: _type_cast? _constexpr
+_selector_list : _NL_INDENT? selector_const ["," _selector_list]
 %import common.SIGNED_INT
 %import common.SIGNED_FLOAT
 %import common.INT

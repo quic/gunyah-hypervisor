@@ -31,7 +31,7 @@
 // Set this to 1 to disable the fast idle optimisation for debugging
 #define IPI_DEBUG_NO_FAST_IDLE 0
 
-#define REGISTER_BITS (sizeof(register_t) * CHAR_BIT)
+#define REGISTER_BITS (sizeof(register_t) * (size_t)CHAR_BIT)
 
 // We enable the fast wakeup support by default if asm_event_wait() can sleep
 // (as it will busy-wait otherwise) and preemption is enabled. We can possibly
@@ -41,6 +41,7 @@
 // If interrupts are handled by a VM, we need to be able to ask the VM to send
 // an IPI for us. This is not currently implemented, so we force fast wakeups in
 // such configurations even though they will block pending interrupts.
+// FIXME:
 #if (!ASM_EVENT_WAIT_IS_NOOP && !defined(PREEMPT_NULL) &&                      \
      !IPI_DEBUG_NO_FAST_IDLE) ||                                               \
 	defined(IPI_FORCE_FAST_WAKEUP_HACK)
@@ -233,8 +234,9 @@ ipi_handle_relaxed(void)
 	prefetch_store_keep(local_pending);
 	register_t pending = atomic_load_relaxed(local_pending);
 	while (compiler_unexpected(pending != 0U)) {
-		ipi_reason_t ipi = (ipi_reason_t)(REGISTER_BITS - 1U -
-						  compiler_clz(pending));
+		ipi_reason_t ipi =
+			(ipi_reason_t)((register_t)(REGISTER_BITS - 1U -
+						    compiler_clz(pending)));
 		if (ipi_clear_relaxed(ipi) && trigger_ipi_received_event(ipi)) {
 			reschedule = true;
 		}
@@ -250,7 +252,7 @@ ipi_handle_thread_exit_to_user(thread_entry_reason_t reason)
 	// Relaxed IPIs are handled directly by the IRQ module for interrupts.
 	if (reason != THREAD_ENTRY_REASON_INTERRUPT) {
 		if (ipi_handle_relaxed()) {
-			scheduler_schedule();
+			(void)scheduler_schedule();
 		}
 	}
 }
@@ -266,8 +268,9 @@ ipi_handle_idle_yield(bool in_idle_thread)
 	register_t pending;
 	do {
 		// Mark ourselves as waiting in idle.
-		atomic_fetch_or_explicit(local_pending, IPI_WAITING_IN_IDLE,
-					 memory_order_relaxed);
+		(void)atomic_fetch_or_explicit(local_pending,
+					       IPI_WAITING_IN_IDLE,
+					       memory_order_relaxed);
 
 		// Sleep until there is at least one event to handle or a
 		// preemption clears IPI_WAITING_IN_IDLE.
@@ -348,7 +351,7 @@ ipi_handle_scheduler_stop(void)
 	uint32_t freq = platform_timer_get_frequency();
 
 	uint64_t now = platform_timer_get_current_ticks();
-	uint64_t end = now + (freq / 1024);
+	uint64_t end = now + ((uint64_t)freq / 1024U);
 
 	while (now < end) {
 		asm_yield();

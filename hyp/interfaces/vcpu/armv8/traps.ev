@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Add the events for the traps coming from AArch32
+// FIXME:
 
 interface vcpu
 
@@ -21,8 +22,9 @@ handled_event vcpu_trap_wfi
 
 handled_event vcpu_trap_fp_enabled
 	param esr: ESR_EL2_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 handled_event vcpu_trap_pauth
 #endif
 
@@ -45,18 +47,18 @@ handled_event vcpu_trap_sysreg_write
 	param iss: ESR_EL2_ISS_MSR_MRS_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 handled_event vcpu_trap_eret
 	param esr: ESR_EL2_t
 #endif
 
 handled_event vcpu_trap_pf_abort_guest
 	param esr: ESR_EL2_t
-	param ipa: vmaddr_t
+	param ipa: vmaddr_result_t
 	param far: FAR_EL2_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
-#if defined(ARCH_ARM_8_2_SVE)
+#if defined(ARCH_ARM_FEAT_SVE)
 handled_event vcpu_trap_sve_access
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 #endif
@@ -65,7 +67,7 @@ handled_event vcpu_trap_pc_alignment_fault
 
 handled_event vcpu_trap_data_abort_guest
 	param esr: ESR_EL2_t
-	param ipa: vmaddr_t
+	param ipa: vmaddr_result_t
 	param far: FAR_EL2_t
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
@@ -93,7 +95,6 @@ handled_event vcpu_trap_brk_instruction_guest
 
 handled_event vcpu_trap_serror
 	param iss: ESR_EL2_ISS_SERROR_t
-	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
 // AArch32 traps
 #if ARCH_AARCH64_32BIT_EL0

@@ -38,14 +38,14 @@
 //
 // This implies a release barrier.
 void
-ipi_others(ipi_reason_t ipi);
+ipi_others(ipi_reason_t ipi) REQUIRE_PREEMPT_DISABLED;
 
 // Send the specified IPI to all online CPUs other than the caller, with low
 // priority.
 //
 // This implies a release barrier.
 void
-ipi_others_relaxed(ipi_reason_t ipi);
+ipi_others_relaxed(ipi_reason_t ipi) REQUIRE_PREEMPT_DISABLED;
 
 // Send the specified IPI to all online CPUs other than the caller, with low
 // priority, guaranteeing that idle CPUs will wake.
@@ -54,7 +54,7 @@ ipi_others_relaxed(ipi_reason_t ipi);
 //
 // Do not use with the intention of waking a suspended CPU.
 void
-ipi_others_idle(ipi_reason_t ipi);
+ipi_others_idle(ipi_reason_t ipi) REQUIRE_PREEMPT_DISABLED;
 
 // Send the specified IPI to a single CPU.
 //
@@ -92,9 +92,10 @@ ipi_one_idle(ipi_reason_t ipi, cpu_index_t cpu);
 // controllers can reliably cancel an IPI without handling it.
 //
 // This function may be safely called with preemption enabled, from any context.
-// However, its result must be ignored if it is called in an IPI handler.
+// However, its result must be ignored if it is called in an IPI handler or with
+// preemption enabled.
 bool
-ipi_clear(ipi_reason_t ipi);
+ipi_clear(ipi_reason_t ipi) REQUIRE_PREEMPT_DISABLED;
 
 // Atomically check and clear the specified IPI, assuming it was a relaxed IPI.
 //
@@ -108,7 +109,7 @@ ipi_clear(ipi_reason_t ipi);
 // can avoid the cost of interacting with the interrupt controller for IPIs that
 // are always, or mostly, raised using the _relaxed functions.
 bool
-ipi_clear_relaxed(ipi_reason_t ipi);
+ipi_clear_relaxed(ipi_reason_t ipi) REQUIRE_PREEMPT_DISABLED;
 
 // Immediately handle any relaxed IPIs.
 //

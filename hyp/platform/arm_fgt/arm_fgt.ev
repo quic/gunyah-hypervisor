@@ -1,0 +1,9 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_fgt
+
+#if defined(ARCH_ARM_FEAT_FGT) && ARCH_ARM_FEAT_FGT
+subscribe boot_cold_init()
+#endif

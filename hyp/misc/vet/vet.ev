@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vet
+
+subscribe boot_cold_init()
+
+subscribe thread_context_switch_pre()
+	require_preempt_disabled
+
+subscribe thread_load_state()
+	require_preempt_disabled
+
+subscribe vcpu_activate_thread
+
+subscribe power_cpu_suspend(may_poweroff)
+	unwinder()
+	require_preempt_disabled
+
+subscribe power_cpu_resume(was_poweroff)
+	require_preempt_disabled

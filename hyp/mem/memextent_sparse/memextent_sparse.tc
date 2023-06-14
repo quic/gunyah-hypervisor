@@ -1,0 +1,54 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define GPT_PHYS_BITS constant type count_t = 44;
+define GPT_VBASE_BITS constant type count_t = 48;
+
+extend addrspace object {
+	sparse_mapping_list	structure list;
+};
+
+define memextent_gpt_map bitfield<64> {
+	auto<GPT_VBASE_BITS>	vbase		type vmaddr_t;
+	auto<8>			memtype		enumeration pgtable_vm_memtype;
+	auto<3>			user_access	enumeration pgtable_access;
+	auto<3>			kernel_access	enumeration pgtable_access;
+	// For unmap operations, we only care about comparing vbases, so this
+	// flag indicates that we should ignore the mapping attributes.
+	auto			ignore_attrs	bool;
+};
+
+extend gpt_type enumeration {
+	memextent_mapping;
+};
+
+extend gpt_value union {
+	me_map		bitfield memextent_gpt_map;
+};
+
+define memextent_sparse_arg structure {
+	addrspace	pointer object addrspace;
+	vbase		type vmaddr_t;
+	pbase		type paddr_t;
+	memtype		enumeration pgtable_vm_memtype;
+	user_access	enumeration pgtable_access;
+	kernel_access	enumeration pgtable_access;
+	fail_addr	type paddr_t;
+};
+
+define memextent_gpt_arg structure {
+	addrspace	pointer object addrspace;
+};
+
+define memextent_sparse_mapping structure {
+	// RCU-protected addrspace pointer
+	addrspace		pointer(atomic) object addrspace;
+	mapping_list_node	structure list_node(contained);
+	gpt			structure gpt;
+	retained		bool;
+};
+
+extend memextent_map_ptr union {
+	sparse		pointer structure memextent_sparse_mapping;
+};

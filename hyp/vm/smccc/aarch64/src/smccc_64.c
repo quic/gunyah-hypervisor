@@ -9,18 +9,34 @@
 #include <events/smccc.h>
 
 #include "event_handlers.h"
+#include "smccc_hypercall.h"
 
 static bool
 smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 {
 	bool		    handled;
-	thread_t		 *current = thread_get_self();
+	thread_t	   *current = thread_get_self();
 	smccc_function_id_t function_id =
 		smccc_function_id_cast((uint32_t)current->vcpu_regs_gpr.x[0]);
 
 	uint32_t res0 = smccc_function_id_get_res0(&function_id);
 	if (res0 != 0U) {
-		handled = false;
+		current->vcpu_regs_gpr.x[0] =
+			(register_t)SMCCC_UNKNOWN_FUNCTION64;
+		handled = true;
+		goto out;
+	}
+
+	// TODO: the smccc handling below needs to be refactored, to permit
+	// registering ranges of service IDs, rather than registering
+	// individual calls directly. The current approach allows for unknown
+	// call IDs to be unhandled and fallthrough to a later module, which is
+	// undesirable.
+	//
+	// For SMCCC based hypercalls, we need function ID range-base handling,
+	// so its currently called directly here.
+	if (smccc_handle_hypercall_wrapper(function_id, is_hvc)) {
+		handled = true;
 		goto out;
 	}
 

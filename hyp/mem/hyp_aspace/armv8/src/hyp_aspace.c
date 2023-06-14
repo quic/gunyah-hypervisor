@@ -32,42 +32,44 @@
 #define HYP_ASPACE_ALLOCATE_BITS (25U)
 #define HYP_ASPACE_ALLOCATE_SIZE (size_t) util_bit(HYP_ASPACE_ALLOCATE_BITS)
 
+#define BITS_2MiB 21
+#define SIZE_2MiB (size_t) util_bit(BITS_2MiB)
+
 static spinlock_t      hyp_aspace_direct_lock;
 static const uintptr_t hyp_aspace_direct_end =
-	util_bit(HYP_ASPACE_MAP_DIRECT_BITS) - 1;
+	util_bit(HYP_ASPACE_MAP_DIRECT_BITS) - 1U;
 
 static spinlock_t	   hyp_aspace_alloc_lock;
 static _Atomic register_t *hyp_aspace_regions;
-#if defined(ARCH_ARM_8_1_VHE)
-static const uintptr_t hyp_aspace_alloc_base = -util_bit(HYP_ASPACE_HIGH_BITS);
-static const uintptr_t hyp_aspace_alloc_end  = ~(uintptr_t)0U;
+#if defined(ARCH_ARM_FEAT_VHE)
+static const uintptr_t hyp_aspace_alloc_base =
+	0U - util_bit(HYP_ASPACE_HIGH_BITS);
+static const uintptr_t hyp_aspace_alloc_end = ~(uintptr_t)0U;
 #else
+// The upper half of the address space (256GB) is reserved for the randomised
+// constant-offset mappings. The lower half is shared between the direct maps
+// and the VA allocator (64GB and 192GB respectively).
 static const uintptr_t hyp_aspace_alloc_base =
 	util_bit(HYP_ASPACE_MAP_DIRECT_BITS);
-static const uintptr_t hyp_aspace_alloc_end = util_bit(HYP_ASPACE_BITS) - 1;
+static const uintptr_t hyp_aspace_alloc_end =
+	util_bit(HYP_ASPACE_LOWER_HALF_BITS) - 1;
 #endif
 static const size_t hyp_aspace_total_size =
 	hyp_aspace_alloc_end - hyp_aspace_alloc_base + 1U;
 static const size_t hyp_aspace_num_regions =
 	hyp_aspace_total_size / HYP_ASPACE_ALLOCATE_SIZE;
 
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-static _Atomic bool hyp_aspace_direct_unmap;
-#endif
-
 extern const char image_virt_start;
 extern const char image_virt_last;
 extern const char image_phys_start;
 extern const char image_phys_last;
 
-static const uintptr_t virt_start     = (paddr_t)&image_virt_start;
-static const uintptr_t virt_end	      = (paddr_t)&image_virt_last;
+static const uintptr_t virt_start     = (uintptr_t)&image_virt_start;
+static const uintptr_t virt_end	      = (uintptr_t)&image_virt_last;
 static const paddr_t   hyp_phys_start = (paddr_t)&image_phys_start;
 static const paddr_t   hyp_phys_last  = (paddr_t)&image_phys_last;
 
-#if !defined(ARCH_ARM_8_1_VHE)
-static_assert(!ARCH_AARCH64_USE_PAN, "PAN is not useful when VHE is disabled");
-#endif
+static uintptr_t hyp_aspace_physaccess_offset;
 
 void
 hyp_aspace_handle_boot_cold_init(void)
@@ -77,41 +79,63 @@ hyp_aspace_handle_boot_cold_init(void)
 
 	partition_t *hyp_partition = partition_get_private();
 
-#if ARCH_AARCH64_USE_PAN
-	// Congruent (constant offset) mappings to support physical address
-	// access (partition_phys_*).
-	//
-	// Access rights are set to PGTABLE_ACCESS_NONE, which creates mappings
-	// that can only be accessed with PSTATE.PAN cleared.
-	//
 	// First, map the kernel image, assuming that all of the initial page
 	// tables are within its physical memory. This should be sufficient to
 	// allow partition_phys_access_begin to work, so we can do other page
 	// table operations with the private partition.
+
+#if ARCH_AARCH64_USE_PAN
+	// Congruent (constant offset) mappings to support physical address
+	// access (partition_phys_*).
+	// Access rights are set to PGTABLE_ACCESS_NONE, which creates mappings
+	// that can only be accessed with PSTATE.PAN cleared.
+	hyp_aspace_physaccess_offset = HYP_ASPACE_PHYSACCESS_OFFSET;
+	pgtable_access_t access	     = PGTABLE_ACCESS_NONE;
+#else
+	// The upper half of the address space (256GB to 512MB) is reserved for
+	// the randomised constant-offset mappings.
+
+	// Generate a random number in the rage of 1/4th of the address space
+	// (between 0 and 128GB) with the lower 21 bits (2MB) cleared. Then add
+	// it to the  base of the physaccess offset which is at half-point of
+	// the address space (256GB). This will give us a random physaccess
+	// offset between half and 3/4th of the address space (256GB-384GB).
+
+	uint64_result_t prng_ret = prng_get64();
+	if (prng_ret.e != OK) {
+		panic("Failed to get a random number");
+	}
+
+	// Clear the lower 21 bits (2MB) of the random number
+	hyp_aspace_physaccess_offset = prng_ret.r & ~((1UL << 21) - 1);
+	hyp_aspace_physaccess_offset &= HYP_ASPACE_PHYSACCESS_OFFSET_RND_MAX;
+	hyp_aspace_physaccess_offset += HYP_ASPACE_PHYSACCESS_OFFSET_BASE;
+	pgtable_access_t access = PGTABLE_ACCESS_RW;
+#endif
+
 	size_t phys_size = (size_t)(hyp_phys_last - hyp_phys_start + 1U);
 
 	pgtable_hyp_start();
 	error_t err = pgtable_hyp_map(
 		hyp_partition,
-		(uintptr_t)hyp_phys_start + HYP_ASPACE_PHYSACCESS_OFFSET,
+		(uintptr_t)hyp_phys_start + hyp_aspace_physaccess_offset,
 		phys_size, hyp_phys_start, PGTABLE_HYP_MEMTYPE_WRITEBACK,
-		PGTABLE_ACCESS_NONE, VMSA_SHAREABILITY_INNER_SHAREABLE);
+		access, VMSA_SHAREABILITY_INNER_SHAREABLE);
 	assert(err == OK);
 	pgtable_hyp_commit();
-#else // !ARCH_AARCH64_USE_PAN
-#error Non-PAN physical address access is not yet implemented
-#endif
 
 	// Allocate the bitmap used for region allocations.
 	size_t bitmap_size =
 		BITMAP_NUM_WORDS(hyp_aspace_num_regions) * sizeof(register_t);
 	void_ptr_result_t alloc_ret = partition_alloc(
 		hyp_partition, bitmap_size, alignof(register_t));
-
-	assert(alloc_ret.e == OK);
-	memset(alloc_ret.r, 0, bitmap_size);
+	if (alloc_ret.e != OK) {
+		panic("Unable to alloc aspace regions");
+	}
 
 	hyp_aspace_regions = alloc_ret.r;
+
+	(void)memset_s(hyp_aspace_regions, bitmap_size, 0, bitmap_size);
 
 	assert((virt_start >= hyp_aspace_alloc_base) &&
 	       (virt_end <= hyp_aspace_alloc_end));
@@ -125,9 +149,30 @@ hyp_aspace_handle_boot_cold_init(void)
 	for (index_t i = start_bit; i <= end_bit; i++) {
 		bitmap_atomic_set(hyp_aspace_regions, i, memory_order_relaxed);
 	}
+
+	// map any remaining memory past the first 2MB of RW data which was
+	// mapped by the assembly boot code.
+	if ((size_t)PLATFORM_HEAP_PRIVATE_SIZE > SIZE_2MiB) {
+		size_t remaining_size =
+			(size_t)PLATFORM_HEAP_PRIVATE_SIZE - SIZE_2MiB;
+		uintptr_t remaining_virt =
+			(virt_end + 1U) -
+			((size_t)PLATFORM_RW_DATA_SIZE - 0x200000U);
+		paddr_t remaining_phys =
+			(hyp_phys_last + 1U) -
+			((size_t)PLATFORM_RW_DATA_SIZE - 0x200000U);
+
+		pgtable_hyp_start();
+		err = pgtable_hyp_map(hyp_partition, remaining_virt,
+				      remaining_size, remaining_phys,
+				      PGTABLE_HYP_MEMTYPE_WRITEBACK,
+				      PGTABLE_ACCESS_RW,
+				      VMSA_SHAREABILITY_INNER_SHAREABLE);
+		assert(err == OK);
+		pgtable_hyp_commit();
+	}
 }
 
-#if ARCH_AARCH64_USE_PAN
 error_t
 hyp_aspace_handle_partition_add_ram_range(paddr_t phys_base, size_t size)
 {
@@ -137,26 +182,27 @@ hyp_aspace_handle_partition_add_ram_range(paddr_t phys_base, size_t size)
 	assert(util_is_baligned(size, PGTABLE_HYP_PAGE_SIZE));
 
 	if (util_add_overflows(phys_base, size - 1U) ||
-	    ((phys_base + size - 1U) >= (1UL << HYP_ASPACE_MAP_DIRECT_BITS))) {
+	    ((phys_base + size - 1U) >= util_bit(HYP_ASPACE_MAP_DIRECT_BITS))) {
 		LOG(ERROR, WARN, "Failed to add high memory: {:x}..{:x}\n",
 		    phys_base, phys_base + size - 1U);
 		return ERROR_ADDR_INVALID;
 	}
 
+	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
-				 memory_order_acquire);
+#if ARCH_AARCH64_USE_PAN
+	pgtable_access_t access = PGTABLE_ACCESS_NONE;
+#else
+	pgtable_access_t access = PGTABLE_ACCESS_RW;
 #endif
-	error_t err = pgtable_hyp_remap(
-		hyp_partition,
-		(uintptr_t)phys_base + HYP_ASPACE_PHYSACCESS_OFFSET, size,
-		phys_base, PGTABLE_HYP_MEMTYPE_WRITEBACK, PGTABLE_ACCESS_NONE,
-		VMSA_SHAREABILITY_INNER_SHAREABLE);
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_store_release(&hyp_aspace_direct_unmap, false);
-#endif
+	uintptr_t virt = phys_base + hyp_aspace_physaccess_offset;
+	error_t	  err =
+		pgtable_hyp_remap_merge(hyp_partition, virt, size, phys_base,
+					PGTABLE_HYP_MEMTYPE_WRITEBACK, access,
+					VMSA_SHAREABILITY_INNER_SHAREABLE,
+					util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
 	pgtable_hyp_commit();
+	spinlock_release(&hyp_aspace_direct_lock);
 
 	return err;
 }
@@ -166,33 +212,44 @@ hyp_aspace_handle_partition_remove_ram_range(paddr_t phys_base, size_t size)
 {
 	partition_t *hyp_partition = partition_get_private();
 
-	char *virt = (void *)(phys_base + HYP_ASPACE_PHYSACCESS_OFFSET);
-
 	assert(util_is_baligned(phys_base, PGTABLE_HYP_PAGE_SIZE));
 	assert(util_is_baligned(size, PGTABLE_HYP_PAGE_SIZE));
 
 	// Remap the memory as DEVICE so that no speculative reads occur.
+	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
-				 memory_order_acquire);
-#endif
-	pgtable_hyp_remap(hyp_partition, (uintptr_t)virt, size, phys_base,
-			  PGTABLE_HYP_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW,
-			  VMSA_SHAREABILITY_INNER_SHAREABLE);
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_store_release(&hyp_aspace_direct_unmap, false);
-#endif
+	uintptr_t virt = phys_base + hyp_aspace_physaccess_offset;
+	(void)pgtable_hyp_remap_merge(hyp_partition, virt, size, phys_base,
+				      PGTABLE_HYP_MEMTYPE_DEVICE,
+				      PGTABLE_ACCESS_RW,
+				      VMSA_SHAREABILITY_INNER_SHAREABLE,
+				      util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
 	pgtable_hyp_commit();
+	spinlock_release(&hyp_aspace_direct_lock);
 
 	// Clean the memory range being removed to ensure no future write-backs
 	// occur. No need to remap since speculative reads after the cache
 	// clean won't be written back.
-	CACHE_CLEAN_INVALIDATE_RANGE(virt, size);
+	CACHE_CLEAN_INVALIDATE_RANGE((char *)virt, size);
 
 	return OK;
 }
-#endif // ARCH_AARCH64_USE_PAN
+
+void
+hyp_aspace_unwind_partition_add_ram_range(paddr_t phys_base, size_t size)
+{
+	error_t ret =
+		hyp_aspace_handle_partition_remove_ram_range(phys_base, size);
+	assert(ret == OK);
+}
+
+void
+hyp_aspace_unwind_partition_remove_ram_range(paddr_t phys_base, size_t size)
+{
+	error_t ret =
+		hyp_aspace_handle_partition_add_ram_range(phys_base, size);
+	assert(ret == OK);
+}
 
 static bool
 reserve_range(index_t start_bit, index_t end_bit, index_t *fail_bit)
@@ -216,6 +273,18 @@ reserve_range(index_t start_bit, index_t end_bit, index_t *fail_bit)
 	}
 
 	return success;
+}
+
+uintptr_t
+hyp_aspace_get_physaccess_offset(void)
+{
+	return hyp_aspace_physaccess_offset;
+}
+
+uintptr_t
+hyp_aspace_get_alloc_base(void)
+{
+	return hyp_aspace_alloc_base;
 }
 
 virt_range_result_t
@@ -273,12 +342,20 @@ hyp_aspace_allocate(size_t min_size)
 	ret = virt_range_result_ok(
 		(virt_range_t){ .base = virt, .size = size });
 
+	partition_t *hyp_partition = partition_get_private();
 	// Preallocate shared page table levels before mapping
 	spinlock_acquire(&hyp_aspace_alloc_lock);
 	for (size_t offset = 0U; offset < size;
 	     offset += HYP_ASPACE_ALLOCATE_SIZE) {
-		pgtable_hyp_preallocate(partition_get_private(), virt + offset,
-					HYP_ASPACE_ALLOCATE_SIZE);
+		ret.e = pgtable_hyp_preallocate(hyp_partition, virt + offset,
+						HYP_ASPACE_ALLOCATE_SIZE);
+		if (ret.e != OK) {
+			virt_range_t vr = { .base = (virt + offset),
+					    .size = HYP_ASPACE_ALLOCATE_SIZE };
+			spinlock_release(&hyp_aspace_alloc_lock);
+			hyp_aspace_deallocate(hyp_partition, vr);
+			goto out;
+		}
 	}
 	spinlock_release(&hyp_aspace_alloc_lock);
 
@@ -363,8 +440,9 @@ hyp_aspace_map_direct(paddr_t phys, size_t size, pgtable_access_t access,
 
 	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-	err = pgtable_hyp_map(partition_get_private(), virt, size, phys,
-			      memtype, access, share);
+	err = pgtable_hyp_map_merge(partition_get_private(), virt, size, phys,
+				    memtype, access, share,
+				    util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
 	pgtable_hyp_commit();
 	spinlock_release(&hyp_aspace_direct_lock);
 
@@ -392,15 +470,8 @@ hyp_aspace_unmap_direct(paddr_t phys, size_t size)
 
 	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_exchange_explicit(&hyp_aspace_direct_unmap, true,
-				 memory_order_acquire);
-#endif
 	pgtable_hyp_unmap(partition_get_private(), virt, size,
 			  PGTABLE_HYP_UNMAP_PRESERVE_NONE);
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-	atomic_store_release(&hyp_aspace_direct_unmap, false);
-#endif
 	pgtable_hyp_commit();
 	spinlock_release(&hyp_aspace_direct_lock);
 
@@ -408,9 +479,8 @@ unmap_error:
 	return err;
 }
 
-#if CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
-// Retry faults if they may have been caused by break before make during block
-// splits in the direct physical access region
+// Retry faults if they may have been caused by TLB conflicts or break before
+// make during block splits or merges in the direct physical access region.
 bool
 hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
 {
@@ -419,7 +489,15 @@ hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
 		ESR_EL2_ISS_DATA_ABORT_cast(ESR_EL2_get_ISS(&esr));
 	iss_da_ia_fsc_t fsc = ESR_EL2_ISS_DATA_ABORT_get_DFSC(&iss);
 
-	// Only translation faults can be caused by BBM
+	FAR_EL2_t far  = register_FAR_EL2_read_ordered(&asm_ordering);
+	uintptr_t addr = FAR_EL2_get_VirtualAddress(&far);
+
+#if (CPU_PGTABLE_BBM_LEVEL < 2) && !defined(PLATFORM_PGTABLE_AVOID_BBM)
+	// If the FEAT_BBM level is 0, then block splits and merges will do
+	// break before make, and we might get transient translation faults.
+	// If the FEAT_BBM level is 1, then splits and merges will temporarily
+	// set the nT bit in the block PTE while flushing the TLBs; the CPU is
+	// allowed to treat this the same as an invalid entry.
 	if ((fsc != ISS_DA_IA_FSC_TRANSLATION_1) &&
 	    (fsc != ISS_DA_IA_FSC_TRANSLATION_2) &&
 	    (fsc != ISS_DA_IA_FSC_TRANSLATION_3)) {
@@ -427,18 +505,18 @@ hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
 	}
 
 	// Only handle faults that are in the direct access region
-	FAR_EL2_t far  = register_FAR_EL2_read_ordered(&asm_ordering);
-	uintptr_t addr = FAR_EL2_get_VirtualAddress(&far);
-	if (addr > (HYP_ASPACE_PHYSACCESS_OFFSET +
+	if (addr > (hyp_aspace_physaccess_offset +
 		    util_bit(HYP_ASPACE_MAP_DIRECT_BITS) - 1)) {
 		goto out;
 	}
 
-	if (!atomic_load_acquire(&hyp_aspace_direct_unmap)) {
+	if (spinlock_trylock(&hyp_aspace_direct_lock)) {
+		spinlock_release(&hyp_aspace_direct_lock);
+
 		// There is no map in progress. Perform a lookup to see whether
 		// the accessed address is now mapped.
-		PAR_EL1_RAW_t saved_par =
-			register_PAR_EL1_RAW_read_ordered(&asm_ordering);
+		PAR_EL1_base_t saved_par =
+			register_PAR_EL1_base_read_ordered(&asm_ordering);
 		if (ESR_EL2_ISS_DATA_ABORT_get_WnR(&iss)) {
 			__asm__ volatile("at	S1E2W, %[addr]		;"
 					 "isb				;"
@@ -450,14 +528,14 @@ hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
 					 : "+m"(asm_ordering)
 					 : [addr] "r"(addr));
 		}
-		PAR_EL1_RAW_t par_raw =
-			register_PAR_EL1_RAW_read_ordered(&asm_ordering);
-		register_PAR_EL1_RAW_write_ordered(saved_par, &asm_ordering);
+		PAR_EL1_base_t par_raw =
+			register_PAR_EL1_base_read_ordered(&asm_ordering);
+		register_PAR_EL1_base_write_ordered(saved_par, &asm_ordering);
 
 		// If the accessed address is now mapped, we can just return
 		// from the fault. Otherwise we can consider the fault to be
 		// fatal, because there is no BBM operation still in progress.
-		PAR_EL1_F0_t par = PAR_EL1_F0_cast(PAR_EL1_RAW_raw(par_raw));
+		PAR_EL1_F0_t par = PAR_EL1_F0_cast(PAR_EL1_base_raw(par_raw));
 		handled		 = !PAR_EL1_F0_get_F(&par);
 	} else {
 		// A map operation is in progress, so retry until it finishes.
@@ -465,11 +543,27 @@ hyp_aspace_handle_vectors_trap_data_abort_el2(ESR_EL2_t esr)
 		// corrupt!
 		handled = true;
 	}
+#else
+	// If the FEAT_BBM level is 2 we do block splits and merges without BBM
+	// or the nT bit. So we might get TLB conflicts. If one occurs, we must
+	// flush the TLB and retry. We don't need to broadcast the TLB flush,
+	// because the operation causing the fault should do that.
+	if (fsc == ISS_DA_IA_FSC_TLB_CONFLICT) {
+		vmsa_tlbi_va_input_t input = vmsa_tlbi_va_input_default();
+		vmsa_tlbi_va_input_set_VA(&input, addr);
+
+		__asm__ volatile("tlbi VAE2, %[VA]; dsb nsh"
+				 : "+m"(asm_ordering)
+				 : [VA] "r"(vmsa_tlbi_va_input_raw(input)));
+
+		handled = true;
+		goto out;
+	}
+#endif
 
 out:
 	return handled;
 }
-#endif // CPU_PGTABLE_BLOCK_SPLIT_LEVEL == 0
 
 lookup_result_t
 hyp_aspace_is_mapped(uintptr_t virt, size_t size, pgtable_access_t access)
@@ -517,7 +611,7 @@ hyp_aspace_is_mapped(uintptr_t virt, size_t size, pgtable_access_t access)
 				first_lookup = false;
 			}
 
-			have_access = ((curr_access & access) == access);
+			have_access = pgtable_access_check(curr_access, access);
 			direct	    = direct && (curr == phys);
 			contiguous  = contiguous && have_access;
 

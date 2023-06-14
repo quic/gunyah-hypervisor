@@ -6,7 +6,7 @@ define cspace_delete_cap_from hypercall {
 	call_num	0x22;
 	cspace		input type cap_id_t;
 	cap		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -16,7 +16,7 @@ define cspace_copy_cap_from hypercall {
 	src_cap		input type cap_id_t;
 	dest_cspace	input type cap_id_t;
 	rights_mask	input type cap_rights_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	new_cap		output type cap_id_t;
 };
@@ -25,7 +25,7 @@ define cspace_revoke_cap_from hypercall {
 	call_num	0x24;
 	src_cspace	input type cap_id_t;
 	src_cap		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -33,7 +33,7 @@ define cspace_attach_thread hypercall {
 	call_num	0x3e;
 	cspace		input type cap_id_t;
 	thread		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -41,6 +41,6 @@ define cspace_revoke_caps_from hypercall {
 	call_num	0x59;
 	src_cspace	input type cap_id_t;
 	master_cap	input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };

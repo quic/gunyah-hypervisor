@@ -30,7 +30,7 @@ static hwirq_t *hyp_timer_hwirq;
 #endif
 
 static void
-platform_timer_enable_and_unmask()
+platform_timer_enable_and_unmask(void)
 {
 	CNT_CTL_t cnthp_ctl;
 
@@ -41,7 +41,7 @@ platform_timer_enable_and_unmask()
 }
 
 void
-platform_timer_cancel_timeout()
+platform_timer_cancel_timeout(void)
 {
 	CNT_CTL_t cnthp_ctl;
 
@@ -53,13 +53,13 @@ platform_timer_cancel_timeout()
 }
 
 uint32_t
-platform_timer_get_frequency()
+platform_timer_get_frequency(void)
 {
 	return PLATFORM_ARCH_TIMER_FREQ;
 }
 
 uint64_t
-platform_timer_get_current_ticks()
+platform_timer_get_current_ticks(void)
 {
 	// This register read below is allowed to occur speculatively at any
 	// time after the most recent context sync event. If caller the wants
@@ -72,7 +72,7 @@ platform_timer_get_current_ticks()
 }
 
 uint64_t
-platform_timer_get_timeout()
+platform_timer_get_timeout(void)
 {
 	CNT_CVAL_t cnthp_cval =
 		register_CNTHP_CVAL_EL2_read_volatile_ordered(&asm_ordering);
@@ -94,23 +94,19 @@ platform_timer_set_timeout(ticks_t timeout)
 ticks_t
 platform_convert_ns_to_ticks(nanoseconds_t ns)
 {
-	__uint128_t ticks = ((__uint128_t)ns * PLATFORM_TIMER_FREQ_SCALE) >> 64;
-	ticks		  = ticks << PLATFORM_TIMER_NS_SHIFT;
-
-	return (ticks_t)ticks;
+	return (ticks_t)((ns * PLATFORM_TIMER_NS_TO_FREQ_MULT) /
+			 PLATFORM_TIMER_FREQ_TO_NS_MULT);
 }
 
 nanoseconds_t
 platform_convert_ticks_to_ns(ticks_t ticks)
 {
-	__uint128_t ns = ((__uint128_t)ticks * PLATFORM_TIMER_NS_SCALE) >> 64;
-	ns	       = ns << PLATFORM_TIMER_FREQ_SHIFT;
-
-	return (nanoseconds_t)ns;
+	return (nanoseconds_t)((ticks * PLATFORM_TIMER_FREQ_TO_NS_MULT) /
+			       PLATFORM_TIMER_NS_TO_FREQ_MULT);
 }
 
 void
-platform_timer_handle_boot_cpu_cold_init()
+platform_timer_handle_boot_cpu_cold_init(void)
 {
 	CNTFRQ_EL0_t cntfrq = register_CNTFRQ_EL0_read();
 	assert(CNTFRQ_EL0_get_ClockFrequency(&cntfrq) ==
@@ -125,7 +121,7 @@ platform_timer_handle_boot_cpu_cold_init()
 
 #if !defined(IRQ_NULL)
 void
-platform_timer_handle_boot_hypervisor_start()
+platform_timer_handle_boot_hypervisor_start(void)
 {
 	// Create the hyp arch timer IRQ
 	hwirq_create_t params = {
@@ -166,7 +162,8 @@ platform_timer_ndelay(nanoseconds_t duration)
 
 	// NOTE: assume we don't have overflow case since it covers huge range.
 	// And assumes the timer is always enabled/configured correctly.
-	while (platform_timer_get_current_ticks() < target_ticks)
-		;
+	while (platform_timer_get_current_ticks() < target_ticks) {
+		// Wait for the delay period
+	}
 }
 #endif

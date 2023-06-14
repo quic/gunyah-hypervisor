@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 static inline ICH_LR_EL2_t
-gicv3_read_ich_lr(index_t i, struct asm_ordering_dummy *ordering)
+gicv3_read_ich_lr(index_t i, asm_ordering_dummy_t *ordering)
 {
 	ICH_LR_EL2_t ret;
-	assert(i < CPU_GICH_LR_COUNT);
+
 	switch (i) {
 #for lr in range(0, $CPU_GICH_LR_COUNT)
 	case ${lr}U:
@@ -23,8 +23,7 @@ gicv3_read_ich_lr(index_t i, struct asm_ordering_dummy *ordering)
 
 static inline void
 gicv3_write_ich_lr(index_t i, ICH_LR_EL2_t val,
-		   struct asm_ordering_dummy *ordering) {
-	assert(i < CPU_GICH_LR_COUNT);
+		   asm_ordering_dummy_t *ordering) {
 	switch (i) {
 #for lr in range(0, $CPU_GICH_LR_COUNT)
 	case ${lr}U:
@@ -48,7 +47,7 @@ gicv3_read_ich_aprs(uint32_t *ap0rs, uint32_t *ap1rs) {
 
 static inline void
 gicv3_write_ich_aprs(const uint32_t *ap0rs, const uint32_t *ap1rs) {
-	struct asm_ordering_dummy apr_write_ordering;
+	asm_ordering_dummy_t apr_write_ordering;
 #for group in (0, 1)
 #for i in range(0, $CPU_GICH_APR_COUNT)
 	register_ICH_AP${group}R${i}_EL2_write_ordered(ap${group}rs[${i}],

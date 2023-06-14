@@ -86,3 +86,6 @@ event boot_hypervisor_start
 // This runs at the end of every power-on sequence, immediately before
 // switching to the idle thread.
 event boot_cpu_start
+
+// Triggered when handover to another hypervisor is requested.
+event boot_hypervisor_handover

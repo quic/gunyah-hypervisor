@@ -15,3 +15,4 @@ subscribe object_create_thread
 // the handlers run.
 subscribe thread_context_switch_post(prev)
 	priority first
+	require_preempt_disabled

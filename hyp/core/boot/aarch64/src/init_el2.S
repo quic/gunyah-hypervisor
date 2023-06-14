@@ -11,10 +11,10 @@
 // This stack is used by boot_cold_init. It must be large enough to run
 // all the first-boot event triggers. This memory is then reclaimed by
 // the hypervisor_partition.
-	_bss aarch64_boot_stack, BOOT_STACK_SIZE, THREAD_STACK_MAP_ALIGN
+	_bss aarch64_boot_stack, BOOT_STACK_SIZE, 16
 	.space BOOT_STACK_SIZE
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 // Pointer authentication keys shared by all EL2 threads.
 	_bss aarch64_pauth_keys, AARCH64_PAUTH_KEYS_SIZE, \
 		AARCH64_PAUTH_KEYS_ALIGN
@@ -45,7 +45,8 @@
 //    x0-x3: 256-bit RNG seed from the platform code
 //    w4: Logical CPU number from the platform code
 
-function aarch64_init
+	.section .text.boot.init
+function aarch64_init, section=nosection
 	// Disable debug, aborts and interrupts.
 	msr	DAIFSet, 0xf
 
@@ -109,7 +110,7 @@ function aarch64_init
 	cmp	x8, x22
 	beq	aarch64_boot_error
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// Generate the PAC keys
 	adrl	x21, aarch64_pauth_keys
 	mov	x23, AARCH64_PAUTH_KEYS_SIZE
@@ -145,7 +146,7 @@ function_end aarch64_init
 //    x0: Virtual pointer to the CPU's idle thread
 //    w1: Logical CPU number from the platform code
 
-function aarch64_secondary_init
+function aarch64_secondary_init, section=nosection
 	// Disable debug, aborts and interrupts.
 	msr	DAIFSet, 0xf
 
@@ -195,7 +196,7 @@ function aarch64_secondary_init
 	cmp	x8, x22
 	beq	aarch64_boot_error
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// Load the PAC keys into registers
 	kernel_pauth_entry x0, x1, x2
 
@@ -222,7 +223,7 @@ function_end aarch64_secondary_init
 // Input arguments:
 //    x0: Virtual pointer to the CPU's idle thread.
 
-function aarch64_warm_init
+function aarch64_warm_init, section=nosection
 	// Disable debug, aborts and interrupts.
 	msr	DAIFSet, 0xf
 
@@ -266,7 +267,7 @@ function aarch64_warm_init
 	cmp	x8, x22
 	beq	aarch64_boot_error
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// Load the PAC keys into registers
 	kernel_pauth_entry x0, x1, x2
 
@@ -284,7 +285,7 @@ function aarch64_warm_init
 	b	boot_warm_init
 function_end aarch64_warm_init
 
-function aarch64_boot_error
+function aarch64_boot_error, section=nosection
 9:
 	wfi
 	b	9b

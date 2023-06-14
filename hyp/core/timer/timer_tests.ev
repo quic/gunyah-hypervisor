@@ -8,8 +8,10 @@ module timer
 
 subscribe tests_start
 	handler tests_timer()
+	require_preempt_disabled
 
 subscribe timer_action[TIMER_ACTION_TEST]
 	handler tests_timer_action(timer)
+	require_preempt_disabled
 
 #endif

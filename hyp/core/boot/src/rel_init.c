@@ -17,7 +17,7 @@ __attribute__((no_stack_protector)) void
 boot_rel_fixup(Elf_Dyn *dyni, Elf_Addr addr_offset, Elf_Addr rel_offset)
 {
 	Elf_Xword dyn[DT_CNT];
-	Elf_Rel	*rel  = NULL;
+	Elf_Rel	 *rel  = NULL;
 	Elf_Rela *rela = NULL;
 	Elf_Xword sz   = 0;
 
@@ -32,7 +32,7 @@ boot_rel_fixup(Elf_Dyn *dyni, Elf_Addr addr_offset, Elf_Addr rel_offset)
 
 	rel = (Elf_Rel *)(dyn[DT_REL] + addr_offset);
 	sz  = dyn[DT_RELSZ];
-	for (; sz > 0; sz -= sizeof(*rel), ++rel) {
+	for (; sz > 0u; sz -= sizeof(*rel), ++rel) {
 		if (!ARCH_CAN_PATCH(rel->r_info)) {
 			continue;
 		}
@@ -42,7 +42,7 @@ boot_rel_fixup(Elf_Dyn *dyni, Elf_Addr addr_offset, Elf_Addr rel_offset)
 
 	rela = (Elf_Rela *)(dyn[DT_RELA] + addr_offset);
 	sz   = dyn[DT_RELASZ];
-	for (; sz > 0; sz -= sizeof(*rela), ++rela) {
+	for (; sz > 0u; sz -= sizeof(*rela), ++rela) {
 		if (!ARCH_CAN_PATCH(rela->r_info)) {
 			continue;
 		}

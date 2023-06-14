@@ -2,10 +2,14 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define memextent_unmap_all hypercall {
+define memextent_modify hypercall {
 	call_num	0x30;
 	memextent	input type cap_id_t;
-	_res0		input uregister;
+	flags		input bitfield memextent_modify_flags;
+	// The below arguments are only used for range operations;
+	// otherwise they are ignored for backwards compatibility.
+	offset		input size;
+	size		input size;
 	error		output enumeration error;
 };
 
@@ -15,7 +19,7 @@ define memextent_configure hypercall {
 	phys_base	input type paddr_t;
 	size		input size;
 	attributes	input bitfield memextent_attrs;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -26,6 +30,17 @@ define memextent_configure_derive hypercall {
 	offset		input size;
 	size		input size;
 	attributes	input bitfield memextent_attrs;
-	_res0		input uregister;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define memextent_donate hypercall {
+	call_num	0x61;
+	options		input bitfield memextent_donate_options;
+	from		input type cap_id_t;
+	to		input type cap_id_t;
+	offset		input size;
+	size		input size;
+	res0		input uregister;
 	error		output enumeration error;
 };

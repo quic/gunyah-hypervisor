@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 extend trace_class enumeration {
-	USER;
+	USER = 2;
 };
 
 extend trace_id enumeration {

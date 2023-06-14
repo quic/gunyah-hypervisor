@@ -91,13 +91,15 @@
 #include <spinlock.h>
 #include <util.h>
 
+#include "event_handlers.h"
+
 // Maximum supported heap allocation size or alignment size. We filter out
 // really large allocations so we can avoid having to think about corner-cases
 // causing overflow.
 #define MAX_ALLOC_SIZE	   (256UL * 1024UL * 1024UL)
 #define MAX_ALIGNMENT_SIZE (16UL * 1024UL * 1024UL)
 
-#define NODE_HEADER_SIZE (sizeof(struct allocator_node))
+#define NODE_HEADER_SIZE (sizeof(allocator_node_t))
 
 // Minimum allocation size from the heap.
 #define HEAP_MIN_ALLOC NODE_HEADER_SIZE
@@ -107,7 +109,7 @@
 #if defined(ALLOCATOR_DEBUG)
 #define OVERFLOW_DEBUG
 #define OVERFLOW_REDZONE_SIZE NODE_HEADER_SIZE
-//#define DEBUG_PRINT
+// #define DEBUG_PRINT
 #endif
 // ---------------------------------------
 
@@ -213,6 +215,7 @@ list_add(allocator_node_t **head, allocator_node_t *node, size_t size)
 					   (uint64_t)current) {
 					// 7. Merge with current
 					node->size     = size + current->size;
+					node->next     = current->next;
 					previous->next = node;
 				} else {
 					goto out;
@@ -224,7 +227,7 @@ list_add(allocator_node_t **head, allocator_node_t *node, size_t size)
 			if (((uint64_t)previous + previous->size) ==
 			    (uint64_t)node) {
 				// 8. Merge with previous
-				previous->size += previous->size + size;
+				previous->size += size;
 			} else if (((uint64_t)previous + previous->size) <
 				   (uint64_t)node) {
 				// 9. Append node to list
@@ -249,42 +252,56 @@ out:
 	return ret;
 }
 
-error_t NOINLINE
-allocator_heap_add_memory(allocator_t *allocator, void *addr, size_t size)
+static error_t NOINLINE
+allocator_heap_add_memory(allocator_t *allocator, uintptr_t addr, size_t size)
 {
 	allocator_node_t *block;
 	error_t		  ret = OK;
 
-	assert(addr != NULL);
+	assert(addr != 0U);
 
 	// Check input arguments
-	if (!util_is_baligned((uintptr_t)addr, NODE_HEADER_SIZE)) {
-		uintptr_t new_addr =
-			util_balign_up((uintptr_t)addr, NODE_HEADER_SIZE);
-		size -= (new_addr - (uintptr_t)addr);
-		addr = (void *)new_addr;
+	if (!util_is_baligned(addr, NODE_HEADER_SIZE)) {
+		uintptr_t new_addr = util_balign_up(addr, NODE_HEADER_SIZE);
+		size -= (new_addr - addr);
+		addr = new_addr;
 	}
 	if (!util_is_baligned(size, NODE_HEADER_SIZE)) {
 		size = util_balign_down(size, NODE_HEADER_SIZE);
 	}
-	if (util_add_overflows((uint64_t)addr, size)) {
+	if (util_add_overflows(addr, size)) {
 		ret = ERROR_ADDR_OVERFLOW;
 	} else if (size < (2UL * NODE_HEADER_SIZE)) {
 		ret = ERROR_ARGUMENT_SIZE;
 	} else {
 		// FIXME: Check if added memory is in kernel address space
 
-		block = (allocator_node_t *)(uintptr_t)addr;
+		block = (allocator_node_t *)addr;
 
 		// Add memory to the freelist
 		spinlock_acquire(&allocator->lock);
 
 		ret = list_add(&allocator->heap, block, size);
+		if (ret == OK) {
+			allocator->total_size += size;
+		}
 
 		spinlock_release(&allocator->lock);
 	}
 
 	return ret;
+}
+
+error_t
+allocator_list_handle_allocator_add_ram_range(partition_t *owner,
+					      paddr_t	   phys_base,
+					      uintptr_t virt_base, size_t size)
+{
+	assert(owner != NULL);
+
+	(void)phys_base;
+
+	return allocator_heap_add_memory(&owner->allocator, virt_base, size);
 }
 
 // Cases:
@@ -425,7 +442,7 @@ out:
 	return ret;
 }
 
-void_ptr_result_t NOINLINE
+void_ptr_result_t
 allocator_allocate_object(allocator_t *allocator, size_t size, size_t alignment)
 {
 	void_ptr_result_t ret;
@@ -473,7 +490,7 @@ allocator_allocate_object(allocator_t *allocator, size_t size, size_t alignment)
 		goto error;
 	}
 
-	// TODO: Update allocation total (increment +1)
+	allocator->alloc_size += size;
 
 #if defined(ALLOCATOR_DEBUG)
 	char  *data  = (char *)ret.r;
@@ -516,6 +533,10 @@ list_remove(allocator_node_t **head, allocator_node_t *remove,
 	}
 }
 
+// TODO: Exported only for test code currently
+error_t
+allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size);
+
 // Returns -1 if addresses are still being used and therefore cannot be freed.
 error_t NOINLINE
 allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size)
@@ -525,9 +546,8 @@ allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size)
 	assert(obj != NULL);
 	assert(allocator->heap != NULL);
 
-	allocator_node_t *before_prev = NULL;
-	allocator_node_t *previous    = NULL;
-	allocator_node_t *current     = allocator->heap;
+	allocator_node_t *previous = NULL;
+	allocator_node_t *current  = allocator->heap;
 	uint64_t	  object_location;
 	uint64_t	  current_location;
 	uint64_t	  previous_location;
@@ -539,9 +559,8 @@ allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size)
 
 	while (((uint64_t)obj > (uint64_t)current) && (current != NULL)) {
 		assert((uint64_t)previous < (uint64_t)obj);
-		before_prev = previous;
-		previous    = current;
-		current	    = current->next;
+		previous = current;
+		current	 = current->next;
 	}
 
 	object_location	  = (uint64_t)obj;
@@ -578,39 +597,26 @@ allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size)
 		}
 
 		if ((previous_location + previous->size) == aligned_alloc_end) {
-			// Divide previous into 2 nodes & remove second one
-			allocator_node_t *new;
-
-			new	       = (allocator_node_t *)object_location;
-			new->next      = current;
-			new->size      = size;
-			previous->next = new;
-			previous->size -= previous->size - size;
-			list_remove(&allocator->heap, previous, before_prev);
+			// Reduce size of previous
+			previous->size -= size;
 		} else {
 			// Divide previous into 3 nodes & remove middle one
-			allocator_node_t *new_current;
-			size_t		  first_size =
-				aligned_alloc_end - previous_location;
-			allocator_node_t *remove;
+			allocator_node_t *new;
 
-			new_current = (allocator_node_t *)aligned_alloc_end;
-			new_current->next = current;
-			new_current->size = previous->size - size - first_size;
+			new	  = (allocator_node_t *)aligned_alloc_end;
+			new->next = current;
+			new->size = previous_location + previous->size -
+				    aligned_alloc_end;
 
-			remove	     = (allocator_node_t *)object_location;
-			remove->next = new_current;
-			remove->size = size;
-
-			previous->next = remove;
-			previous->size = first_size;
-			list_remove(&allocator->heap, remove, previous);
+			previous->next = new;
+			previous->size = object_location - previous_location;
 		}
 	} else {
 		goto out;
 	}
 
 	ret = OK;
+	allocator->total_size -= size;
 
 out:
 	spinlock_release(&allocator->lock);
@@ -741,7 +747,7 @@ allocator_deallocate_object(allocator_t *allocator, void *object, size_t size)
 	deallocate_block(&allocator->heap, object, size);
 	CHECK_HEAP(allocator->heap);
 
-	// TODO: Update allocation total (decrease -1)
+	allocator->alloc_size -= size;
 
 	spinlock_release(&allocator->lock);
 
@@ -752,6 +758,9 @@ error_t
 allocator_init(allocator_t *allocator)
 {
 	assert(allocator->heap == NULL);
+
+	allocator->total_size = 0UL;
+	allocator->alloc_size = 0UL;
 
 	spinlock_init(&allocator->lock);
 	return OK;

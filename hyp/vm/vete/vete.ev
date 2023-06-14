@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vete
+
+subscribe boot_cpu_cold_init()
+
+subscribe boot_cpu_warm_init()
+
+subscribe vcpu_trap_sysreg_read
+	handler vete_handle_vcpu_trap_sysreg
+
+subscribe vcpu_trap_sysreg_write
+	handler vete_handle_vcpu_trap_sysreg

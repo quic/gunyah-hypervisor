@@ -1,0 +1,25 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend MDCR_EL2 bitfield {
+	25:24		E2TB		uint8;
+};
+
+define TRBLIMITR_EL1 bitfield<64> {
+	0	E		bool;
+	2:1	FM		uint8;
+	4:3	TM		uint8;
+	5	nVM		bool;
+	63:12	LIMIT		uint64 lsl(12);
+	others	unknown = 0;
+};
+
+define tbre_context structure {
+	TRBLIMITR_EL1	bitfield TRBLIMITR_EL1;
+	TRBPTR_EL1	uint64;
+	TRBBASER_EL1	uint64;
+	TRBSR_EL1	uint64;
+	TRBMAR_EL1	uint64;
+	TRBTRG_EL1	uint64;
+};

@@ -1,0 +1,11 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend platform_cpu_features bitfield {
+	auto		fgt_disable	bool = 1;
+};
+
+extend global_options bitfield {
+	auto		fgt		bool = 0;
+};

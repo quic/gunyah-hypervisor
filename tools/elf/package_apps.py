@@ -165,7 +165,7 @@ class NewELF():
             idx += 1
             # print(seg, hex(seg.header.p_paddr))
             last = seg.header.p_offset + seg.header.p_filesz
-            assert(last >= p_adj)
+            assert (last >= p_adj)
             p_adj = last
 
         p_prev = p_adj
@@ -187,7 +187,7 @@ class NewELF():
         # Update file offsets of remaining segments
         for seg in self.segments[idx+1:]:
             last = seg.header.p_offset + seg.header.p_filesz
-            assert(last >= p_prev)
+            assert (last >= p_prev)
             p_next = seg.header.p_offset + p_off
             p_adj = (p_next + (seg.header.p_align - 1)) & \
                     (0xffffffffffffffff ^ (seg.header.p_align - 1))

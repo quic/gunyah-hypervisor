@@ -4,8 +4,7 @@
 
 #include <assert.h>
 #include <hyptypes.h>
-
-#include <hypcontainers.h>
+#include <string.h>
 
 #include <bitmap.h>
 #include <compiler.h>
@@ -13,6 +12,7 @@
 #include <memdb.h>
 #include <memextent.h>
 #include <object.h>
+#include <panic.h>
 #include <partition.h>
 #include <partition_alloc.h>
 #include <pgtable.h>
@@ -22,6 +22,9 @@
 
 #include <events/memextent.h>
 #include <events/object.h>
+
+#include <asm/cache.h>
+#include <asm/cpu.h>
 
 #include "event_handlers.h"
 
@@ -36,6 +39,56 @@ memextent_handle_object_create_memextent(memextent_create_t params)
 	memextent->device_mem = params.memextent_device_mem;
 
 	return OK;
+}
+
+static bool
+memextent_validate_attrs(memextent_type_t type, memextent_memtype_t memtype,
+			 pgtable_access_t access)
+{
+	bool ret = true;
+
+	switch (type) {
+	case MEMEXTENT_TYPE_BASIC:
+	case MEMEXTENT_TYPE_SPARSE:
+		break;
+	default:
+		ret = false;
+		goto out;
+	}
+
+	switch (memtype) {
+	case MEMEXTENT_MEMTYPE_ANY:
+	case MEMEXTENT_MEMTYPE_DEVICE:
+	case MEMEXTENT_MEMTYPE_UNCACHED:
+#if defined(ARCH_AARCH64_USE_S2FWB)
+	case MEMEXTENT_MEMTYPE_CACHED:
+#endif
+		break;
+#if !defined(ARCH_AARCH64_USE_S2FWB)
+	// Without S2FWB, we cannot force cached mappings
+	case MEMEXTENT_MEMTYPE_CACHED:
+#endif
+	default:
+		ret = false;
+		goto out;
+	}
+
+	switch (access) {
+	case PGTABLE_ACCESS_X:
+	case PGTABLE_ACCESS_W:
+	case PGTABLE_ACCESS_R:
+	case PGTABLE_ACCESS_RX:
+	case PGTABLE_ACCESS_RW:
+	case PGTABLE_ACCESS_RWX:
+		break;
+	case PGTABLE_ACCESS_NONE:
+	default:
+		ret = false;
+		break;
+	}
+
+out:
+	return ret;
 }
 
 error_t
@@ -58,47 +111,21 @@ memextent_configure(memextent_t *me, paddr_t phys_base, size_t size,
 		goto out;
 	}
 
-	// Only basic memory extents are implemented
 	if ((memextent_attrs_get_res_0(&attributes) != 0U) ||
 	    (memextent_attrs_get_append(&attributes))) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
 
-	// Validate arguments
+	memextent_type_t    type    = memextent_attrs_get_type(&attributes);
 	memextent_memtype_t memtype = memextent_attrs_get_memtype(&attributes);
-	switch (memtype) {
-	case MEMEXTENT_MEMTYPE_ANY:
-	case MEMEXTENT_MEMTYPE_DEVICE:
-	case MEMEXTENT_MEMTYPE_UNCACHED:
-#if defined(ARCH_AARCH64_USE_S2FWB)
-	case MEMEXTENT_MEMTYPE_CACHED:
-#endif
-		break;
-#if !defined(ARCH_AARCH64_USE_S2FWB)
-	// Without S2FWB, we cannot force cached mappings
-	case MEMEXTENT_MEMTYPE_CACHED:
-#endif
-	default:
-		ret = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
-	pgtable_access_t access = memextent_attrs_get_access(&attributes);
-	switch (access) {
-	case PGTABLE_ACCESS_X:
-	case PGTABLE_ACCESS_W:
-	case PGTABLE_ACCESS_R:
-	case PGTABLE_ACCESS_RX:
-	case PGTABLE_ACCESS_RW:
-	case PGTABLE_ACCESS_RWX:
-		break;
-	case PGTABLE_ACCESS_NONE:
-	default:
+	pgtable_access_t    access  = memextent_attrs_get_access(&attributes);
+	if (!memextent_validate_attrs(type, memtype, access)) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
 
-	me->type      = MEMEXTENT_TYPE_BASIC;
+	me->type      = type;
 	me->phys_base = phys_base;
 	me->size      = size;
 	me->memtype   = memtype;
@@ -113,6 +140,7 @@ out:
 	return ret;
 }
 
+// FIXME:
 error_t
 memextent_configure_derive(memextent_t *me, memextent_t *parent, size_t offset,
 			   size_t size, memextent_attrs_t attributes)
@@ -143,55 +171,34 @@ memextent_configure_derive(memextent_t *me, memextent_t *parent, size_t offset,
 		goto out;
 	}
 
-	// Validate arguments
-	memextent_memtype_t memtype = memextent_attrs_get_memtype(&attributes);
-	switch (memtype) {
-	case MEMEXTENT_MEMTYPE_ANY:
-	case MEMEXTENT_MEMTYPE_DEVICE:
-	case MEMEXTENT_MEMTYPE_UNCACHED:
-#if defined(ARCH_AARCH64_USE_S2FWB)
-	case MEMEXTENT_MEMTYPE_CACHED:
-#endif
-		break;
-#if !defined(ARCH_AARCH64_USE_S2FWB)
-	// Without S2FWB, we cannot force cached mappings
-	case MEMEXTENT_MEMTYPE_CACHED:
-#endif
-	default:
-		ret = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
-
-	pgtable_access_t access = memextent_attrs_get_access(&attributes);
-	switch (access) {
-	case PGTABLE_ACCESS_X:
-	case PGTABLE_ACCESS_W:
-	case PGTABLE_ACCESS_R:
-	case PGTABLE_ACCESS_RX:
-	case PGTABLE_ACCESS_RW:
-	case PGTABLE_ACCESS_RWX:
-		break;
-	case PGTABLE_ACCESS_NONE:
-	default:
-		ret = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
-
-	if ((parent->access & access) != access) {
-		ret = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
-
-	// Only basic memory extents are implemented
 	if ((memextent_attrs_get_res_0(&attributes) != 0U) ||
 	    (memextent_attrs_get_append(&attributes))) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
 
+	memextent_type_t    type    = memextent_attrs_get_type(&attributes);
+	memextent_memtype_t memtype = memextent_attrs_get_memtype(&attributes);
+	pgtable_access_t    access  = memextent_attrs_get_access(&attributes);
+	if (!memextent_validate_attrs(type, memtype, access)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	if (!pgtable_access_check(parent->access, access)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	if ((parent->memtype != MEMEXTENT_MEMTYPE_ANY) &&
+	    (parent->memtype != memtype)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
 	paddr_t phys_base = parent->phys_base + offset;
 
-	me->type      = MEMEXTENT_TYPE_BASIC;
+	me->type      = type;
 	me->phys_base = phys_base;
 	me->size      = size;
 	me->memtype   = memtype;
@@ -252,44 +259,7 @@ memextent_handle_object_activate_memextent(memextent_t *me)
 			goto out;
 		}
 
-		// memextent should have been zero initialized
-		for (index_t i = 0; i < util_array_size(me->mappings); i++) {
-			assert(atomic_load_relaxed(
-				       &me->mappings[i].addrspace) == NULL);
-		}
-
-		partition_t *partition = me->header.partition;
-
-		partition_t *hyp_partition = partition_get_private();
-
-		if (me->device_mem) {
-			assert(me->memtype == MEMEXTENT_MEMTYPE_DEVICE);
-
-			ret = memdb_insert(hyp_partition, me->phys_base,
-					   me->phys_base + (me->size - 1U),
-					   (uintptr_t)me, MEMDB_TYPE_EXTENT);
-		} else {
-			ret = memdb_update(hyp_partition, me->phys_base,
-					   me->phys_base + (me->size - 1U),
-					   (uintptr_t)me, MEMDB_TYPE_EXTENT,
-					   (uintptr_t)partition,
-					   MEMDB_TYPE_PARTITION);
-
-			if (ret == ERROR_MEMDB_NOT_OWNER) {
-				// We might have failed to take ownership
-				// because a previously deleted memextent has
-				// not yet been cleaned up, so wait for an RCU
-				// grace period and then retry. If it still
-				// fails after that, there's a real conflict.
-				rcu_sync();
-				ret = memdb_update(
-					hyp_partition, me->phys_base,
-					me->phys_base + (me->size - 1U),
-					(uintptr_t)me, MEMDB_TYPE_EXTENT,
-					(uintptr_t)partition,
-					MEMDB_TYPE_PARTITION);
-			}
-		}
+		ret = trigger_memextent_activate_event(me->type, me);
 	}
 
 	if (ret == OK) {
@@ -299,12 +269,104 @@ out:
 	return ret;
 }
 
+bool
+memextent_supports_donation(memextent_t *me)
+{
+	return trigger_memextent_supports_donation_event(me->type, me);
+}
+
+static bool
+extent_range_valid(memextent_t *me, paddr_t phys, size_t size)
+{
+	assert(!util_add_overflows(phys, size - 1U));
+
+	return (me->phys_base <= phys) &&
+	       ((me->phys_base + (me->size - 1U)) >= (phys + (size - 1U)));
+}
+
 error_t
-memextent_map(memextent_t *extent, addrspace_t *addrspace, vmaddr_t vm_base,
-	      memextent_mapping_attrs_t map_attrs)
+memextent_donate_child(memextent_t *me, size_t offset, size_t size,
+		       bool reverse)
 {
 	error_t ret;
 
+	if (!util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if (util_add_overflows(me->phys_base, offset)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	paddr_t phys = me->phys_base + offset;
+
+	if ((size == 0U) || util_add_overflows(phys, size - 1U)) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (!extent_range_valid(me, phys, size)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	ret = trigger_memextent_donate_child_event(me->type, me, phys, size,
+						   reverse);
+
+out:
+	return ret;
+}
+
+error_t
+memextent_donate_sibling(memextent_t *from, memextent_t *to, size_t offset,
+			 size_t size)
+{
+	error_t ret;
+
+	if (!util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if (util_add_overflows(from->phys_base, offset)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	paddr_t phys = from->phys_base + offset;
+
+	if ((size == 0U) || util_add_overflows(phys, size - 1U)) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (!extent_range_valid(from, phys, size) ||
+	    !extent_range_valid(to, phys, size)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	if ((from == to) || (from->parent == NULL) ||
+	    (from->parent != to->parent)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	ret = trigger_memextent_donate_sibling_event(from->type, from, to, phys,
+						     size);
+
+out:
+	return ret;
+}
+
+static bool
+memextent_check_map_attrs(memextent_t		   *extent,
+			  memextent_mapping_attrs_t map_attrs)
+{
 	pgtable_access_t access_user =
 		memextent_mapping_attrs_get_user_access(&map_attrs);
 	pgtable_access_t access_kernel =
@@ -312,29 +374,75 @@ memextent_map(memextent_t *extent, addrspace_t *addrspace, vmaddr_t vm_base,
 	pgtable_vm_memtype_t memtype =
 		memextent_mapping_attrs_get_memtype(&map_attrs);
 
-	// Check validity of access rights and memtype
+	return (pgtable_access_check(extent->access, access_user)) &&
+	       pgtable_access_check(extent->access, access_kernel) &&
+	       memextent_check_memtype(extent->memtype, memtype);
+}
 
-	if (((access_user & ~extent->access) != 0U) ||
-	    ((access_kernel & ~extent->access) != 0U)) {
-		ret = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
+error_t
+memextent_map(memextent_t *extent, addrspace_t *addrspace, vmaddr_t vm_base,
+	      memextent_mapping_attrs_t map_attrs)
+{
+	error_t ret;
 
 	if (!util_is_baligned(vm_base, PGTABLE_VM_PAGE_SIZE)) {
 		ret = ERROR_ARGUMENT_ALIGNMENT;
 		goto out;
 	}
 
-	if (!memextent_check_memtype(extent->memtype, memtype)) {
+	if (!memextent_check_map_attrs(extent, map_attrs)) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
 
-	if (addrspace->vm_read_only) {
+	if (addrspace->read_only) {
 		ret = ERROR_DENIED;
 	} else {
 		ret = trigger_memextent_map_event(
 			extent->type, extent, addrspace, vm_base, map_attrs);
+	}
+
+out:
+	return ret;
+}
+
+error_t
+memextent_map_partial(memextent_t *extent, addrspace_t *addrspace,
+		      vmaddr_t vm_base, size_t offset, size_t size,
+		      memextent_mapping_attrs_t map_attrs)
+{
+	error_t ret;
+
+	if (!util_is_baligned(vm_base, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if ((size == 0U) || util_add_overflows(offset, size - 1U) ||
+	    util_add_overflows(vm_base, size - 1U)) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if ((offset + (size - 1U)) >= extent->size) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (!memextent_check_map_attrs(extent, map_attrs)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	if (addrspace->read_only) {
+		ret = ERROR_DENIED;
+	} else {
+		ret = trigger_memextent_map_partial_event(extent->type, extent,
+							  addrspace, vm_base,
+							  offset, size,
+							  map_attrs);
 	}
 
 out:
@@ -351,7 +459,7 @@ memextent_unmap(memextent_t *extent, addrspace_t *addrspace, vmaddr_t vm_base)
 		goto out;
 	}
 
-	if (addrspace->vm_read_only) {
+	if (addrspace->read_only) {
 		ret = ERROR_DENIED;
 	} else {
 		ret = trigger_memextent_unmap_event(extent->type, extent,
@@ -362,10 +470,118 @@ out:
 	return ret;
 }
 
+error_t
+memextent_unmap_partial(memextent_t *extent, addrspace_t *addrspace,
+			vmaddr_t vm_base, size_t offset, size_t size)
+{
+	error_t ret;
+
+	if (!util_is_baligned(vm_base, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if ((size == 0U) || util_add_overflows(offset, size - 1U) ||
+	    util_add_overflows(vm_base, size - 1U)) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if ((offset + (size - 1U)) >= extent->size) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (addrspace->read_only) {
+		ret = ERROR_DENIED;
+	} else {
+		ret = trigger_memextent_unmap_partial_event(
+			extent->type, extent, addrspace, vm_base, offset, size);
+	}
+
+out:
+	return ret;
+}
+
 void
 memextent_unmap_all(memextent_t *extent)
 {
-	trigger_memextent_unmap_all_event(extent->type, extent);
+	if (!trigger_memextent_unmap_all_event(extent->type, extent)) {
+		panic("Invalid memory extent unmap all!");
+	}
+}
+
+static error_t
+memextent_do_zero(paddr_t base, size_t size, void *arg)
+{
+	void *addr = partition_phys_map(base, size);
+	partition_phys_access_enable(addr);
+
+	(void)memset_s(addr, size, 0, size);
+	CACHE_CLEAN_RANGE((uint8_t *)addr, size);
+
+	partition_phys_access_disable(addr);
+	partition_phys_unmap(addr, base, size);
+
+	(void)arg;
+
+	return OK;
+}
+
+error_t
+memextent_zero_range(memextent_t *extent, size_t offset, size_t size)
+{
+	error_t err;
+
+	if ((extent->memtype == MEMEXTENT_MEMTYPE_DEVICE) ||
+	    !pgtable_access_check(extent->access, PGTABLE_ACCESS_W)) {
+		err = ERROR_DENIED;
+		goto out;
+	}
+
+	if (!util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		err = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if (util_add_overflows(extent->phys_base, offset)) {
+		err = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	paddr_t phys = extent->phys_base + offset;
+
+	if ((size == 0U) || util_add_overflows(phys, size - 1U)) {
+		err = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (!extent_range_valid(extent, phys, size)) {
+		err = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	err = memdb_range_walk((uintptr_t)extent, MEMDB_TYPE_EXTENT, phys,
+			       phys + size - 1U, memextent_do_zero, NULL);
+
+out:
+	return err;
+}
+
+static bool
+memextent_check_access_attrs(memextent_t	     *extent,
+			     memextent_access_attrs_t access_attrs)
+{
+	pgtable_access_t access_user =
+		memextent_access_attrs_get_user_access(&access_attrs);
+	pgtable_access_t access_kernel =
+		memextent_access_attrs_get_kernel_access(&access_attrs);
+
+	return (pgtable_access_check(extent->access, access_user) &&
+		pgtable_access_check(extent->access, access_kernel));
 }
 
 error_t
@@ -374,14 +590,7 @@ memextent_update_access(memextent_t *extent, addrspace_t *addrspace,
 {
 	error_t ret;
 
-	pgtable_access_t access_user =
-		memextent_access_attrs_get_user_access(&access_attrs);
-	pgtable_access_t access_kernel =
-		memextent_access_attrs_get_kernel_access(&access_attrs);
-
-	// Check validity of access rights
-	if (((access_user & ~extent->access) != 0U) ||
-	    ((access_kernel & ~extent->access) != 0U)) {
+	if (!memextent_check_access_attrs(extent, access_attrs)) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
@@ -391,7 +600,7 @@ memextent_update_access(memextent_t *extent, addrspace_t *addrspace,
 		goto out;
 	}
 
-	if (addrspace->vm_read_only) {
+	if (addrspace->read_only) {
 		ret = ERROR_DENIED;
 	} else {
 		ret = trigger_memextent_update_access_event(
@@ -402,36 +611,72 @@ out:
 	return ret;
 }
 
-void
-memextent_handle_object_deactivate_memextent(memextent_t *memextent)
+error_t
+memextent_update_access_partial(memextent_t *extent, addrspace_t *addrspace,
+				vmaddr_t vm_base, size_t offset, size_t size,
+				memextent_access_attrs_t access_attrs)
 {
-	trigger_memextent_deactivate_event(memextent->type, memextent);
+	error_t ret;
+
+	if (!memextent_check_access_attrs(extent, access_attrs)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	if (!util_is_baligned(vm_base, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(offset, PGTABLE_VM_PAGE_SIZE) ||
+	    !util_is_baligned(size, PGTABLE_VM_PAGE_SIZE)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out;
+	}
+
+	if ((size == 0U) || util_add_overflows(offset, size - 1U) ||
+	    util_add_overflows(vm_base, size - 1U)) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if ((offset + (size - 1U)) >= extent->size) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	if (addrspace->read_only) {
+		ret = ERROR_DENIED;
+	} else {
+		ret = trigger_memextent_update_access_partial_event(
+			extent->type, extent, addrspace, vm_base, offset, size,
+			access_attrs);
+	}
+
+out:
+	return ret;
+}
+
+bool
+memextent_is_mapped(memextent_t *me, addrspace_t *addrspace, bool exclusive)
+{
+	assert(me != NULL);
+	assert(addrspace != NULL);
+
+	return trigger_memextent_is_mapped_event(me->type, me, addrspace,
+						 exclusive);
 }
 
 void
-memextent_handle_object_deactivate_addrspace(addrspace_t *addrspace)
+memextent_handle_object_deactivate_memextent(memextent_t *memextent)
 {
-	assert(addrspace != NULL);
-
-	spinlock_acquire(&addrspace->mapping_list_lock);
-
-	list_t	       *list = &addrspace->mapping_list;
-	memextent_mapping_t *map  = NULL;
-
-	// Remove all mappings from addrspace
-	list_foreach_container_maydelete (map, list, memextent_mapping,
-					  mapping_list_node) {
-		atomic_store_relaxed(&map->addrspace, NULL);
-		list_delete_node(list, &map->mapping_list_node);
+	if (!trigger_memextent_deactivate_event(memextent->type, memextent)) {
+		panic("Invalid memory extent deactivate!");
 	}
-
-	spinlock_release(&addrspace->mapping_list_lock);
 }
 
 void
 memextent_handle_object_cleanup_memextent(memextent_t *memextent)
 {
-	trigger_memextent_cleanup_event(memextent->type, memextent);
+	if (!trigger_memextent_cleanup_event(memextent->type, memextent)) {
+		panic("Invalid memory extent cleanup!");
+	}
 
 	if (memextent->parent != NULL) {
 		object_put_memextent(memextent->parent);
@@ -439,9 +684,16 @@ memextent_handle_object_cleanup_memextent(memextent_t *memextent)
 	}
 }
 
+size_result_t
+memextent_get_offset_for_pa(memextent_t *memextent, paddr_t pa, size_t size)
+{
+	return trigger_memextent_get_offset_for_pa_event(memextent->type,
+							 memextent, pa, size);
+}
+
 #if defined(ARCH_AARCH64_USE_S2FWB)
-#if !defined(ARCH_ARM_8_4_S2FWB)
-#error S2FWB requires ARCH_ARM_8_4_S2FWB
+#if !defined(ARCH_ARM_FEAT_S2FWB)
+#error S2FWB requires ARCH_ARM_FEAT_S2FWB
 #endif
 #error S2FWB support not implemented
 #endif
@@ -471,16 +723,17 @@ memextent_check_memtype(memextent_memtype_t  extent_type,
 			success = true;
 		}
 		break;
-	case PGTABLE_VM_MEMTYPE_NORMAL_WB:
+	case PGTABLE_VM_MEMTYPE_NORMAL_WB: {
 #if defined(ARCH_AARCH64_USE_S2FWB)
 		if ((extent_type == MEMEXTENT_MEMTYPE_ANY) ||
-		    (extent_type == MEMEXTENT_MEMTYPE_CACHED)) {
+		    (extent_type == MEMEXTENT_MEMTYPE_CACHED))
 #else
-		if (extent_type == MEMEXTENT_MEMTYPE_ANY) {
+		if (extent_type == MEMEXTENT_MEMTYPE_ANY)
 #endif
+		{
 			success = true;
 		}
-		break;
+	} break;
 	case PGTABLE_VM_MEMTYPE_NORMAL_WT:
 	case PGTABLE_VM_MEMTYPE_NORMAL_OWT_IWB:
 	case PGTABLE_VM_MEMTYPE_NORMAL_OWB_INC:
@@ -494,6 +747,7 @@ memextent_check_memtype(memextent_memtype_t  extent_type,
 		break;
 	default:
 		success = false;
+		break;
 	}
 
 	return success;
@@ -512,7 +766,7 @@ memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
 		goto out;
 	}
 
-	memextent_t	    *me	= me_ret.r;
+	memextent_t	 *me	= me_ret.r;
 	memextent_attrs_t attrs = memextent_attrs_default();
 	memextent_attrs_set_access(&attrs, access);
 	memextent_attrs_set_memtype(&attrs, memtype);
@@ -522,6 +776,7 @@ memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
 	me_ret.e = memextent_configure_derive(me, parent, offset, size, attrs);
 	if (me_ret.e != OK) {
 		spinlock_release(&me->header.lock);
+		me_ret.r = NULL;
 		object_put_memextent(me);
 		goto out;
 	}
@@ -530,8 +785,91 @@ memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
 	me_ret.e = object_activate_memextent(me);
 	if (me_ret.e != OK) {
 		object_put_memextent(me);
+		me_ret.r = NULL;
 	}
 
 out:
 	return me_ret;
+}
+
+void
+memextent_retain_mappings(memextent_t *me) LOCK_IMPL
+{
+	(void)trigger_memextent_retain_mappings_event(me->type, me);
+}
+
+void
+memextent_release_mappings(memextent_t *me, bool clear) LOCK_IMPL
+{
+	(void)trigger_memextent_release_mappings_event(me->type, me, clear);
+}
+
+memextent_mapping_t
+memextent_lookup_mapping(memextent_t *me, paddr_t phys, size_t size, index_t i)
+{
+	memextent_mapping_result_t ret;
+
+	ret = trigger_memextent_lookup_mapping_event(me->type, me, phys, size,
+						     i);
+	assert(ret.e == OK);
+
+	return ret.r;
+}
+
+error_t
+memextent_attach(partition_t *owner, memextent_t *me, uintptr_t hyp_va,
+		 size_t size)
+{
+	assert(owner != NULL);
+	assert(me != NULL);
+
+	error_t ret;
+
+	if (owner != me->header.partition) {
+		ret = ERROR_DENIED;
+		goto out;
+	}
+
+	if (!pgtable_access_check(me->access, PGTABLE_ACCESS_RW)) {
+		ret = ERROR_DENIED;
+		goto out;
+	}
+
+	if (me->size < size) {
+		ret = ERROR_ARGUMENT_SIZE;
+		goto out;
+	}
+
+	pgtable_hyp_memtype_t memtype;
+	switch (me->memtype) {
+	case MEMEXTENT_MEMTYPE_CACHED:
+	case MEMEXTENT_MEMTYPE_ANY:
+		memtype = PGTABLE_HYP_MEMTYPE_WRITEBACK;
+		break;
+	case MEMEXTENT_MEMTYPE_DEVICE:
+		memtype = PGTABLE_HYP_MEMTYPE_DEVICE;
+		break;
+	case MEMEXTENT_MEMTYPE_UNCACHED:
+		memtype = PGTABLE_HYP_MEMTYPE_WRITECOMBINE;
+		break;
+	default:
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
+
+	ret = trigger_memextent_attach_event(me->type, me, hyp_va, size,
+					     memtype);
+out:
+	return ret;
+}
+
+void
+memextent_detach(partition_t *owner, memextent_t *me)
+{
+	assert(owner != NULL);
+	assert(me != NULL);
+	assert(owner == me->header.partition);
+
+	bool handled = trigger_memextent_detach_event(me->type, me);
+	assert(handled);
 }

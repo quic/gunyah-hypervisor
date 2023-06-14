@@ -39,20 +39,89 @@ event scheduler_selected_thread
 	param thread: thread_t *
 	param can_idle: bool *
 
-// This event is triggered when the affinity of a thread is explicitly
-// changed. The scheduler lock for the thread is held by the caller.
-// If this is too restrictive for a module, handlers can request the
-// next event to be triggered after a grace period.
+// Prepare to change a thread's affinity.
+//
+// This event is for cases where we may want to deny certain affinity changes,
+// e.g. the new CPU doesn't support a feature required by the affected VCPU.
+//
+// This event is triggered prior to the scheduler_affinity_changed event. The
+// targeted thread has not yet been blocked and may be running either locally
+// or remotely. The thread's scheduler lock is held.
+//
+// If this event returns an error then the affinity change is aborted.
+setup_event scheduler_set_affinity_prepare
+	param thread: thread_t *
+	param prev_cpu: cpu_index_t
+	param next_cpu: cpu_index_t
+	return: error_t = OK
+	success: OK
+
+// Change a thread's affinity.
+//
+// This event is triggered after a thread is blocked to change affinity. The
+// scheduler lock for the thread is held by the caller, and the thread is not
+// current on any CPU (though it may be the previous thread in a
+// thread_context_switch_post event).
+//
+// If it is necessary to take actions with no lock held, the need_sync
+// parameter can be set to true to trigger a scheduler_affinity_changed_sync
+// event after after a grace period.
+//
+// This event must not fail. If a module needs to prevent affinity changes in
+// some cases, it must be checked in a scheduler_set_affinity_prepare handler,
+// which will be called prior to this event. Note that the scheduler lock may
+// be dropped between these events.
 event scheduler_affinity_changed
 	param thread: thread_t *
 	param prev_cpu: cpu_index_t
 	param next_cpu: cpu_index_t
 	param need_sync: bool *
 
-// This event is triggered when the affinity of a thread is explicitly
-// changed, if requested by the previous event. It is triggered after
-// a grace period, with no locks held.
+// Clean up after changing a thread's affinity.
+//
+// This event is triggered after the affinity of a thread is explicitly
+// changed, if requested by a handler for the scheduler_affinity_changed
+// event. It is triggered after a grace period, with no locks held.
+//
+// Modules that handle this event must not assume that they were responsible
+// for triggering it; a different module may have triggered the event.
 event scheduler_affinity_changed_sync
 	param thread: thread_t *
 	param prev_cpu: cpu_index_t
 	param next_cpu: cpu_index_t
+
+// This event is triggered just before the scheduler schedules the next thread.
+// "yielded_from" is the value of CPULOCAL(yielded_from) for this CPU,
+// "schedtime" is the start time of the previous scheduler run, and "curticks"
+// is the start time of this scheduler run.
+event scheduler_schedule
+	param current: thread_t *
+	param yielded_from: thread_t *
+	param schedtime: ticks_t
+	param curticks: ticks_t
+
+// This event is triggered before the scheduler sets a given block flag on a
+// thread, if that flag is not already set.
+//
+// The was_runnable argument is true if the thread was not blocked for any
+// reason prior to setting the block flag (after excluding killable block
+// flags, if the thread has been killed).
+//
+// The scheduler lock for the thread is held by the caller.
+event scheduler_blocked
+	param thread: thread_t *
+	param block: scheduler_block_t
+	param was_runnable: bool
+
+// This event is triggered after the scheduler clears a given block flag on a
+// thread, if that flag was not already clear.
+//
+// The now_runnable argument is true if the thread will not be blocked for any
+// reason after to this event (after excluding killable block flags, if the
+// thread has been killed).
+//
+// The scheduler lock for the thread is held by the caller.
+event scheduler_unblocked
+	param thread: thread_t *
+	param block: scheduler_block_t
+	param now_runnable: bool

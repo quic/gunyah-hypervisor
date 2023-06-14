@@ -4,6 +4,7 @@
 
 // TODO: Add functions that work on other CPUs' queues. Important for migrating
 // schedulers.
+// FIXME:
 
 // Initialise a timer object
 void
@@ -44,4 +45,4 @@ timer_convert_ticks_to_ns(ticks_t ticks);
 
 // Get next timeout from cpu local queue
 ticks_t
-timer_queue_get_next_timeout(void);
+timer_queue_get_next_timeout(void) REQUIRE_PREEMPT_DISABLED;

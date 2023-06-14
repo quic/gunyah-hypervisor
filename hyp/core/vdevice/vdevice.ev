@@ -1,0 +1,12 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module vdevice
+
+subscribe gpt_values_equal[GPT_TYPE_VDEVICE]
+
+subscribe object_create_addrspace
+	unwinder
+
+subscribe object_cleanup_addrspace(addrspace)

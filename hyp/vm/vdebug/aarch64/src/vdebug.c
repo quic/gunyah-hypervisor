@@ -19,7 +19,7 @@
 #include "debug_bps.h"
 #include "event_handlers.h"
 
-static struct asm_ordering_dummy vdebug_asm_order;
+static asm_ordering_dummy_t vdebug_asm_order;
 
 void
 vdebug_handle_boot_cpu_cold_init(void)
@@ -50,7 +50,7 @@ vdebug_handle_object_create_thread(thread_create_t thread_create)
 }
 
 bool
-vdebug_handle_vcpu_activate_thread(thread_t	    *thread,
+vdebug_handle_vcpu_activate_thread(thread_t	      *thread,
 				   vcpu_option_flags_t options)
 {
 	assert(thread != NULL);
@@ -117,7 +117,7 @@ vdebug_handle_thread_context_switch_post(thread_t *prev)
 }
 
 void
-vdebug_handle_thread_load_state()
+vdebug_handle_thread_load_state(void)
 {
 	thread_t *current = thread_get_self();
 
@@ -148,7 +148,7 @@ static vcpu_trap_result_t
 vdebug_handle_vcpu_debug_trap(void)
 {
 	vcpu_trap_result_t ret;
-	thread_t		 *current = thread_get_self();
+	thread_t	  *current = thread_get_self();
 
 #if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
 	DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
@@ -224,7 +224,7 @@ vdebug_handle_vcpu_trap_mcrmrc14_guest(ESR_EL2_ISS_MCR_MRC_t iss)
 {
 	vcpu_trap_result_t ret;
 
-	if (ESR_EL2_ISS_MCR_MRC_get_Opc1(&iss) != 0) {
+	if (ESR_EL2_ISS_MCR_MRC_get_Opc1(&iss) != 0U) {
 		// Not a debug register
 		ret = VCPU_TRAP_RESULT_UNHANDLED;
 	} else {
@@ -236,7 +236,7 @@ vdebug_handle_vcpu_trap_mcrmrc14_guest(ESR_EL2_ISS_MCR_MRC_t iss)
 
 		if (ESR_EL2_ISS_MCR_MRC_get_Direction(&iss) == 1) {
 			if ((ESR_EL2_ISS_MCR_MRC_get_CV(&iss) == 0) ||
-			    (ESR_EL2_ISS_MCR_MRC_get_COND(&iss) != 0xe)) {
+			    (ESR_EL2_ISS_MCR_MRC_get_COND(&iss) != 0xeU)) {
 				// TODO: Need to read COND/ITState/condition
 				// flags to determined whether to emulate or
 				// ignore.

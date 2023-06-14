@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(ARCH_ARM_FEAT_SVE)
+define ZCR_EL2 bitfield<64> {
+	3:0		LEN		uint8;
+	others		unknown=0;
+};
+
+define SVE_Z_MIN_REG_SIZE constant type count_t = 16;
+define SVE_Z_REG_SIZE constant type count_t = PLATFORM_SVE_REG_SIZE;
+#endif

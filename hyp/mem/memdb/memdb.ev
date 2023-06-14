@@ -12,7 +12,7 @@ subscribe boot_cold_init()
 	priority 10
 
 subscribe partition_add_ram_range(owner, phys_base, size)
-	unwinder memdb_handle_partition_remove_ram_range(owner, phys_base, size) public
+	unwinder
 
 subscribe partition_remove_ram_range(owner, phys_base, size)
-	unwinder memdb_handle_partition_add_ram_range(owner, phys_base, size) public
+	unwinder

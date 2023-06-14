@@ -501,6 +501,12 @@ class NinjaBuild(AbstractBuildGraph):
             # Add a phony rule for always-built targets
             self.add_alias(self._phony_always, [])
 
+            # Add phony rules for all of the generator sources, so Ninja
+            # does not fail if one of them disappears (e.g. if a module
+            # is renamed, or an older branch is checked out)
+            for f in sorted(self._gen_sources):
+                self.add_alias(f, [])
+
         # Add a rule and targets for all of the automatically created parent
         # directories. We do this in deepest-first order at the end of the
         # build file because ninja -t clean always processes targets in the

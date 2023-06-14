@@ -6,7 +6,7 @@ define addrspace_attach_thread hypercall {
 	call_num	0x2A;
 	addrspace	input type cap_id_t;
 	thread		input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -16,7 +16,11 @@ define addrspace_map hypercall {
 	memextent	input type cap_id_t;
 	vbase		input type vmaddr_t;
 	map_attrs	input bitfield memextent_mapping_attrs;
-	_res0		input uregister;
+	map_flags	input bitfield addrspace_map_flags;
+	// Below arguments are used only if partial is set in map_flags;
+	// otherwise they are ignored for backwards compatibility.
+	offset		input size;
+	size		input size;
 	error		output enumeration error;
 };
 
@@ -25,7 +29,11 @@ define addrspace_unmap hypercall {
 	addrspace	input type cap_id_t;
 	memextent	input type cap_id_t;
 	vbase		input type vmaddr_t;
-	_res0		input uregister;
+	map_flags	input bitfield addrspace_map_flags;
+	// Below arguments are used only if partial is set in map_flags;
+	// otherwise they are ignored for backwards compatibility.
+	offset		input size;
+	size		input size;
 	error		output enumeration error;
 };
 
@@ -35,7 +43,11 @@ define addrspace_update_access hypercall {
 	memextent	input type cap_id_t;
 	vbase		input type vmaddr_t;
 	access_attrs	input bitfield memextent_access_attrs;
-	_res0		input uregister;
+	map_flags	input bitfield addrspace_map_flags;
+	// Below arguments are used only if partial is set in map_flags;
+	// otherwise they are ignored for backwards compatibility.
+	offset		input size;
+	size		input size;
 	error		output enumeration error;
 };
 
@@ -43,7 +55,7 @@ define addrspace_configure hypercall {
 	call_num	0x2E;
 	addrspace	input type cap_id_t;
 	vmid		input type vmid_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -52,6 +64,49 @@ define addrspace_attach_vdma hypercall {
 	addrspace	input type cap_id_t;
 	dma_device	input type cap_id_t;
 	index		input type index_t;
-	_res0		input uregister;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_lookup hypercall {
+	call_num	0x5A;
+	addrspace	input type cap_id_t;
+	memextent	input type cap_id_t;
+	vbase		input type vmaddr_t;
+	size		input size;
+	res0		input uregister;
+	error		output enumeration error;
+	offset		output size;
+	size		output size;
+	map_attrs	output bitfield memextent_mapping_attrs;
+};
+
+define addrspace_configure_info_area hypercall {
+	call_num	0x5B;
+	addrspace	input type cap_id_t;
+	info_area_me	input type cap_id_t;
+	ipa		input type vmaddr_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_configure_vmmio hypercall {
+	call_num	0x60;
+	addrspace	input type cap_id_t;
+	vbase		input type vmaddr_t;
+	size		input size;
+	op		input enumeration addrspace_vmmio_configure_op;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define addrspace_attach_vdevice hypercall {
+	call_num	0x62;
+	addrspace	input type cap_id_t;
+	vdevice		input type cap_id_t;
+	index		input type index_t;
+	vbase		input type vmaddr_t;
+	size		input size;
+	res0		input uregister;
 	error		output enumeration error;
 };

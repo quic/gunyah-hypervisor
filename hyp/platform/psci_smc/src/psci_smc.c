@@ -6,14 +6,16 @@
 
 #include <hypconstants.h>
 
+#include <cpulocal.h>
 #include <panic.h>
+#include <power.h>
 #include <smccc.h>
 
 #include "psci_smc.h"
 #include "psci_smc_arch.h"
 
 uint32_t
-psci_smc_psci_version()
+psci_smc_psci_version(void)
 {
 	psci_ret_t ret =
 		psci_smc_fn_call32(PSCI_FUNCTION_PSCI_VERSION, 0, 0, 0);
@@ -113,7 +115,7 @@ psci_smc_system_reset(void)
 }
 
 error_t
-psci_smc_cpu_off()
+psci_smc_cpu_off(void)
 {
 	error_t err;
 
@@ -145,17 +147,21 @@ psci_smc_cpu_on(psci_mpidr_t cpu_id, paddr_t entry_point, register_t context_id)
 	switch (psci_smc_fn_call(PSCI_FUNCTION_CPU_ON, psci_mpidr_raw(cpu_id),
 				 entry_point, context_id)) {
 	case PSCI_RET_SUCCESS:
-	case PSCI_RET_ALREADY_ON:
 	case PSCI_RET_ON_PENDING:
 		err = OK;
+		break;
+	case PSCI_RET_ALREADY_ON:
+		err = ERROR_RETRY;
 		break;
 	case PSCI_RET_INVALID_PARAMETERS:
 	case PSCI_RET_INVALID_ADDRESS:
 		err = ERROR_ARGUMENT_INVALID;
 		break;
+	case PSCI_RET_INTERNAL_FAILURE:
+		err = ERROR_FAILURE;
+		break;
 	case PSCI_RET_DENIED:
 	case PSCI_RET_NOT_SUPPORTED:
-	case PSCI_RET_INTERNAL_FAILURE:
 	case PSCI_RET_NOT_PRESENT:
 	case PSCI_RET_DISABLED:
 	default:
@@ -175,9 +181,10 @@ psci_smc_psci_features(psci_function_t fn, bool smc64)
 	smccc_function_id_set_function(&fn_id, (smccc_function_t)fn);
 
 	sint32_result_t ret;
-
-	ret.r = psci_smc_fn_call32(PSCI_FUNCTION_PSCI_FEATURES,
-				   smccc_function_id_raw(fn_id), 0, 0);
+	psci_ret_t psci_ret = psci_smc_fn_call32(PSCI_FUNCTION_PSCI_FEATURES,
+						 smccc_function_id_raw(fn_id),
+						 0, 0);
+	ret.r		    = (int32_t)psci_ret;
 
 	switch ((psci_ret_t)ret.r) {
 	case PSCI_RET_NOT_SUPPORTED:
@@ -204,7 +211,7 @@ psci_smc_psci_features(psci_function_t fn, bool smc64)
 }
 
 error_t
-psci_smc_cpu_freeze()
+psci_smc_cpu_freeze(void)
 {
 	error_t err;
 
@@ -235,8 +242,8 @@ psci_smc_psci_set_suspend_mode(psci_mode_t mode)
 {
 	error_t err;
 
-	switch (psci_smc_fn_call32(PSCI_FUNCTION_PSCI_SET_SUSPEND_MODE, mode, 0,
-				   0)) {
+	switch (psci_smc_fn_call32(PSCI_FUNCTION_PSCI_SET_SUSPEND_MODE,
+				   (uint32_t)mode, 0, 0)) {
 	case PSCI_RET_SUCCESS:
 		err = OK;
 		break;

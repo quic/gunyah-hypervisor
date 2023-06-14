@@ -93,6 +93,7 @@ function_chain vcpu_hypercall_return_sanitize_x2, vcpu_hypercall_return_sanitize
 
 	mov	x17, xzr
 
+	// FIXME:
 	// Temporarily preserve x8 for backwards compatibility. It should be
 	// sanitised once this is removed.
 	//mov	x8, xzr
@@ -108,7 +109,7 @@ function_chain vcpu_hypercall_return_sanitize_x2, vcpu_hypercall_return_sanitize
 	eret
 function_end vcpu_hypercall_return_sanitize_x8
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 function vcpu_pauth_exit_failed
 	panic	"Invalid SPSR_EL2.M in VCPU exception return"
 function_end vcpu_pauth_exit_failed

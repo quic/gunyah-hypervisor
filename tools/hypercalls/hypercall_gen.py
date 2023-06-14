@@ -63,7 +63,7 @@ def get_constant(c):
         type_parent = c.data
         c = c.children[0]
 
-    assert(type_parent == 'constant_value')
+    assert (type_parent == 'constant_value')
     return c
 
 
@@ -206,7 +206,8 @@ def main():
     grammar_file = os.path.join(__loc__, '..', 'grammars',
                                 'hypercalls_dsl.lark')
 
-    parser = Lark.open(grammar_file, 'start', propagate_positions=True)
+    parser = Lark.open(grammar_file, 'start', parser='lalr',
+                       lexer='contextual', propagate_positions=True)
 
     from ir import PrimitiveType
     # Load typed pickle to get the types used for the inputs and output of the

@@ -25,32 +25,47 @@
 #include "event_handlers.h"
 #include "trap_dispatch.h"
 
+#if defined(ARCH_ARM_FEAT_PAuth)
+static inline uintptr_t
+remove_pointer_auth(uintptr_t addr)
+{
+	__asm__("xpaci %0" : "+r"(addr));
+	return addr;
+}
+#endif
+
 static inline uintptr_t
 vectors_get_return_address(kernel_trap_frame_t *frame)
 {
-#if defined(ARCH_ARM_8_3_PAUTH)
-	uintptr_t pc = ELR_EL2_get_ReturnAddress(&frame->pc);
-	__asm__("xpaci %0" : "+r"(pc));
-	return pc;
+#if defined(ARCH_ARM_FEAT_PAuth)
+	return remove_pointer_auth(ELR_EL2_get_ReturnAddress(&frame->pc));
 #else
 	return ELR_EL2_get_ReturnAddress(&frame->pc);
 #endif
 }
 
-static inline ALWAYS_INLINE void
-vectors_set_return_address(kernel_trap_frame_t *frame, uintptr_t pc)
+#if defined(ARCH_ARM_FEAT_PAuth)
+static inline ALWAYS_INLINE uintptr_t
+sign_pc_using_framepointer(uintptr_t pc, uintptr_t fp)
 {
-#if defined(ARCH_ARM_8_3_PAUTH)
-	uintptr_t signed_pc = pc;
 	// The new PC needs to be signed with a modifier equal to the value the
 	// SP will have after restoring the frame, i.e. the address immediately
 	// after the end of the frame. Note that this must be inlined and BTI
 	// must be enabled to avoid providing a gadget for signing an arbitrary
 	// return address.
-	__asm__("pacia %0, %1"
-		: "+r"(signed_pc)
-		: "r"((uintptr_t)(SP_EL2_raw(frame->sp_el2))));
-	ELR_EL2_set_ReturnAddress(&frame->pc, signed_pc);
+	__asm__("pacia %0, %1" : "+r"(pc) : "r"(fp));
+	return pc;
+}
+#endif
+
+static inline ALWAYS_INLINE void
+vectors_set_return_address(kernel_trap_frame_t *frame, uintptr_t pc)
+{
+#if defined(ARCH_ARM_FEAT_PAuth)
+	ELR_EL2_set_ReturnAddress(
+		&frame->pc,
+		sign_pc_using_framepointer(
+			pc, (uintptr_t)(SP_EL2_raw(frame->sp_el2))));
 #else
 	ELR_EL2_set_ReturnAddress(&frame->pc, pc);
 #endif
@@ -67,8 +82,8 @@ vectors_exception_dispatch(kernel_trap_frame_full_t *frame)
 	ESR_EL2_t esr = register_ESR_EL2_read_ordered(&asm_ordering);
 	esr_ec_t  ec  = ESR_EL2_get_EC(&esr);
 	uintptr_t pc  = ELR_EL2_get_ReturnAddress(&frame->base.pc);
-#if defined(ARCH_ARM_8_3_PAUTH)
-	__asm__("xpaci %0" : "+r"(pc));
+#if defined(ARCH_ARM_FEAT_PAuth)
+	pc = remove_pointer_auth(pc);
 #endif
 	TRACE(ERROR, WARN,
 	      "EL2 exception at PC = {:x} ESR_EL2 = {:#x}, LR = {:#x}, "
@@ -81,7 +96,7 @@ vectors_exception_dispatch(kernel_trap_frame_full_t *frame)
 		handled = trigger_vectors_trap_unknown_el2_event(&frame->base);
 		break;
 
-#if defined(ARCH_ARM_8_5_BTI)
+#if defined(ARCH_ARM_FEAT_BTI)
 	case ESR_EC_BTI:
 		TRACE_AND_LOG(ERROR, WARN,
 			      "BTI abort in EL2 on CPU {:d}, from {:#x}, "
@@ -121,7 +136,7 @@ vectors_exception_dispatch(kernel_trap_frame_full_t *frame)
 		handled = trigger_vectors_trap_brk_el2_event(esr);
 		break;
 
-#if defined(ARCH_ARM_8_3_PAUTH) && defined(ARCH_ARM_8_3_FPAC)
+#if defined(ARCH_ARM_FEAT_PAuth) && defined(ARCH_ARM_FEAT_FPAC)
 	case ESR_EC_FPAC:
 		handled = trigger_vectors_trap_pauth_failed_el2_event(esr);
 		break;
@@ -151,20 +166,36 @@ vectors_exception_dispatch(kernel_trap_frame_full_t *frame)
 	case ESR_EC_SVC64:
 	case ESR_EC_HVC64_EL2:
 	case ESR_EC_SMC64_EL2:
-#if defined(ARCH_ARM_8_3_PAUTH)
-	case ESR_EC_PAUTH:
-#endif
-#if defined(ARCH_ARM_8_3_PAUTH) && defined(ARCH_ARM_8_3_NV)
-	case ESR_EC_ERET:
-#endif
-	case ESR_EC_SYSREG:
-#if defined(ARCH_ARM_8_2_SVE)
-	case ESR_EC_SVE:
-#endif
 	case ESR_EC_INST_ABT_LO:
 	case ESR_EC_DATA_ABT_LO:
 	case ESR_EC_FP64:
+#if defined(ARCH_ARM_FEAT_PAuth)
+	case ESR_EC_PAUTH:
+#endif
+#if defined(ARCH_ARM_FEAT_PAuth) && defined(ARCH_ARM_FEAT_NV)
+	case ESR_EC_ERET:
+#endif
+	case ESR_EC_SYSREG:
+#if defined(ARCH_ARM_FEAT_SVE)
+	case ESR_EC_SVE:
+#endif
+#if defined(ARCH_ARM_FEAT_LS64)
+	case ESR_EC_LD64B_ST64B:
+#endif
+#if defined(ARCH_ARM_FEAT_TME)
+	case ESR_EC_TSTART:
+#endif
+#if defined(ARCH_ARM_FEAT_SME)
+	case ESR_EC_SME:
+#endif
+#if defined(ARCH_ARM_FEAT_RME)
+	case ESR_EC_RME:
+#endif
+#if defined(ARCH_ARM_FEAT_MOPS)
+	case ESR_EC_MOPS:
+#endif
 	default:
+		// Unexpected trap, fall through to panic
 		break;
 	}
 
@@ -209,7 +240,11 @@ vectors_handle_abort_kernel(void)
 	// HLT instruction will stop if an external debugger is attached,
 	// otherwise it generates an exception and the trap handler below will
 	// skip the instruction.
+#if !defined(QQVP_SIMULATION_PLATFORM) || !QQVP_SIMULATION_PLATFORM
+	// The QQVP model exits with invalid instruction here.
+	// This should be resolved in model.
 	__asm__ volatile("hlt 1" ::: "memory");
+#endif
 #endif
 }
 
@@ -234,8 +269,9 @@ vectors_handle_vectors_trap_unknown_el2(kernel_trap_frame_t *frame)
 
 	if ((inst & AARCH64_INST_EXCEPTION_MASK) ==
 	    AARCH64_INST_EXCEPTION_VAL) {
-		uint16_t imm16 = (inst & AARCH64_INST_EXCEPTION_IMM16_MASK) >>
-				 AARCH64_INST_EXCEPTION_IMM16_SHIFT;
+		uint16_t imm16 =
+			(uint16_t)((inst & AARCH64_INST_EXCEPTION_IMM16_MASK) >>
+				   AARCH64_INST_EXCEPTION_IMM16_SHIFT);
 
 		if ((inst & AARCH64_INST_EXCEPTION_SUBTYPE_MASK) ==
 		    AARCH64_INST_EXCEPTION_SUBTYPE_HLT_VAL) {

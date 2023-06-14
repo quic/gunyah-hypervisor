@@ -15,15 +15,13 @@ subscribe object_deactivate_memextent(memextent)
 
 subscribe object_cleanup_memextent(memextent)
 
-subscribe object_deactivate_addrspace(addrspace)
-
 // BASIC memory extent
+
+subscribe memextent_activate[MEMEXTENT_TYPE_BASIC]
+	handler memextent_activate_basic(me)
 
 subscribe memextent_activate_derive[MEMEXTENT_TYPE_BASIC]
 	handler memextent_activate_derive_basic(me)
-
-subscribe memextent_derive[MEMEXTENT_TYPE_BASIC]
-	handler memextent_derive_basic(me, parent, offsets, sizes, memtype, access)
 
 subscribe memextent_map[MEMEXTENT_TYPE_BASIC]
 	handler memextent_map_basic(extent, addrspace, vm_base, map_attrs)
@@ -38,8 +36,35 @@ subscribe memextent_update_access[MEMEXTENT_TYPE_BASIC]
 	handler memextent_update_access_basic(extent, addrspace, vm_base,
 	access_attrs)
 
+subscribe memextent_is_mapped[MEMEXTENT_TYPE_BASIC]
+	handler memextent_is_mapped_basic(me, addrspace, exclusive)
+
 subscribe memextent_deactivate[MEMEXTENT_TYPE_BASIC]
 	handler memextent_deactivate_basic(extent)
 
 subscribe memextent_cleanup[MEMEXTENT_TYPE_BASIC]
 	handler memextent_cleanup_basic(extent)
+
+subscribe memextent_retain_mappings[MEMEXTENT_TYPE_BASIC]
+	handler memextent_retain_mappings_basic(me)
+
+subscribe memextent_release_mappings[MEMEXTENT_TYPE_BASIC]
+	handler memextent_release_mappings_basic(me, clear)
+
+subscribe memextent_lookup_mapping[MEMEXTENT_TYPE_BASIC]
+	handler memextent_lookup_mapping_basic(me, phys, size, i)
+
+subscribe memextent_attach[MEMEXTENT_TYPE_BASIC]
+	handler memextent_attach_basic(me, hyp_va, size, memtype)
+
+subscribe memextent_detach[MEMEXTENT_TYPE_BASIC]
+	handler memextent_detach_basic(me)
+
+subscribe object_create_addrspace
+	handler memextent_create_addrspace_basic
+
+subscribe object_deactivate_addrspace
+	handler memextent_deactivate_addrspace_basic
+
+subscribe memextent_get_offset_for_pa[MEMEXTENT_TYPE_BASIC]
+	handler memextent_get_offset_for_pa_basic(extent, pa, size)

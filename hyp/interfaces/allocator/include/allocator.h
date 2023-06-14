@@ -12,12 +12,6 @@
 error_t
 allocator_init(allocator_t *allocator);
 
-error_t
-allocator_heap_add_memory(allocator_t *allocator, void *addr, size_t size);
-
-error_t
-allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size);
-
 void_ptr_result_t
 allocator_allocate_object(allocator_t *allocator, size_t size,
 			  size_t alignment);

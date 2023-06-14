@@ -4,14 +4,17 @@
 
 module soc_qemu
 
-subscribe rootvm_init(root_partition, root_cspace, env_data)
-	priority -10
-
-subscribe boot_cpu_cold_init
-
 subscribe boot_cold_init
 	handler soc_qemu_uart_init()
 	priority 5
+	require_preempt_disabled
+
+subscribe boot_cpu_cold_init
+
+#if !defined(UNIT_TESTS)
+subscribe rootvm_init(root_partition, root_cspace, hyp_env, qcbor_enc_ctxt)
+	priority -10
+#endif
 
 #if !defined(UNIT_TESTS)
 subscribe vcpu_activate_thread

@@ -78,13 +78,16 @@ define psci_suspend_powerstate_type enumeration(explicit) {
 	powerdown = 1;
 };
 
-define vpm_mode enumeration(explicit) {
-	NONE = 0;
-	IDLE = 1;
-	PSCI = 2;
-};
-
 define psci_mode enumeration(explicit) {
 	PC = 0;
 	OSI = 1;
 };
+
+#if defined(INTERFACE_VCPU_RUN)
+extend vcpu_run_state enumeration {
+	// VCPU made a PSCI_SYSTEM_RESET call to request a reset of the VM.
+	// This is otherwise equivalent to a power-off state, and resuming the
+	// VCPU will return it to a regular power-off state.
+	psci_system_reset = 0x100;
+};
+#endif

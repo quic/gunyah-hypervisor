@@ -36,6 +36,11 @@ vgic_get_irq_type(virq_t irq)
 		type = VGIC_IRQ_TYPE_SPI_EXT;
 	}
 #endif
+#if VGIC_HAS_LPI
+	else if (irq >= (virq_t)GIC_LPI_BASE) {
+		type = VGIC_IRQ_TYPE_LPI;
+	}
+#endif
 	else {
 		type = VGIC_IRQ_TYPE_RESERVED;
 	}
@@ -56,6 +61,9 @@ vgic_irq_is_private(virq_t virq)
 		break;
 	case VGIC_IRQ_TYPE_SPI:
 	case VGIC_IRQ_TYPE_RESERVED:
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	case VGIC_IRQ_TYPE_LPI:
+#endif
 	default:
 		result = false;
 		break;
@@ -76,6 +84,9 @@ vgic_irq_is_spi(virq_t virq)
 	case VGIC_IRQ_TYPE_SGI:
 	case VGIC_IRQ_TYPE_PPI:
 	case VGIC_IRQ_TYPE_RESERVED:
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	case VGIC_IRQ_TYPE_LPI:
+#endif
 	default:
 		result = false;
 		break;
@@ -96,6 +107,9 @@ vgic_irq_is_ppi(virq_t virq)
 	case VGIC_IRQ_TYPE_SGI:
 	case VGIC_IRQ_TYPE_SPI:
 	case VGIC_IRQ_TYPE_RESERVED:
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	case VGIC_IRQ_TYPE_LPI:
+#endif
 	default:
 		result = false;
 		break;
@@ -175,6 +189,9 @@ vgic_find_source(vic_t *vic, thread_t *vcpu, virq_t virq)
 		break;
 	case VGIC_IRQ_TYPE_SGI:
 	case VGIC_IRQ_TYPE_RESERVED:
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	case VGIC_IRQ_TYPE_LPI:
+#endif
 	default:
 		source = NULL;
 		break;
@@ -197,6 +214,9 @@ vgic_find_dstate(vic_t *vic, thread_t *vcpu, virq_t virq)
 		dstate = &vic->spi_states[virq - GIC_SPI_BASE];
 		break;
 	case VGIC_IRQ_TYPE_RESERVED:
+#if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
+	case VGIC_IRQ_TYPE_LPI:
+#endif
 	default:
 		// Invalid IRQ number
 		dstate = NULL;

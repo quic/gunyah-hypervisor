@@ -39,6 +39,7 @@ event thread_save_state
 // executed.
 setup_event thread_context_switch_pre
 	param next: thread_t *
+	param curticks: ticks_t
 	return: error_t = OK
 	success: OK
 
@@ -59,6 +60,8 @@ setup_event thread_context_switch_pre
 // thread is also the idle thread.
 event thread_context_switch_post
 	param prev: thread_t *
+	param curticks: ticks_t
+	param prevticks: ticks_t
 
 // Return the thread's main function.
 //

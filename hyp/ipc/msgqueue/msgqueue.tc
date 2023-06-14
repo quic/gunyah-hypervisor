@@ -16,7 +16,7 @@ extend cap_rights_msgqueue bitfield {
 };
 
 extend msgqueue object {
-	buf		pointer char;
+	buf		pointer uint8;
 	count		type count_t;
 	queue_size	size;
 	max_msg_size	size;

@@ -10,8 +10,10 @@ import os
 
 env_vars = {
     'PATH': os.environ['PATH'],
-    'LLVM': os.environ['LLVM'],
 }
+
+if 'LLVM' in os.environ:
+    env_vars['LLVM'] = os.environ['LLVM']
 
 env = Environment(tools={}, SCANNERS=[], BUILDERS={}, ENV=env_vars)
 configure.SConsBuild(env, Builder, Action, arguments=SCons.Script.ARGUMENTS)()

@@ -1,0 +1,169 @@
+// Automatically generated. Do not modify.
+//
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+\#include <assert.h>
+\#include <hyptypes.h>
+
+\#include <hypregisters.h>
+
+\#include <compiler.h>
+\#include <log.h>
+\#include <trace.h>
+
+\#include <asm/barrier.h>
+\#include <asm/sysregs.h>
+
+\#include "arm_vm_amu.h"
+
+\#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
+#set $cnt_num = $PLATFORM_AMU_CNT_NUM
+#set $aux_cnt_num = $PLATFORM_AMU_AUX_CNT_NUM
+
+uint64_t
+arm_vm_amu_get_counter(index_t index)
+{
+	uint64_t val;
+
+	switch (index)
+	{
+#for i in range(0, $cnt_num)
+	case ${i}:
+		sysreg64_read_ordered(AMEVCNTR0${i}_EL0, val, asm_ordering);
+	break;
+#end for
+	default:
+		TRACE_AND_LOG(DEBUG, WARN,
+			      "Read of non-existing AMU counter {:d} ", index);
+		val = 0;
+		break;
+	}
+
+	return val;
+
+}
+
+uint64_t
+arm_vm_amu_get_aux_counter(index_t index)
+{
+	uint64_t val;
+
+	switch (index)
+	{
+#for i in range(0, $aux_cnt_num)
+	case ${i}:
+		sysreg64_read_ordered(AMEVCNTR1${i}_EL0, val, asm_ordering);
+	break;
+#end for
+	default:
+		TRACE_AND_LOG(
+			DEBUG, WARN,
+			"Read of non-existing AMU auxiliary counter {:d} ",
+			index);
+		val = 0;
+		break;
+	}
+
+	return val;
+
+}
+
+uint64_t
+arm_vm_amu_get_event_type(index_t index)
+{
+	uint64_t val;
+
+	switch (index)
+	{
+#for i in range(0, $cnt_num)
+	case ${i}:
+		sysreg64_read_ordered(AMEVTYPER0${i}_EL0, val, asm_ordering);
+	break;
+#end for
+	default:
+		TRACE_AND_LOG(DEBUG, WARN,
+			      "Read of non-existing AMU event type {:d} ",
+			      index);
+		val = 0;
+		break;
+	}
+
+	return val;
+
+}
+
+uint64_t
+arm_vm_amu_get_aux_event_type(index_t index)
+{
+	uint64_t val;
+
+	switch (index)
+	{
+#for i in range(0, $aux_cnt_num)
+	case ${i}:
+		sysreg64_read_ordered(AMEVTYPER1${i}_EL0, val, asm_ordering);
+	break;
+#end for
+	default:
+		TRACE_AND_LOG(
+			DEBUG, WARN,
+			"Read of non-existing AMU auxiliary event type {:d} ",
+			index);
+		val = 0;
+		break;
+	}
+
+	return val;
+
+}
+
+void
+arm_vm_amu_add_counters(arm_vm_amu_offsets_t *offsets)
+{
+	uint64_t val;
+
+#for i in range(0, $cnt_num)
+#if i != 1
+	sysreg64_read_ordered(AMEVCNTR0${i}_EL0, val, asm_ordering);
+	(*offsets)[${i}] += val;
+#end if
+#end for
+}
+
+void
+arm_vm_amu_subtract_counters(arm_vm_amu_offsets_t *offsets)
+{
+	uint64_t val;
+
+#for i in range(0, $cnt_num)
+#if i != 1
+	sysreg64_read_ordered(AMEVCNTR0${i}_EL0, val, asm_ordering);
+	(*offsets)[${i}] -= val;
+#end if
+#end for
+}
+
+void
+arm_vm_amu_add_aux_counters(arm_vm_amu_aux_offsets_t *offsets)
+{
+	uint64_t val;
+
+#for i in range(0, $aux_cnt_num)
+	sysreg64_read_ordered(AMEVCNTR1${i}_EL0, val, asm_ordering);
+	(*offsets)[${i}] += val;
+#end for
+}
+
+void
+arm_vm_amu_subtract_aux_counters(arm_vm_amu_aux_offsets_t *offsets)
+{
+	uint64_t val;
+
+#for i in range(0, $aux_cnt_num)
+	sysreg64_read_ordered(AMEVCNTR1${i}_EL0, val, asm_ordering);
+	(*offsets)[${i}] -= val;
+#end for
+}
+\#endif

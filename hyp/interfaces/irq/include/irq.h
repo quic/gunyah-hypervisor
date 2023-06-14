@@ -67,7 +67,7 @@ irq_deactivate(hwirq_t *hwirq);
 // Must be called from an RCU critical section. No reference is taken to the
 // result.
 hwirq_t *
-irq_lookup_hwirq(irq_t irq);
+irq_lookup_hwirq(irq_t irq) REQUIRE_RCU_READ;
 
 #if IRQ_HAS_MSI
 

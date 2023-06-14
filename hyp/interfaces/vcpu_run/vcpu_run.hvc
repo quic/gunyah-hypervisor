@@ -1,0 +1,28 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vcpu_run hypercall {
+	call_num		0x65;
+	cap_id			input type cap_id_t;
+	resume_data_0		input type register_t;
+	resume_data_1		input type register_t;
+	resume_data_2		input type register_t;
+	res0			input uregister;
+	error			output enumeration error;
+	vcpu_state		output enumeration vcpu_run_state;
+	state_data_0		output type register_t;
+	state_data_1		output type register_t;
+	state_data_2		output type register_t;
+};
+
+define vcpu_run_check hypercall {
+	call_num		0x68;
+	cap_id			input type cap_id_t;
+	res0			input uregister;
+	error			output enumeration error;
+	vcpu_state		output enumeration vcpu_run_state;
+	state_data_0		output type register_t;
+	state_data_1		output type register_t;
+	state_data_2		output type register_t;
+};

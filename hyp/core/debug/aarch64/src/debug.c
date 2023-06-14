@@ -17,7 +17,7 @@
 #include "event_handlers.h"
 
 #if PLATFORM_DEBUG_SAVE_STATE
-static struct asm_ordering_dummy debug_asm_order;
+static asm_ordering_dummy_t debug_asm_order;
 
 CPULOCAL_DECLARE_STATIC(debug_ext_state_t, debug_ext_state);
 
@@ -49,6 +49,12 @@ void
 debug_handle_power_cpu_online(void)
 {
 	debug_os_unlock();
+}
+
+void
+debug_handle_power_cpu_offline(void)
+{
+	(void)debug_handle_power_cpu_suspend(true);
 }
 
 error_t

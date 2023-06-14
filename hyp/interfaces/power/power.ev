@@ -62,8 +62,8 @@ setup_event power_cpu_suspend
 //
 // The first_cpu argument is true if this is the first cpu to wake up.
 // However, beware that there is no synchronisation between this event and a
-// subsequent power_cpu_suspend on another CPU, even with last_cpu == true.
-// If synchronisation is required, use power_system_resume instead.
+// subsequent power_cpu_suspend on another CPU, even with last_cpu set. If
+// synchronisation is required, use power_system_resume instead.
 //
 // In many cases, handlers for this event will be the same as unwinders for
 // power_cpu_suspend; however, note that the was_poweroff argument has a

@@ -56,11 +56,12 @@ msgqueue_send_msg(msgqueue_t *msgqueue, size_t size, kernel_or_gvaddr_t msg,
 		}
 	}
 
-	(void)memcpy(msgqueue->buf + msgqueue->tail, &size, sizeof(size_t));
+	(void)memcpy(msgqueue->buf + msgqueue->tail, (uint8_t *)&size,
+		     sizeof(size_t));
 	msgqueue->count++;
 
 	// Update tail value
-	msgqueue->tail += msgqueue->max_msg_size + sizeof(size_t);
+	msgqueue->tail += (count_t)(msgqueue->max_msg_size + sizeof(size_t));
 
 	if (msgqueue->tail == msgqueue->queue_size) {
 		msgqueue->tail = 0U;
@@ -104,7 +105,8 @@ msgqueue_receive_msg(msgqueue_t *msgqueue, kernel_or_gvaddr_t buffer,
 		goto out;
 	}
 
-	memcpy(&size, msgqueue->buf + msgqueue->head, sizeof(size_t));
+	(void)memcpy((uint8_t *)&size, msgqueue->buf + msgqueue->head,
+		     sizeof(size_t));
 
 	// Dequeue message from the head of the queue
 	void *hyp_va =
@@ -130,7 +132,8 @@ msgqueue_receive_msg(msgqueue_t *msgqueue, kernel_or_gvaddr_t buffer,
 	msgqueue->count--;
 
 	// Update head value
-	msgqueue->head += msgqueue->max_msg_size + sizeof(size_t);
+	msgqueue->head += (count_t)(msgqueue->max_msg_size + sizeof(size_t));
+	assert(msgqueue->head <= msgqueue->queue_size);
 
 	if (msgqueue->head == msgqueue->queue_size) {
 		msgqueue->head = 0U;
@@ -168,7 +171,8 @@ msgqueue_flush_queue(msgqueue_t *msgqueue)
 		(void)virq_clear(&msgqueue->rcv_source);
 	}
 
-	memset(msgqueue->buf, 0, msgqueue->queue_size);
+	(void)memset_s(msgqueue->buf, msgqueue->queue_size, 0,
+		       msgqueue->queue_size);
 	msgqueue->count = 0U;
 	msgqueue->head	= 0U;
 	msgqueue->tail	= 0U;

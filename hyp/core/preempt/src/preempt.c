@@ -23,11 +23,22 @@
 static _Thread_local count_t preempt_disable_count;
 
 static const count_t preempt_count_mask =
-	util_bit(PREEMPT_BITS_COUNT_MAX + 1) - 1;
-static const count_t preempt_count_max	  = preempt_count_mask;
-static const count_t preempt_cpu_init	  = util_bit(PREEMPT_BITS_CPU_INIT);
-static const count_t preempt_in_interrupt = util_bit(PREEMPT_BITS_IN_INTERRUPT);
-static const count_t preempt_abort_kernel = util_bit(PREEMPT_BITS_ABORT_KERNEL);
+	(count_t)util_bit((index_t)PREEMPT_BITS_COUNT_MAX + 1U) - 1U;
+static const count_t preempt_count_max = preempt_count_mask;
+
+static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_CPU_INIT,
+	      "PREEMPT_BITS_CPU_INIT invalid");
+static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_IN_INTERRUPT,
+	      "PREEMPT_BITS_IN_INTERRUPT invalid");
+static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_ABORT_KERNEL,
+	      "PREEMPT_BITS_ABORT_KERNEL invalid");
+
+static const count_t preempt_cpu_init =
+	(count_t)util_bit((index_t)PREEMPT_BITS_CPU_INIT);
+static const count_t preempt_in_interrupt =
+	(count_t)util_bit((index_t)PREEMPT_BITS_IN_INTERRUPT);
+static const count_t preempt_abort_kernel =
+	(count_t)util_bit((index_t)PREEMPT_BITS_ABORT_KERNEL);
 
 void
 preempt_handle_boot_cpu_early_init(void) LOCK_IMPL
@@ -45,7 +56,7 @@ preempt_handle_boot_cpu_start(void) LOCK_IMPL
 }
 
 void
-preempt_handle_thread_start() LOCK_IMPL
+preempt_handle_thread_start(void) LOCK_IMPL
 {
 	// Arrange for preemption to be enabled by the first
 	// preempt_enable() call.
@@ -68,7 +79,9 @@ preempt_handle_thread_entry_from_user(thread_entry_reason_t reason)
 	}
 
 	preempt_enable();
+#if defined(VERBOSE) && VERBOSE
 	assert_preempt_enabled();
+#endif
 }
 
 void
@@ -117,7 +130,7 @@ preempt_interrupt_dispatch(void) LOCK_IMPL
 			// reschedule.
 			scheduler_trigger();
 		} else {
-			scheduler_schedule();
+			(void)scheduler_schedule();
 		}
 	}
 
@@ -139,7 +152,7 @@ preempt_enable_in_irq(void) LOCK_IMPL
 }
 
 bool
-preempt_abort_dispatch(void)
+preempt_abort_dispatch(void) LOCK_IMPL
 {
 	preempt_disable_count |= preempt_in_interrupt;
 
@@ -151,7 +164,7 @@ preempt_abort_dispatch(void)
 }
 
 void
-preempt_handle_scheduler_stop(void)
+preempt_handle_scheduler_stop(void) LOCK_IMPL
 {
 	count_t old_count = preempt_disable_count;
 	asm_interrupt_disable_acquire(&preempt_disable_count);

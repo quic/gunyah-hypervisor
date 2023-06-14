@@ -1,0 +1,14 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define timer_lp structure {
+	timeout		type ticks_t;
+	cpu_index	type cpu_index_t;
+	node		structure list_node(contained);
+};
+
+define timer_lp_queue structure {
+	timeout		type ticks_t;
+	list		structure list;
+};

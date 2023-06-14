@@ -10,7 +10,7 @@
 \#include <hypconstants.h>
 \#include <asm/asm_defs.inc>
 
-\#if defined(ARCH_ARM_8_5_BTI)
+\#if defined(ARCH_ARM_FEAT_BTI)
 #define BTI_J	bti j
 #define BTI_NOP	nop
 #define HYPERCALL_ALIGN	0x10

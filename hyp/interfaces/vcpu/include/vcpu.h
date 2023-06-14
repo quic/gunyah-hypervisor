@@ -9,7 +9,7 @@
 error_t
 vcpu_configure(thread_t *thread, vcpu_option_flags_t vcpu_options);
 
-// Set a VCPU's initial execution state, including its entry point and context.
+// Set a VCPU's initial execution state and start execution.
 //
 // The target thread must be a VCPU, its scheduling lock must be held by the
 // caller, and it must be currently blocked by the SCHEDULER_BLOCK_VCPU_OFF
@@ -19,18 +19,32 @@ vcpu_configure(thread_t *thread, vcpu_option_flags_t vcpu_options);
 //
 // If the target VCPU has ever run, it must have called vcpu_poweroff() before
 // this function is called on it.
-bool
-vcpu_poweron(thread_t *vcpu, paddr_t entry_point, register_t context)
-	REQUIRE_SCHEDULER_LOCK(vcpu);
+bool_result_t
+vcpu_poweron(thread_t *vcpu, vmaddr_result_t entry_point,
+	     register_result_t context) REQUIRE_SCHEDULER_LOCK(vcpu);
 
-// Tear down the current thread's VCPU execution state.
+// Halt execution of the current VCPU and tear down its execution state.
 //
 // The caller must be a runnable VCPU. This function will block the caller with
 // the SCHEDULER_BLOCK_VCPU_OFF flag and yield. It does not return on success;
 // if the thread is re-activated by a call to vcpu_poweron(), it will jump
 // directly to the new userspace context.
+//
+// If the last_vcpu argument is true, the caller must be the only powered-on
+// VCPU attached to a VPM group, or else not attached to a VPM group. Otherwise,
+// it must be attached to a VPM group with at least one other powered-on VCPU.
+// If the last_vcpu argument is not correct, this call may return ERROR_DENIED.
+// This check is not performed if the force argument is true.
 error_t
-vcpu_poweroff(void);
+vcpu_poweroff(bool last_vcpu, bool force);
+
+// Halt the current thread's VCPU execution state.
+//
+// This function will raise the VCPU's halt VIRQ, notifying its handler VM
+// that the VCPU has halted. It can be called by any module that has
+// already blocked a VCPU in a way that might need handling by RM.
+noreturn void
+vcpu_halted(void);
 
 // Suspend a VCPU.
 //
@@ -143,3 +157,10 @@ vcpu_gpr_read(thread_t *thread, uint8_t reg_num);
 // Update the VCPU's general purpose registers
 void
 vcpu_gpr_write(thread_t *thread, uint8_t reg_num, register_t value);
+
+error_t
+vcpu_bind_virq(thread_t *vcpu, vic_t *vic, virq_t virq,
+	       vcpu_virq_type_t virq_type);
+
+error_t
+vcpu_unbind_virq(thread_t *vcpu, vcpu_virq_type_t virq_type);

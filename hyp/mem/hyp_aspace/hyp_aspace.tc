@@ -2,14 +2,25 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#if defined(ARCH_ARM_8_1_VHE)
+define HYP_ASPACE_MAP_DIRECT_BITS constant type count_t =
+	PLATFORM_PHYS_ADDRESS_BITS;
+
+#if defined(ARCH_ARM_FEAT_VHE)
 define HYP_ASPACE_LOW_BITS constant type count_t =
 	HYP_ASPACE_MAP_DIRECT_BITS + 1;
 define HYP_ASPACE_HIGH_BITS constant type count_t = 39;
 define HYP_ASPACE_PHYSACCESS_OFFSET constant uintptr =
 	(1 << HYP_ASPACE_MAP_DIRECT_BITS);
 #else
-define HYP_ASPACE_BITS constant type count_t = HYP_ASPACE_MAP_DIRECT_BITS + 2;
+define HYP_ASPACE_LOW_BITS constant type count_t = 39;
+// Reserve the upper half of the address space for the randomised
+// constant-offset mappings
+define HYP_ASPACE_LOWER_HALF_BITS constant type count_t =
+	HYP_ASPACE_LOW_BITS - 1;
+define HYP_ASPACE_PHYSACCESS_OFFSET_BASE constant uintptr =
+	(1 << (HYP_ASPACE_LOW_BITS - 1));
+define HYP_ASPACE_PHYSACCESS_OFFSET_RND_MAX constant uintptr =
+	(1 << (HYP_ASPACE_LOW_BITS - 2)) - 1;
 #endif
 
 define lookup_result bitfield<32> {

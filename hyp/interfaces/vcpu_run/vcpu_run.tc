@@ -1,0 +1,36 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define vcpu_run_state public enumeration(explicit) {
+	// VCPU is ready to run on the next vcpu_run hypercall.
+	ready = 0;
+
+	// VCPU is sleeping until an interrupt arrives. The wakeup IRQ will be
+	// asserted when that occurs.
+	//
+	// If the platform implements PSCI and the VCPU has called
+	// PSCI_CPU_SUSPEND, the first state data word will be the requested
+	// suspend state. Otherwise, it will be 0 (e.g. if the VCPU is
+	// executing a WFI instruction).
+	expects_wakeup = 1;
+
+	// VCPU is powered off and cannot execute until another VCPU triggers
+	// a power-on event. The wakeup IRQ will be asserted when that occurs.
+	// The first state data word will be a vcpu_run_poweroff_flags bitmap.
+	powered_off = 2;
+
+	// VCPU is blocked in EL2 for an unspecified reason. This state is
+	// normally transient, and the EL1 caller should retry after yielding.
+	blocked = 3;
+
+	// VCPU has an unrecoverable fault.
+	fault = 6;
+};
+
+// Type of the first state data word for VCPU_RUN_STATE_POWERED_OFF.
+define vcpu_run_poweroff_flags public bitfield<32> {
+	// True if the VCPU has permanently exited and cannot be powered on.
+	0		exited		bool;
+	others		unknown = 0;
+};

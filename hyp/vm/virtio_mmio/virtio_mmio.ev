@@ -1,0 +1,22 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module virtio_mmio
+
+subscribe object_create_virtio_mmio
+
+subscribe object_activate_virtio_mmio
+	unwinder(virtio_mmio)
+
+subscribe object_deactivate_virtio_mmio
+
+subscribe object_cleanup_virtio_mmio(virtio_mmio)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_VIRTIO_MMIO_FRONTEND]
+	handler virtio_mmio_frontend_handle_virq_check_pending(source)
+
+subscribe virq_check_pending[VIRQ_TRIGGER_VIRTIO_MMIO_BACKEND]
+	handler virtio_mmio_backend_handle_virq_check_pending(source)
+
+subscribe vdevice_access[VDEVICE_TYPE_VIRTIO_MMIO](vdevice, offset, access_size, value, is_write)

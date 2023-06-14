@@ -8,7 +8,7 @@
 #error The layout of vcpu_gpr_t has changed
 #endif
 
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 // Define symbols for pointer auth offsets so we can access them from macros
 .equ	vcpu_pauth_tp_pauth_ofs, \
 	OFS_THREAD_VCPU_REGS_PAUTH - OFS_THREAD_VCPU_REGS_GPR
@@ -38,14 +38,14 @@
 #endif
 
 .macro  vcpu_pauth_entry tp:req, kp:req, tl:req, th:req, kl:req, kh:req
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	thread_get_self	\tp, offset=OFS_THREAD_VCPU_REGS_GPR
 	vcpu_pauth_entry_thread \tp, \kp, \tl, \th, \kl, \kh
 #endif
 .endm
 
 .macro  vcpu_pauth_entry_thread tp:req, kp:req, tl:req, th:req, kl:req, kh:req
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	adrl	\kp, aarch64_pauth_keys
 	vcpu_pauth_entry_key DA, \tp, \kp, \tl, \th, \kl, \kh
 	vcpu_pauth_entry_key DB, \tp, \kp, \tl, \th, \kl, \kh
@@ -57,14 +57,14 @@
 .endm
 
 .macro  vcpu_pauth_exit tp:req, tl:req, th:req, spsr:req, tmp:req
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	thread_get_self	\tp, offset=OFS_THREAD_VCPU_REGS_GPR
 	vcpu_pauth_exit_thread \tp, \tl, \th, \spsr, \tmp
 #endif
 .endm
 
 .macro  vcpu_pauth_exit_thread tp:req, tl:req, th:req, spsr:req, tmp:req
-#if defined(ARCH_ARM_8_3_PAUTH)
+#if defined(ARCH_ARM_FEAT_PAuth)
 	// There is no need to sign userspace return addresses, but we do need
 	// to check that we are actually returning to userspace here: either
 	// SPSR_EL2.M[4]=1 (for 32-bit mode) or SPSR_EL2.M[3]=0 (for EL1 or

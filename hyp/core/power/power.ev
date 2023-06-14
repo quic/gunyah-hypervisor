@@ -6,18 +6,39 @@ module power
 
 subscribe boot_cold_init
 	priority 100
-
-subscribe boot_cpu_cold_init
-
-subscribe boot_cpu_warm_init
-	priority 100
 	require_preempt_disabled
 
-subscribe power_cpu_resume()
+subscribe boot_cpu_warm_init
 	priority first
+	require_preempt_disabled
+
+subscribe power_cpu_resume(was_poweroff)
+	priority first
+	require_preempt_disabled
 
 subscribe power_cpu_suspend(state)
 	priority last
+	require_preempt_disabled
 
-subscribe power_cpu_offline
-	priority last
+// This has higher priority than PSCI to avoid PSCI put the core into CPU_SUSPEND first
+subscribe idle_yield
+	priority 100
+	require_preempt_disabled
+
+subscribe timer_action[TIMER_ACTION_POWER_CPU_ON_RETRY]
+	handler power_handle_timer_action(timer)
+	require_preempt_disabled
+
+#if defined(MODULE_VM_ROOTVM)
+subscribe rootvm_started()
+	require_preempt_disabled
+#endif
+
+subscribe boot_hypervisor_handover
+	priority first
+
+#if defined(POWER_START_ALL_CORES)
+subscribe boot_hypervisor_start
+	priority -1000
+	require_preempt_disabled
+#endif

@@ -1,0 +1,21 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module addrspace
+
+#if defined(INTERFACE_VCPU_RUN)
+subscribe vdevice_access_fixed_addr
+	priority last
+
+subscribe vcpu_run_check
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_run_resume[VCPU_RUN_STATE_ADDRSPACE_VMMIO_READ]
+	handler addrspace_handle_vcpu_run_resume_read(vcpu, resume_data_0)
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_run_resume[VCPU_RUN_STATE_ADDRSPACE_VMMIO_WRITE]
+	handler addrspace_handle_vcpu_run_resume_write(vcpu)
+	require_scheduler_lock(vcpu)
+#endif

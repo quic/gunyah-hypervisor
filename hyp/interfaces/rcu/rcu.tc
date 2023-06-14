@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+define rcu_read global structure opaque_lock;
+
 define rcu_update_class enumeration {
 };
 

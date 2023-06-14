@@ -11,10 +11,21 @@
 
 extend partition object {
 	${o}_list structure list;
-	${o}_list_lock structure spinlock;
 };
 
 extend $o object {
 	${o}_list_node structure list_node(contained);
+};
+#end for
+
+#for obj in $object_list
+#set o = str(obj)
+
+#if o in ('partition','hwirq',)
+#continue
+#end if
+
+extend partition object {
+	${o}_list_lock structure spinlock;
 };
 #end for

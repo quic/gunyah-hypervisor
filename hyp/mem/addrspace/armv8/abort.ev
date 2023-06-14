@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module addrspace
+
+#if defined(INTERFACE_VCPU)
+subscribe vcpu_trap_pf_abort_guest(esr, ipa, far)
+	priority last
+
+subscribe vcpu_trap_data_abort_guest(esr, ipa, far)
+	priority last
+#endif

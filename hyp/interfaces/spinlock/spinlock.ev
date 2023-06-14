@@ -30,4 +30,4 @@ event spinlock_released
 	param lock: spinlock_t *
 
 event spinlock_assert_held
-	param lock: spinlock_t *
+	param lock: const spinlock_t *

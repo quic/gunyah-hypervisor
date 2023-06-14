@@ -1,0 +1,70 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vcpu_run
+
+// Triggered at the start of vcpu_run() to handle resume data specified by a
+// VCPU run state. A handler is needed for any run state that defines the
+// semantics of the resume data words.
+//
+// The run state is the last value returned by vcpu_run_check for this VCPU.
+// If vcpu_run_check has never been triggered before, the run state is
+// VCPU_RUN_STATE_READY, which should not have a handler for this event.
+//
+// This event is called with the VCPU's scheduler lock held.
+selector_event vcpu_run_resume
+	selector run_state: vcpu_run_state_t
+	param vcpu: thread_t *
+	param resume_data_0: register_t
+	param resume_data_1: register_t
+	param resume_data_2: register_t
+	return: error_t = OK
+
+// Triggered by vcpu_run() if the targeted thread is found to be blocked,
+// either before or after attempting to yield to it.
+//
+// Handlers for this event should try to determine why the VCPU cannot
+// continue to run. If the reason is known, the corresponding vcpu_run_state_t
+// value should be returned; otherwise, return VCPU_RUN_STATE_BLOCKED.
+//
+// A handler is needed in any module that either defines a vcpu_run_state
+// value, or implements the vcpu_expects_wakeup event (which has a
+// corresponding run state, VCPU_RUN_STATE_EXPECTS_WAKEUP).
+//
+// If the returned run state value defines extra data, e.g. the address and
+// size of a faulting memory access, it should be returned in the state_data_*
+// pointers.
+//
+// This event is called with the VCPU's scheduler lock held.
+handled_event vcpu_run_check
+	param vcpu: const thread_t *
+	param state_data_0: register_t *
+	param state_data_1: register_t *
+	param state_data_2: register_t *
+	return: vcpu_run_state_t = VCPU_RUN_STATE_BLOCKED
+
+module vcpu_run
+
+subscribe object_activate_thread(thread)
+
+subscribe object_deactivate_thread(thread)
+
+subscribe task_queue_execute[TASK_QUEUE_CLASS_VCPU_RUN_WAKEUP_VIRQ](entry)
+
+subscribe vcpu_wakeup
+	handler vcpu_run_trigger_virq
+
+subscribe vcpu_poweron(vcpu)
+
+subscribe thread_killed
+
+subscribe vcpu_bind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu, vic, virq)
+
+subscribe vcpu_unbind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu)
+
+subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_VCPU_RUN]
+
+subscribe vcpu_run_check(vcpu, state_data_0)
+	priority first
+	require_scheduler_lock(vcpu)

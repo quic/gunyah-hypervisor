@@ -1,0 +1,9 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend vcpu_register_set enumeration {
+	X = 0; // index 0-30
+	PC = 1; // index 0
+	SP_EL = 2; // index 0-1
+};

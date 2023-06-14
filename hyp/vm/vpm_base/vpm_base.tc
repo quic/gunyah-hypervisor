@@ -1,0 +1,16 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend vpm_group object {
+	options			bitfield vpm_group_option_flags;
+};
+
+define vpm_mode enumeration {
+	NONE = 0;
+	IDLE;
+};
+
+extend thread object {
+	vpm_mode		enumeration vpm_mode;
+};

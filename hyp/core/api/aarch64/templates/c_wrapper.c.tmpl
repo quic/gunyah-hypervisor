@@ -35,17 +35,17 @@
 
 #def trace_out(hypcall_num, hypcall)
     #set trace_fmt = $hypcall.name + " ret:"
-    #for i, input in $hypcall.outputs[:4]
+    #for i, input in $hypcall.outputs[:5]
         #if not $input.ignore
             #set trace_fmt = trace_fmt + " {:#x}"
         #end if
     #end for
     TRACE(USER, HYPERCALL, "${trace_fmt}"
     #if len($hypcall.outputs) == 1
-        , (register_t)_ret
+        , (register_t)ret_
     #else
-        #for i, output in $hypcall.outputs[:4]
-        , (register_t)_ret.$register_expr($output)
+        #for i, output in $hypcall.outputs[:5]
+        , (register_t)ret_.$register_expr($output)
         #end for
     #end if
     );
@@ -71,7 +71,7 @@ ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)}
 
 ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
     #if $hypcall.outputs
-        $return_type($hypcall) _ret;
+        $return_type($hypcall) ret_;
     #end if
 
     trigger_thread_entry_from_user_event(THREAD_ENTRY_REASON_HYPERCALL);
@@ -97,9 +97,9 @@ ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
                 #set has_ignores = True
     if (compiler_unexpected(${input.name} != (${input.ctype})${input.default}U)) {
                 #if len($hypcall.outputs) == 1
-        _ret = ERROR_ARGUMENT_INVALID;
+        ret_ = ERROR_ARGUMENT_INVALID;
                 #else
-        _ret = ($return_type($hypcall)){ .${error_ret.name} = ERROR_ARGUMENT_INVALID };
+        ret_ = ($return_type($hypcall)){ .${error_ret.name} = ERROR_ARGUMENT_INVALID };
                 #end if
         goto out;
     }
@@ -116,7 +116,7 @@ ${type_signature($hypcall, suffix=$wrapper_suffix, ignored_inputs=True)} {
 
     ## call the implementation
     #if $hypcall.outputs
-    _ret =
+    ret_ =
     #end if
     $prefix${hypcall.name}(#slurp
     #set sep=''
@@ -140,7 +140,7 @@ out:
 
     ## return the result, if any
     #if $hypcall.outputs
-    return _ret;
+    return ret_;
     #else
         #if has_ignores:
     return;

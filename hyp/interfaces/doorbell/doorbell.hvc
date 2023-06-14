@@ -7,14 +7,14 @@ define doorbell_bind_virq hypercall {
 	doorbell	input type cap_id_t;
 	vic		input type cap_id_t;
 	virq		input type virq_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
 define doorbell_unbind_virq hypercall {
 	call_num	0x11;
 	doorbell	input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -22,7 +22,7 @@ define doorbell_send hypercall {
 	call_num	0x12;
 	doorbell	input type cap_id_t;
 	new_flags	input uint64;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	old_flags	output uint64;
 };
@@ -31,7 +31,7 @@ define doorbell_receive hypercall {
 	call_num	0x13;
 	doorbell	input type cap_id_t;
 	clear_flags	input uint64;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 	old_flags	output uint64;
 };
@@ -39,7 +39,7 @@ define doorbell_receive hypercall {
 define doorbell_reset hypercall {
 	call_num	0x14;
 	doorbell	input type cap_id_t;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };
 
@@ -48,6 +48,6 @@ define doorbell_mask hypercall {
 	doorbell	input type cap_id_t;
 	enable_mask	input uint64;
 	ack_mask	input uint64;
-	_res0		input uregister;
+	res0		input uregister;
 	error		output enumeration error;
 };

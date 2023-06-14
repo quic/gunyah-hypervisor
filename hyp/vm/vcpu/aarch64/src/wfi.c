@@ -9,6 +9,7 @@
 
 #include <compiler.h>
 #include <idle.h>
+#include <log.h>
 #include <preempt.h>
 #include <scheduler.h>
 #include <thread.h>
@@ -32,13 +33,30 @@ vcpu_handle_scheduler_selected_thread(thread_t *thread, bool *can_idle)
 }
 
 vcpu_trap_result_t
-vcpu_handle_vcpu_trap_wfi(void)
+vcpu_handle_vcpu_trap_wfi(ESR_EL2_ISS_WFI_WFE_t iss)
 {
+	vcpu_trap_result_t ret = VCPU_TRAP_RESULT_EMULATED;
+
 	thread_t *current = thread_get_self();
 	assert(current->kind == THREAD_KIND_VCPU);
 
 	assert_preempt_enabled();
 	preempt_disable();
+
+#if defined(ARCH_ARM_FEAT_WFxT)
+	// Inject a trap to the guest if it uses the WFIT instruction
+	// without checking their availability in the ID registers first.
+	// Remove once support for FEAT_WFxT is added to the hypervisor.
+	// FIXME:
+	if (ESR_EL2_ISS_WFI_WFE_get_TI(&iss) == ISS_WFX_TI_WFIT) {
+		TRACE_AND_LOG(ERROR, WARN, "WFIT trap from thread {:#x}",
+			      (register_t)current);
+		ret = VCPU_TRAP_RESULT_FAULT;
+		goto out;
+	}
+#else
+	(void)iss;
+#endif
 
 #if !defined(PREEMPT_NULL)
 #if !defined(VCPU_IDLE_IN_EL1) || !VCPU_IDLE_IN_EL1
@@ -83,7 +101,7 @@ vcpu_handle_vcpu_trap_wfi(void)
 out:
 	preempt_enable();
 
-	return VCPU_TRAP_RESULT_EMULATED;
+	return ret;
 }
 
 #if defined(VCPU_IDLE_IN_EL1) && VCPU_IDLE_IN_EL1
@@ -91,7 +109,7 @@ void
 vcpu_handle_scheduler_quiescent(void)
 {
 	thread_t *current = thread_get_self();
-	if (current->kind == THREAD_KIND_VCPU) {
+	if (compiler_expected(current->kind == THREAD_KIND_VCPU)) {
 		current->vcpu_regs_el2.hcr_el2 = register_HCR_EL2_read();
 		HCR_EL2_set_TWI(&current->vcpu_regs_el2.hcr_el2,
 				!current->vcpu_can_idle);
@@ -148,6 +166,16 @@ vcpu_expects_wakeup(const thread_t *thread)
 	return scheduler_is_blocked(thread, SCHEDULER_BLOCK_VCPU_WFI) ||
 	       trigger_vcpu_expects_wakeup_event(thread);
 }
+
+#if defined(MODULE_VM_VCPU_RUN)
+vcpu_run_state_t
+vcpu_arch_handle_vcpu_run_check(const thread_t *thread)
+{
+	return scheduler_is_blocked(thread, SCHEDULER_BLOCK_VCPU_WFI)
+		       ? VCPU_RUN_STATE_EXPECTS_WAKEUP
+		       : VCPU_RUN_STATE_BLOCKED;
+}
+#endif
 
 bool
 vcpu_pending_wakeup(void)

@@ -7,7 +7,8 @@
 
 #for e in $events
 
-$e.return_type
+#set noreturn = 'noreturn ' if $e.noreturn else ''
+$noreturn$e.return_type
 trigger_${e.name}_event(#slurp
 #set sep = ''
 #if $e.params

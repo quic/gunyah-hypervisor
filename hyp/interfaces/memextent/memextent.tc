@@ -2,13 +2,14 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-define memextent_type enumeration {
+define memextent_type public enumeration {
 	BASIC = 0;
+	SPARSE = 1;
 };
 
 extend memextent object {
-	type	enumeration memextent_type;
 	parent	pointer object memextent;
+	type	enumeration memextent_type;
 };
 
 extend memextent_create structure module memextent {
@@ -17,6 +18,7 @@ extend memextent_create structure module memextent {
 
 extend error enumeration {
 	MEMEXTENT_MAPPINGS_FULL = 120;
+	MEMEXTENT_TYPE = 121;
 };
 
 // Memory extents have a simplified memtype which is distinct from
@@ -34,9 +36,10 @@ define memextent_memtype public enumeration(explicit) {
 define memextent_attrs public bitfield<32> {
 	2:0	access enumeration pgtable_access;
 	9:8	memtype enumeration memextent_memtype;
+	17:16	type enumeration memextent_type;
 	31	append bool;	// List append range
 	// Reserved bits
-	30:10,7:3 res_0 uregister(const) = 0;
+	30:18,15:10,7:3 res_0 uregister(const) = 0;
 };
 
 // Bitfield for mapping API attributes
@@ -54,4 +57,36 @@ define memextent_access_attrs public bitfield<32> {
 	6:4	kernel_access enumeration pgtable_access;
 	// Reserved bits
 	31:8,7,3 res_0 uregister(const) = 0;
+};
+
+define memextent_donate_type public enumeration(explicit) {
+	to_child = 0;		// Donate from parent to child
+	to_parent = 1;		// Donate from child to parent
+	to_sibling = 2;		// Donate to extent with same parent
+};
+
+define memextent_donate_options public bitfield<32> {
+	7:0	type	enumeration memextent_donate_type;
+	30:8	res_0	uregister(const) = 0;
+	31	no_sync	bool;
+};
+
+// Structure returned when looking up a mapping.
+define memextent_mapping structure {
+	addrspace	pointer object addrspace;
+	vbase		type vmaddr_t;
+	size		size;
+	attrs		bitfield memextent_mapping_attrs;
+};
+
+define memextent_modify_op public enumeration(explicit) {
+	unmap_all = 0;		// Remove all mappings from memextent
+	zero_range = 1;		// Zero a range of the memextent
+	sync_all = 255;		// Sync all previous memextent ops
+};
+
+define memextent_modify_flags public bitfield<32> {
+	7:0	op	enumeration memextent_modify_op;
+	30:8	res_0	uregister(const) = 0;
+	31	no_sync	bool;
 };

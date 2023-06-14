@@ -28,9 +28,11 @@ smccc_arch_features(uint32_t arg1, uint32_t *ret0)
 	    smccc_function_id_get_is_fast(&fn_id) &&
 	    (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		if (is_smc64) {
-			ret = trigger_smccc_arch_features_fast64_event(fn);
+			ret = trigger_smccc_arch_features_fast64_event(
+				(smccc_arch_function_t)fn);
 		} else {
-			ret = trigger_smccc_arch_features_fast32_event(fn);
+			ret = trigger_smccc_arch_features_fast32_event(
+				(smccc_arch_function_t)fn);
 		}
 	} else if ((smccc_function_id_get_interface_id(&fn_id) ==
 		    SMCCC_INTERFACE_ID_STANDARD_HYP) &&
@@ -38,10 +40,10 @@ smccc_arch_features(uint32_t arg1, uint32_t *ret0)
 		   (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		if (is_smc64) {
 			ret = trigger_smccc_standard_hyp_features_fast64_event(
-				fn);
+				(smccc_standard_hyp_function_t)fn);
 		} else {
 			ret = trigger_smccc_standard_hyp_features_fast32_event(
-				fn);
+				(smccc_standard_hyp_function_t)fn);
 		}
 	} else {
 		ret = SMCCC_UNKNOWN_FUNCTION32;
@@ -55,12 +57,10 @@ bool
 smccc_std_hyp_call_uid(uint32_t *ret0, uint32_t *ret1, uint32_t *ret2,
 		       uint32_t *ret3)
 {
-	// uuidgen -s -n @url -N "qualcomm.com/gunyah/smccc/standard_hyp"
-	// UUID: c1d58fcd-a453-5fdb-9265-ce36673d5f14
-	*ret0 = 0x673d5f14U;
-	*ret1 = 0x9265ce36U;
-	*ret2 = 0xa4535fdbU;
-	*ret3 = 0xc1d58fcdU;
+	*ret0 = (uint32_t)SMCCC_GUNYAH_UID0;
+	*ret1 = (uint32_t)SMCCC_GUNYAH_UID1;
+	*ret2 = (uint32_t)SMCCC_GUNYAH_UID2;
+	*ret3 = (uint32_t)SMCCC_GUNYAH_UID3;
 
 	return true;
 }

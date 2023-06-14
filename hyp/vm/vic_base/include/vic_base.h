@@ -7,7 +7,7 @@
 // Configure a new virtual interrupt controller object.
 error_t
 vic_configure(vic_t *vic, count_t max_vcpus, count_t max_virqs,
-	      count_t max_msis);
+	      count_t max_msis, bool allow_fixed_vmaddr);
 
 // Attach a new VCPU to an active virtual interrupt controller object.
 error_t

@@ -8,6 +8,7 @@
 #include <atomic.h>
 #include <compiler.h>
 #include <cpulocal.h>
+#include <enum.h>
 #include <idle.h>
 #include <ipi.h>
 #include <preempt.h>
@@ -18,6 +19,8 @@
 #include <events/rcu.h>
 
 #include "event_handlers.h"
+
+static_assert(PLATFORM_MAX_CORES <= 32U, "PLATFORM_MAX_CORES > 32");
 
 static rcu_state_t rcu_state;
 CPULOCAL_DECLARE_STATIC(rcu_cpu_state_t, rcu_state);
@@ -67,7 +70,7 @@ rcu_bitmap_refresh_active(void)
 		// loop, so the idle_yield event won't be rerun and the CPU
 		// won't be deactivated.
 		ipi_one(IPI_REASON_RESCHEDULE, cpu);
-		active_cpus &= ~util_bit(cpu);
+		active_cpus &= (uint32_t)(~util_bit(cpu));
 	}
 }
 
@@ -89,7 +92,7 @@ rcu_enqueue(rcu_entry_t *rcu_entry, rcu_update_class_t rcu_update_class)
 
 	cpu_index_t	 cpu	  = cpulocal_get_index();
 	rcu_cpu_state_t *my_state = &CPULOCAL_BY_INDEX(rcu_state, cpu);
-	rcu_batch_t	    *batch	  = &my_state->next_batch;
+	rcu_batch_t	*batch	  = &my_state->next_batch;
 
 	if (atomic_fetch_add_explicit(&my_state->update_count, 1U,
 				      memory_order_relaxed) == 0U) {
@@ -126,7 +129,7 @@ rcu_bitmap_activate_cpu(void) REQUIRE_PREEMPT_DISABLED
 	uint32_t	 cpu_bit  = (uint32_t)util_bit(cpu);
 	rcu_cpu_state_t *my_state = &CPULOCAL_BY_INDEX(rcu_state, cpu);
 
-	if (!my_state->is_active) {
+	if (compiler_unexpected(!my_state->is_active)) {
 		// We're not in the active CPU set. Add ourselves.
 		my_state->is_active = true;
 
@@ -198,8 +201,8 @@ rcu_bitmap_deactivate_cpu(void) REQUIRE_PREEMPT_DISABLED
 	// ensure that it is done after the end of any critical sections.
 	// However, it does not need ordering relative to the quiesce below;
 	// if it happens late then at worst we might get a redundant IPI.
-	atomic_fetch_and_explicit(&rcu_state.active_cpus, ~cpu_bit,
-				  memory_order_relaxed);
+	(void)atomic_fetch_and_explicit(&rcu_state.active_cpus, ~cpu_bit,
+					memory_order_relaxed);
 
 	// This sequential consistency fence matches the one in
 	// rcu_bitmap_quiesce when a new grace period starts, to ensure that
@@ -420,15 +423,15 @@ rcu_bitmap_notify(void)
 
 	// Advance the batches
 	bool waiting_updates = false;
-	for (rcu_update_class_t update_class = RCU_UPDATE_CLASS__MIN;
-	     update_class <= RCU_UPDATE_CLASS__MAX; update_class++) {
+	ENUM_FOREACH(RCU_UPDATE_CLASS, update_class)
+	{
 		// Ready batch should have been emptied by rcu_bitmap_update()
 		assert(my_state->ready_batch.heads[update_class] == NULL);
 
 		// Collect the heads to be shifted for this class
-		struct rcu_entry *waiting_head =
+		rcu_entry_t *waiting_head =
 			my_state->waiting_batch.heads[update_class];
-		struct rcu_entry *next_head =
+		rcu_entry_t *next_head =
 			my_state->next_batch.heads[update_class];
 
 		// Trigger further batch processing if necessary
@@ -478,26 +481,27 @@ rcu_bitmap_update(void)
 		goto out;
 	}
 
-	for (rcu_update_class_t update_class = RCU_UPDATE_CLASS__MIN;
-	     update_class <= RCU_UPDATE_CLASS__MAX; update_class++) {
-		struct rcu_entry *entry =
-			my_state->ready_batch.heads[update_class];
+	ENUM_FOREACH(RCU_UPDATE_CLASS, update_class)
+	{
+		rcu_entry_t *entry = my_state->ready_batch.heads[update_class];
 		my_state->ready_batch.heads[update_class] = NULL;
 
 		while (entry != NULL) {
 			// We must read the next pointer _before_ triggering
 			// the update, in case the update handler frees the
 			// object.
-			struct rcu_entry *next = entry->next;
-			status		       = rcu_update_status_union(
-						trigger_rcu_update_event(update_class, entry),
-						status);
+			rcu_entry_t *next = entry->next;
+			status		  = rcu_update_status_union(
+				   trigger_rcu_update_event(
+					   (rcu_update_class_t)update_class,
+					   entry),
+				   status);
 			entry = next;
 			update_count++;
 		}
 	}
 
-	if ((update_count != 0) &&
+	if ((update_count != 0U) &&
 	    (atomic_fetch_sub_explicit(&my_state->update_count, update_count,
 				       memory_order_relaxed) == update_count)) {
 		(void)atomic_fetch_sub_explicit(&rcu_state.waiter_count, 1U,
@@ -508,4 +512,26 @@ rcu_bitmap_update(void)
 
 out:
 	return rcu_update_status_get_need_schedule(&status);
+}
+
+void
+rcu_bitmap_handle_power_cpu_offline(void)
+{
+	// We shouldn't get here if there are any pending updates on this CPU.
+	// The power aggregation code should have checked this by calling
+	// rcu_has_pending_updates() before deciding to offline the core.
+	assert(atomic_load_relaxed(&CPULOCAL(rcu_state).update_count) == 0U);
+
+	// Always deactivate & quiesce the CPU, even if RCU doesn't need to run
+	// at the moment. This is because the CPU might have been left active
+	// when the last update was run, and it won't be able to deactivate
+	// once it goes offline.
+	rcu_bitmap_deactivate_cpu();
+}
+
+bool
+rcu_has_pending_updates(void)
+{
+	return compiler_unexpected(rcu_bitmap_should_run()) &&
+	       (atomic_load_relaxed(&CPULOCAL(rcu_state).update_count) != 0U);
 }

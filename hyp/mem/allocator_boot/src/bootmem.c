@@ -23,11 +23,24 @@ allocator_boot_handle_boot_runtime_first_init(void)
 {
 	assert((uintptr_t)&heap_private_end > (uintptr_t)&heap_private_start);
 
-	void  *base = &heap_private_start;
-	size_t size = (size_t)(&heap_private_end - &heap_private_start);
+	static_assert(
+		PLATFORM_HEAP_PRIVATE_SIZE <= PLATFORM_RW_DATA_SIZE,
+		"PLATFORM_HEAP_PRIVATE_SIZE must be <= PLATFORM_RW_DATA_SIZE");
+	static_assert(PLATFORM_RW_DATA_SIZE >= 0x200000,
+		      "PLATFORM_RW_DATA_SIZE must be >= 2MB");
+
+	// We only give heap within the first 2MB RW page to the bootmem. We
+	// will map the rest of the heap during the hyp_aspace init.
+	void	 *base	  = &heap_private_start;
+	uintptr_t map_end = util_balign_up((uintptr_t)base, 0x200000U);
+	uintptr_t end	  = util_min(
+		    map_end, (uintptr_t)base + (size_t)PLATFORM_HEAP_PRIVATE_SIZE);
+
+	assert((uintptr_t)base < end);
+	size_t size = end - (uintptr_t)base;
 
 	assert(base != NULL);
-	assert(size >= 0x1000);
+	assert(size >= 0x1000U);
 
 	bootmem_allocator.pool_base    = (uint8_t *)base;
 	bootmem_allocator.pool_size    = size;
@@ -71,7 +84,7 @@ bootmem_allocate_remaining(size_t *size)
 	assert(bootmem_allocator.alloc_offset <= bootmem_allocator.pool_size);
 	size_t free =
 		bootmem_allocator.pool_size - bootmem_allocator.alloc_offset;
-	if (free == 0) {
+	if (free == 0U) {
 		return void_ptr_result_error(ERROR_NOMEM);
 	}
 	*size = free;

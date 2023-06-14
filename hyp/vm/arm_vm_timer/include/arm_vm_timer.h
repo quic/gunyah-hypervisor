@@ -38,7 +38,9 @@ ticks_t
 arm_vm_timer_get_timeout_thread(thread_t *thread, arm_vm_timer_type_t tt);
 
 void
-arm_vm_timer_arch_timer_hw_irq_activated(arm_vm_timer_type_t tt);
+arm_vm_timer_arch_timer_hw_irq_activated(arm_vm_timer_type_t tt)
+	REQUIRE_PREEMPT_DISABLED;
 
 void
-arm_vm_timer_arch_timer_hw_irq_deactivate(arm_vm_timer_type_t tt);
+arm_vm_timer_arch_timer_hw_irq_deactivate(arm_vm_timer_type_t tt)
+	REQUIRE_PREEMPT_DISABLED;

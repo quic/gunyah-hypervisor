@@ -1,0 +1,15 @@
+// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+interface vcpu_run
+
+// Triggered after vcpu_run_is_enabled() becomes true for a VCPU. The VCPU's
+// scheduler lock is held by the caller.
+event vcpu_run_enabled
+	param vcpu: thread_t *
+
+// Triggered before vcpu_run_is_enabled() becomes false for a VCPU. The VCPU's
+// scheduler lock is held by the caller.
+event vcpu_run_disabled
+	param vcpu: thread_t *

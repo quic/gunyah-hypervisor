@@ -1,0 +1,15 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define cpu_power_state enumeration(explicit) {
+	off		= 0; // never booted
+	cold_boot	= 1; // in cold boot path, warm boot not yet reached
+	suspend		= 2; // suspend; might either resume or warm boot
+	offline		= 3; // voted off and called platform_cpu_off()
+	online		= 4; // finished warm boot
+	started		= 5; // voted on, but not yet finished warm boot
+};
+
+define cpu_power_state_array_t newtype
+	array(PLATFORM_MAX_CORES) enumeration cpu_power_state;

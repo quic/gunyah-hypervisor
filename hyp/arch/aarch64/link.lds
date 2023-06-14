@@ -32,6 +32,7 @@ SECTIONS
 	image_phys_start = LOADADDR(.text);
 	.text : AT (PLATFORM_LMA_BASE) {
 		*(.text.boot)
+		*(.text.boot.*)
 		*(SORT_BY_ALIGNMENT(.text .text.*))
 		KEEP(*(.text.debug));
 	} : text
@@ -61,7 +62,11 @@ SECTIONS
 
 	/* Package data for RootVM */
 	. = ALIGN(4096);
+#ifdef PLATFORM_ROOTVM_PKG_START_BASE
+	image_pkg_start = PLATFORM_ROOTVM_PKG_START_BASE;
+#else
 	image_pkg_start = . - image_virt_start + image_phys_start;
+#endif
 
 	/* align RW sections to the next 2MB page */
 	. = ALIGN(0x200000);
@@ -86,9 +91,12 @@ SECTIONS
 #endif
 
 	. = ALIGN(64);
+#if PLATFORM_RW_DATA_SIZE < 0x200000
+#error PLATFORM_RW_DATA_SIZE too small
+#endif
 	.heap.root (NOLOAD) : {
 		heap_private_start = .;
-		. = ALIGN(PLATFORM_HEAP_PRIVATE_SIZE);
+		. = data_base + PLATFORM_RW_DATA_SIZE;
 		heap_private_end = .;
 	} : NONE
 	image_virt_last = . - 1;

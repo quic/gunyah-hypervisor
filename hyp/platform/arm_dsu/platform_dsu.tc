@@ -1,0 +1,13 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(INTERFACE_VCPU)
+
+define IMP_CLUSTERIDR_EL1 bitfield<64> {
+	3:0		Revision	uint8;
+	7:4		Variant		uint8;
+	63:8		unknown=0;
+};
+
+#endif

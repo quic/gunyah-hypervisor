@@ -9,7 +9,7 @@ from ir import (
     Include, Symbol, Type, ConstExpr, Priority, Result, ExpectedArgs, Param,
     Selectors, SelectorParam, CountParam, Module, Event, HandledEvent,
     MultiEvent, SetupEvent, SelectorEvent, Subscription, Optional, Public,
-    Handler, Constant, Unwinder, Success, LockAnnotation, LockName)
+    Handler, Constant, Unwinder, Success, LockAnnotation, LockName, NoReturn)
 
 import collections
 import logging
@@ -134,7 +134,19 @@ class TransformToIR(Transformer):
         return r
 
     @v_args(meta=True)
+    def void_result(self, children, meta):
+        r = Result(children, void=True)
+        r.meta = meta
+        return r
+
+    @v_args(meta=True)
     def type_decl(self, children, meta):
+        t = Type(' '.join(str(c) for c in children))
+        t.meta = meta
+        return t
+
+    @v_args(meta=True)
+    def selector_const(self, children, meta):
         t = Type(' '.join(str(c) for c in children))
         t.meta = meta
         return t
@@ -194,6 +206,12 @@ class TransformToIR(Transformer):
             c = Priority(0)
         else:
             c = Priority(children[0])
+        c.meta = meta
+        return c
+
+    @v_args(meta=True)
+    def noreturn(self, children, meta):
+        c = NoReturn()
         c.meta = meta
         return c
 

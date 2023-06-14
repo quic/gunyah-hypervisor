@@ -113,7 +113,7 @@ doorbell_mask(doorbell_t *doorbell, doorbell_flags_t new_enable_mask,
 		// Deassert if new mask disables all currently asserted flags
 		(void)virq_clear(&doorbell->source);
 
-	} else if (!was_asserted & now_asserted) {
+	} else if (!was_asserted && now_asserted) {
 		// Assert if new mask enables flags that are already set
 		(void)virq_assert(&doorbell->source, false);
 		doorbell->flags &= ~doorbell->ack_mask;

@@ -24,6 +24,7 @@
 #include <refcount.h>
 #include <util.h>
 
+#include <events/allocator.h>
 #include <events/partition.h>
 
 #include <asm/cpu.h>
@@ -34,12 +35,21 @@ static partition_t  hyp_partition;
 static partition_t *root_partition;
 
 extern const char image_virt_start;
+extern const char image_virt_last;
 extern const char image_phys_start;
 extern const char image_phys_last;
 
 static const uintptr_t virt_start = (uintptr_t)&image_virt_start;
 static const paddr_t   phys_start = (paddr_t)&image_phys_start;
 static const paddr_t   phys_last  = (paddr_t)&image_phys_last;
+
+#if defined(ARCH_ARM) && ARCH_IS_64BIT
+// Ensure hypervisor is 2MiB page size aligned to use AArch64 2M block mappings
+static_assert((PLATFORM_RW_DATA_SIZE & 0x1fffffU) == 0U,
+	      "PLATFORM_RW_DATA_SIZE must be 2MB aligned");
+static_assert((PLATFORM_HEAP_PRIVATE_SIZE & 0x1fffffU) == 0U,
+	      "PLATFORM_HEAP_PRIVATE_SIZE must be 2MB aligned");
+#endif
 
 void NOINLINE
 partition_standard_handle_boot_cold_init(void)
@@ -49,16 +59,21 @@ partition_standard_handle_boot_cold_init(void)
 	hyp_partition.header.type = OBJECT_TYPE_PARTITION;
 	atomic_store_release(&hyp_partition.header.state, OBJECT_STATE_ACTIVE);
 
+	paddr_t hyp_heap_end =
+		(phys_last + 1U) - ((size_t)PLATFORM_RW_DATA_SIZE -
+				    (size_t)PLATFORM_HEAP_PRIVATE_SIZE);
 	// Add hypervisor memory as a mapped range.
 	hyp_partition.mapped_ranges[0].virt = virt_start;
 	hyp_partition.mapped_ranges[0].phys = phys_start;
 	hyp_partition.mapped_ranges[0].size =
-		(size_t)(phys_last - phys_start + 1U);
+		(size_t)(hyp_heap_end - phys_start);
 
 	// Allocate management structures for the hypervisor allocator.
-	allocator_init(&hyp_partition.allocator);
+	if (allocator_init(&hyp_partition.allocator) != OK) {
+		panic("allocator_init() failed for hyp partition");
+	}
 
-	// Configure partition to be priviledged
+	// Configure partition to be privileged
 	partition_option_flags_set_privileged(&hyp_partition.options, true);
 
 	// Get remaining boot memory and assign it to hypervisor allocator.
@@ -68,10 +83,35 @@ partition_standard_handle_boot_cold_init(void)
 		panic("no boot mem");
 	}
 
-	error_t err = allocator_heap_add_memory(&hyp_partition.allocator, ret.r,
-						hyp_alloc_size);
+	paddr_t phys = partition_virt_to_phys(&hyp_partition, (uintptr_t)ret.r);
+	assert(phys != PADDR_INVALID);
+
+	error_t err = trigger_allocator_add_ram_range_event(
+		&hyp_partition, phys, (uintptr_t)ret.r, hyp_alloc_size);
 	if (err != OK) {
-		panic("Error passing on bootmem to hypervisor allocator");
+		panic("Error moving bootmem to hyp_partition allocator");
+	}
+}
+
+void NOINLINE
+partition_standard_boot_add_private_heap(void)
+{
+	// Only the first 2MiB of RW data was mapped in the assembly mmu_init.
+	// The remainder is mapped by hyp_aspace_handle_boot_cold_init. Because
+	// of this, the additional memory if any needs to be added to the
+	// hyp_partition allocator here.
+	if ((size_t)PLATFORM_HEAP_PRIVATE_SIZE > 0x200000U) {
+		size_t remaining_size =
+			(size_t)PLATFORM_HEAP_PRIVATE_SIZE - 0x200000U;
+		paddr_t remaining_phys =
+			(phys_last + 1U) -
+			((size_t)PLATFORM_RW_DATA_SIZE - 0x200000U);
+
+		error_t err = partition_add_heap(&hyp_partition, remaining_phys,
+						 remaining_size);
+		if (err != OK) {
+			panic("Error expanding hyp_partition allocator");
+		}
 	}
 }
 

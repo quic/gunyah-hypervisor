@@ -31,13 +31,9 @@ list_get_head(list_t *list)
 {
 	assert(list != NULL);
 
-	list_node_t *node = NULL;
+	list_node_t *node = atomic_load_relaxed(&list->head.next);
 
-	if (!list_is_empty(list)) {
-		node = atomic_load_relaxed(&list->head.next);
-	}
-
-	return node;
+	return (node != &list->head) ? node : NULL;
 }
 
 static inline void
@@ -92,24 +88,6 @@ list_insert_at_tail_release(list_t *list, list_node_t *node)
 	list_insert_at_tail_explicit(list, node, memory_order_release);
 }
 
-static list_node_t *
-find_prev_node_based_on_order(list_node_t *head, list_node_t *new_node,
-			      bool (*compare_fn)(list_node_t *a,
-						 list_node_t *b))
-{
-	list_node_t *node = head;
-	assert(node != NULL);
-
-	while (atomic_load_relaxed(&node->next) != head) {
-		if (compare_fn(new_node, atomic_load_relaxed(&node->next))) {
-			break;
-		}
-		node = atomic_load_relaxed(&node->next);
-	}
-
-	return node;
-}
-
 static inline bool
 list_insert_in_order_explicit(list_t *list, list_node_t *node,
 			      bool (*compare_fn)(list_node_t *a,
@@ -122,9 +100,17 @@ list_insert_in_order_explicit(list_t *list, list_node_t *node,
 	bool	     new_head = false;
 	list_node_t *head     = &list->head;
 
-	list_node_t *prev =
-		find_prev_node_based_on_order(head, node, compare_fn);
-	list_node_t *next = atomic_load_relaxed(&prev->next);
+	list_node_t *prev = head;
+	list_node_t *next = atomic_load_relaxed(&head->next);
+
+	while (next != head) {
+		if (compare_fn(node, next)) {
+			break;
+		}
+
+		prev = next;
+		next = atomic_load_relaxed(&prev->next);
+	}
 
 	if (prev == head) {
 		new_head = true;

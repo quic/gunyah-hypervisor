@@ -16,6 +16,7 @@
 
 #include "event_handlers.h"
 
+// FIXME:
 // Unify list code in util module
 
 scheduler_block_properties_t
@@ -43,7 +44,7 @@ wait_queue_init(wait_queue_t *wait_queue)
 void
 wait_queue_prepare(wait_queue_t *wait_queue) LOCK_IMPL
 {
-	thread_t	 *self = thread_get_self();
+	thread_t    *self = thread_get_self();
 	list_node_t *node = &self->wait_queue_list_node;
 
 	assert(wait_queue != NULL);
@@ -71,7 +72,7 @@ wait_queue_finish(wait_queue_t *wait_queue) LOCK_IMPL
 	// Dequeue the thread
 	list_node_t *node = &self->wait_queue_list_node;
 
-	list_delete_node(&wait_queue->list, node);
+	(void)list_delete_node(&wait_queue->list, node);
 
 	spinlock_release(&wait_queue->lock);
 
@@ -99,7 +100,7 @@ wait_queue_put(void) LOCK_IMPL
 	assert_preempt_disabled();
 
 	scheduler_lock(self);
-	scheduler_unblock(self, SCHEDULER_BLOCK_WAIT_QUEUE);
+	(void)scheduler_unblock(self, SCHEDULER_BLOCK_WAIT_QUEUE);
 	scheduler_unlock(self);
 }
 
@@ -123,7 +124,7 @@ wait_queue_wakeup(wait_queue_t *wait_queue)
 
 	// Wakeup all waiters
 	thread_t *thread;
-	list_t   *list = &wait_queue->list;
+	list_t	 *list = &wait_queue->list;
 
 	list_foreach_container (thread, list, thread, wait_queue_list_node) {
 		scheduler_lock_nopreempt(thread);
@@ -133,9 +134,11 @@ wait_queue_wakeup(wait_queue_t *wait_queue)
 		scheduler_unlock_nopreempt(thread);
 	}
 
-	spinlock_release(&wait_queue->lock);
+	spinlock_release_nopreempt(&wait_queue->lock);
 
 	if (wakeup_any) {
 		scheduler_trigger();
 	}
+
+	preempt_enable();
 }

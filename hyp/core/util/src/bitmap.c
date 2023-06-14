@@ -10,11 +10,11 @@
 #include <compiler.h>
 #include <util.h>
 
-#define BITMAP_SET_BIT(x) ((register_t)1U << ((x % BITMAP_WORD_BITS)))
+#define BITMAP_SET_BIT(x) ((register_t)1U << (((x) % BITMAP_WORD_BITS)))
 #define BITMAP_WORD(x)	  ((x) / BITMAP_WORD_BITS)
 #define BITMAP_SIZE_ASSERT(bitmap, bit)                                        \
-	assert((compiler_sizeof_object(bitmap) / sizeof(register_t)) >         \
-	       BITMAP_WORD(bit))
+	assert((index_t)(compiler_sizeof_object(bitmap) /                      \
+			 sizeof(register_t)) > BITMAP_WORD(bit))
 
 bool
 bitmap_isset(const register_t *bitmap, index_t bit)

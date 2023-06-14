@@ -14,10 +14,13 @@ subscribe boot_cpu_warm_init
 	require_preempt_disabled
 
 subscribe thread_save_state()
+	require_preempt_disabled
 
 subscribe thread_context_switch_pre()
+	require_preempt_disabled
 
 subscribe thread_context_switch_post()
+	require_preempt_disabled
 
 subscribe object_create_thread
 
@@ -34,14 +37,18 @@ subscribe timer_action[TIMER_ACTION_PHYSICAL_TIMER]
 
 subscribe virq_check_pending[VIRQ_TRIGGER_VIRTUAL_TIMER]
 	handler arm_vm_timer_handle_virq_check_pending(trigger, source)
+	require_preempt_disabled
 
 subscribe virq_check_pending[VIRQ_TRIGGER_PHYSICAL_TIMER]
 	handler arm_vm_timer_handle_virq_check_pending(trigger, source)
+	require_preempt_disabled
 
 subscribe irq_received[HWIRQ_ACTION_VM_TIMER](irq)
+	require_preempt_disabled
 
-subscribe vcpu_poweroff()
+subscribe vcpu_stopped()
 
 subscribe power_cpu_suspend()
+	require_preempt_disabled
 
 subscribe vcpu_suspend()

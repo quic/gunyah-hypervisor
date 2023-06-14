@@ -1,0 +1,9 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#if defined(INTERFACE_VCPU) && defined(ARCH_ARM_FEAT_FGT) && ARCH_ARM_FEAT_FGT
+extend vcpu_el2_registers structure {
+	hfgwtr_el2	bitfield HFGWTR_EL2;
+};
+#endif

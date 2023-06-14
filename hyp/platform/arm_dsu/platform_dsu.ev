@@ -1,0 +1,11 @@
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_dsu
+
+#if defined(INTERFACE_VCPU)
+
+subscribe vcpu_trap_sysreg_read
+
+#endif

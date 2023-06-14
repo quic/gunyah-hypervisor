@@ -19,13 +19,27 @@ build_dir = 'build'
 commands_file = 'compile_commands.json'
 compile_commands = []
 
-build_preferences = [("gunyah-rm", 120)]
+conf_default_weight = 60
+build_preferences = {}
 
 files = set()
 incdirs = set()
 
 include_regex = re.compile('(-iquote|-I) (\\w+[-\\{:s}\\w]+)'.format(os.sep))
 imacros_regex = re.compile('(-imacros) (\\w+[-\\{:s}\\w.]+)'.format(os.sep))
+
+for dir, dir_dirs, dir_files in os.walk('config/featureset'):
+    regex = re.compile('^# indexer-weight: (\\d+)')
+    for file in dir_files:
+        file_base = os.path.splitext(file)[0]
+        if file.endswith('.conf'):
+            build_preferences[file_base] = conf_default_weight
+            infile = os.path.join(dir, file)
+            with open(infile, 'r') as f:
+                for i, line in enumerate(f):
+                    weights = regex.findall(line)
+                    if weights:
+                        build_preferences[file_base] = int(weights[0])
 
 for dir, dir_dirs, dir_files in os.walk(build_dir):
     if commands_file in dir_files:
@@ -42,10 +56,10 @@ newest = 0.0
 for time, f in compile_commands:
     x = os.stat(f)
     time = max(x.st_atime, x.st_mtime, x.st_ctime, time)
-    for p, weight in build_preferences:
+    for p in build_preferences.keys():
         if p in f:
             # Boost these to preference them
-            time += weight
+            time += build_preferences[p]
 
     if time > newest:
         newest = time
