@@ -1,4 +1,5 @@
-// 2020 Qualcomm Innovation Center, Inc. All rights reserved.
+// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+//
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Configure the message queue.
