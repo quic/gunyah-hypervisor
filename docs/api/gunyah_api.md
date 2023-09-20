@@ -668,13 +668,20 @@ Also see: [Capability Errors](#capability-errors)
 
 #### Doorbell Send
 
-Sets flags in the Doorbell. If following the send, the set of enabled flags as defined by the bitwise-AND of the DoorBell flags with the EnableMask, is non-zero, any bound virtual interrupt will be asserted.
+Sets flags in the Doorbell, and possibly asserts the bound virtual interrupt.
+
+The specified NewFlags will be set (with a bitwise-OR) in the Doorbell flags.
+
+If a VIRQ has been bound to the Doorbell, it will be asserted after setting the flags if either of the following is true:
+
+* The enabled Doorbell flags, as defined by the bitwise-AND of the flags and the EnableFlags argument to the most recent `doorbell_mask` call, is non-zero.
+* The VIRQ is edge-triggered.
 
 |    **Hypercall**:       |      `doorbell_send`                              |
 |-------------------------|---------------------------------------------------|
 |     Call number:        |     `hvc 0x6012`                                  |
 |     Inputs:             |     X0: Doorbell CapID                            |
-|                         |     X1: NewFlags FlagsBitmap  – Must be non-zero. |
+|                         |     X1: NewFlags FlagsBitmap                      |
 |                         |     X2: Reserved — Must be Zero                   |
 |     Outputs:            |     X0: Error Result                              |
 |                         |     X1: OldFlags FlagsBitmap                      |
@@ -689,13 +696,25 @@ FlagsBitmap: unsigned 64-bit bitmap
 
 OK – the operation was successful, and the result is valid.
 
-ERROR_ARGUMENT_INVALID – if a zero NewFlags value is passed in.
-
 Also see: [Capability Errors](#capability-errors)
 
 #### Doorbell Receive
 
-Reads and clears the flags of the Doorbell. If there is a pending bound virtual interrupt, it will be de-asserted.
+Reads and clears the flags of the Doorbell, and possibly clears the bound virtual interrupt.
+
+The specified ClearFlags will be set in the Doorbell flags. These must be nonzero; otherwise the call would have no effect.
+
+If a VIRQ has been bound to the Doorbell, it will be cleared after clearing the flags if all of the following are true:
+
+* The enabled Doorbell flags, as defined by the bitwise-AND of the flags and the EnableFlags argument to the most recent `doorbell_mask` call, is zero.
+* The VIRQ is level-triggered.
+
+The implementation does not guarantee that the VIRQ is cleared before the call returns. If level-triggered, the VIRQ is guaranteed to have been cleared before either of the following events occurs:
+
+* The VIRQ is delivered after being individually unmasked using a platform-specific Virtual Interrupt Controller API. This includes EOI events, if the implementation supports them.
+* An unspecified finite period of time has elapsed after the call is made.
+
+If the VIRQ is edge-triggered, then this call's effect on it is unspecified.
 
 |    **Hypercall**:       |      `doorbell_receive`                               |
 |-------------------------|-------------------------------------------------------|
@@ -1695,11 +1714,13 @@ For operations that affect address space mappings, the hypervisor will automatic
 
 *MemExtent Modify Operation:*
 
-|   Modify Operation                 |   Integer Value   |   Description                                                                                   |
-|------------------------------------|-------------------|-------------------------------------------------------------------------------------------------|
-|   MEMEXTENT_MODIFY_OP_UNMAP_ALL    |   0               |   Unmap the memory extent from all address spaces it was mapped into.                           |
-|   MEMEXTENT_MODIFY_OP_ZERO_RANGE   |   1               |   Zero the owned memory of an extent within the specified range. The NoSync flag must be set.   |
-|   MEMEXTENT_MODIFY_OP_SYNC_ALL     |   255             |   Synchronise all previous memory extent operations. The NoSync flag must not be set.           |
+|   Modify Operation                        |   Integer Value   |   Description                                                                                          |
+|-------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------|
+|   MEMEXTENT_MODIFY_OP_UNMAP_ALL           |   0               |   Unmap the memory extent from all address spaces it was mapped into.                                  |
+|   MEMEXTENT_MODIFY_OP_ZERO_RANGE          |   1               |   Zero the owned memory of an extent within the specified range. The NoSync flag must be set.          |
+|   MEMEXTENT_MODIFY_OP_CACHE_CLEAN_RANGE   |   2               |   Cache clean the owned memory of an extent within the specified range. The NoSync flag must be set.   |
+|   MEMEXTENT_MODIFY_OP_CACHE_FLUSH_RANGE   |   3               |   Cache flush the owned memory of an extent within the specified range. The NoSync flag must be set.   |
+|   MEMEXTENT_MODIFY_OP_SYNC_ALL            |   255             |   Synchronise all previous memory extent operations. The NoSync flag must not be set.                  |
 
 **Errors:**
 
@@ -2873,10 +2894,9 @@ The backend should make this call, when its VIRQ is asserted, to get a bitmap of
 |-|---|-----|
 |     0                |     `0x1`                  |     1 = NEW_BUFFER: notifies the device that there are new buffers to process in a queue.                       |
 |     1                |     `0x2`                  |     1 = RESET_RQST: notifies the device that a device reset has been requested.                                 |
-|     2                |     `0x4`                  |     1 = INTERRUPT_ACK: notifies the device that the frontend wrote to the InterruptACK register.                |
 |     3                |     `0x8`                  |     1 = DRIVER_OK: notifies the device that the frontend has set the DRIVER_OK bit of the Status register.      |
 |     4                |     `0x10`                 |     1 = FAILED: notifies the device that the frontend has set the FAILED bit of the Status register.            |
-|     63:5             |     `0xFFFFFFFF.FFFFFFE0`  |     Reserved = 0 [TBD notify reasons]                                                                           |
+|     63:5,2           |     `0xFFFFFFFF.FFFFFFE4`  |     Reserved = 0 [TBD notify reasons]                                                                           |
 
 **Errors:**
 

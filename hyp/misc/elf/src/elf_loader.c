@@ -6,15 +6,16 @@
 #include <hyptypes.h>
 #include <string.h>
 
-#include <hyp_aspace.h>
-
 #if ARCH_IS_64BIT
 #define USE_ELF64
 #endif
+
 #include <compiler.h>
 #include <elf.h>
 #include <elf_loader.h>
 #include <log.h>
+#include <partition.h>
+#include <pgtable.h>
 #include <trace.h>
 #include <util.h>
 
@@ -184,34 +185,22 @@ elf_load_phys(void *elf_file, size_t elf_max_size, paddr_t phys_base)
 		uintptr_t seg_base = elf_base + cur_phdr->p_offset;
 		paddr_t	  seg_dest = phys_base + cur_phdr->p_paddr;
 
-		error_t err;
-
-		paddr_t map_base = util_balign_down(
-			seg_dest, (paddr_t)PGTABLE_HYP_PAGE_SIZE);
-		size_t map_size =
-			util_balign_up(seg_dest + cur_phdr->p_memsz,
-				       (paddr_t)PGTABLE_HYP_PAGE_SIZE) -
-			map_base;
-
-		// FIXME: should we use phys_map and phys_access eventually?
-		err = hyp_aspace_map_direct(map_base, map_size,
-					    PGTABLE_ACCESS_RW,
-					    PGTABLE_HYP_MEMTYPE_WRITETHROUGH,
-					    VMSA_SHAREABILITY_INNER_SHAREABLE);
-		assert(err == OK);
+		char *dest =
+			(char *)partition_phys_map(seg_dest, cur_phdr->p_memsz);
+		partition_phys_access_enable(dest);
 
 		// copy elf segment data
-		(void)memcpy((char *)seg_dest, (char *)seg_base,
-			     cur_phdr->p_filesz);
+		(void)memcpy(dest, (char *)seg_base, cur_phdr->p_filesz);
 		// zero bss
 		size_t bss_size = cur_phdr->p_memsz - cur_phdr->p_filesz;
-		(void)memset_s((char *)(seg_dest + cur_phdr->p_filesz),
-			       bss_size, 0, bss_size);
+		(void)memset_s(dest + cur_phdr->p_filesz, bss_size, 0,
+			       bss_size);
+
+		partition_phys_access_disable(dest);
+		partition_phys_unmap(dest, seg_dest, cur_phdr->p_memsz);
 
 		LOG(DEBUG, INFO, "Elf copied from {:#x} to {:#x} - size {:#x}",
 		    seg_base, seg_dest, cur_phdr->p_filesz);
-		err = hyp_aspace_unmap_direct(map_base, map_size);
-		assert(err == OK);
 	}
 
 	ret = OK;

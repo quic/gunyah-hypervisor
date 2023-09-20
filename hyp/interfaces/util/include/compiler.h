@@ -19,28 +19,6 @@
 // On ARM, prefer clz and clrsb as they expand to single instructions (CLZ and
 // CLS). ffs and ctz need an extra RBIT first.
 
-#if defined(CLANG_CTU_AST)
-
-// Clang CTU analysis does not support _Generic in ASTs; cast everything to
-// uintmax_t instead, and offset the results for the ones that are
-// size-dependent.
-
-#define compiler_bitsize_offset(x)                                             \
-	(8 * (int)(sizeof(x) - sizeof(unsigned long long)))
-#define compiler_ffs(x) (index_t) __builtin_ffsll((unsigned long long)(x))
-#define compiler_clz(x)                                                        \
-	(index_t)(compiler_bitsize_offset(x) +                                 \
-		  __builtin_clzll((unsigned long long)(x)))
-#define compiler_ctz(x) (index_t) __builtin_ctzll((unsigned long long)(x))
-#define compiler_clrsb(x)                                                      \
-	(index_t)(compiler_bitsize_offset(x) +                                 \
-		  __builtin_clrsbll((long long)(x)))
-
-// Ensure this is never compiled to object code
-__asm__(".error");
-
-#else
-
 // clang-format off
 #define compiler_ffs(x) (index_t)_Generic(				       \
 	(x),								       \
@@ -67,9 +45,13 @@ __asm__(".error");
 	(x), long long: __builtin_clrsbll,				       \
 	long: __builtin_clrsbl,					       \
 	int: __builtin_clrsb)(x)
-// clang-format on
 
-#endif // !defined(CLANG_CTU_AST)
+#define compiler_popcount(x) (assert((x) != 0U), (index_t)_Generic(	       \
+	(x),								       \
+	unsigned long long: __builtin_popcountll,			       \
+	unsigned long: __builtin_popcountl,				       \
+	unsigned int: __builtin_popcount)(x))
+// clang-format on
 
 #define compiler_msb(x) ((sizeof(x) * 8U) - 1U - compiler_clz(x))
 

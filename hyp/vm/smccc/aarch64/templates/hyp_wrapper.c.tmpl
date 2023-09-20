@@ -31,6 +31,8 @@ ${variable.name}#slurp
 #if variable.category == 'bitfield'
 ## FIXME: this is an implementation detail of the type system
 ${variable.type_name}_cast((uint${8 * variable.size}_t)${val})#slurp
+#elif variable.category == 'union'
+(${variable.ctype}){ .raw = ${val} }#slurp
 #else
 (${variable.ctype})${val}#slurp
 #end if

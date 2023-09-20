@@ -7,7 +7,14 @@ define paddr_t public newtype uregister;
 define PADDR_INVALID constant type paddr_t = -1;
 define VADDR_INVALID constant uintptr = -1;
 
-define coreid_info structure {
-	part_num		uint16;
-	core_ID		enumeration core_id;
+define core_id_info structure(optimize) {
+	part_num	uint16;
+	core_id		enumeration core_id;
+};
+
+define core_id_rev_info structure(optimize) {
+	part_num	uint16;
+	core_id		enumeration core_id;
+	variant_min	uint8;
+	revision_min	uint8;
 };

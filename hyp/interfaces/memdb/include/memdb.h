@@ -5,14 +5,11 @@
 // FIXME: replace with a selector event
 typedef error_t (*memdb_fnptr)(paddr_t, size_t, void *);
 
-void
-memdb_init(void);
-
 // Populate the memory database. If any entry from the range already has an
 // owner, return error and do not update the database.
 //
 // The partition argument is the partition to use for memdb node allocations,
-// and typically should always be the hypervisor private partition.
+// and must always be the hypervisor private partition.
 error_t
 memdb_insert(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	     uintptr_t object, memdb_type_t obj_type);
@@ -22,7 +19,7 @@ memdb_insert(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 // the new object. If not, return error.
 //
 // The partition argument is the partition to use for memdb node allocations,
-// and typically should always be the hypervisor private partition.
+// and must always be the hypervisor private partition.
 error_t
 memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 	     uintptr_t object, memdb_type_t obj_type, uintptr_t prev_object,

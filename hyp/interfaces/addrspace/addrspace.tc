@@ -29,3 +29,7 @@ define addrspace_vmmio_configure_op public enumeration(explicit) {
 	ADD = 0;
 	REMOVE = 1;
 };
+
+define addrspace_attach_vdevice_flags public union {
+	raw		uint64;
+};

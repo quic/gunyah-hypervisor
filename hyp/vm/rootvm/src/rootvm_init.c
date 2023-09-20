@@ -40,6 +40,125 @@
 // dummy value.
 #define MAX_CAPS 2048
 
+static void
+copy_rm_env_data_to_rootvm_mem(hyp_env_data_t		hyp_env,
+			       const rm_env_data_hdr_t *rm_env_data,
+			       rt_env_data_t *crt_env, uint32_t env_data_size)
+{
+	paddr_t hyp_env_phys = hyp_env.env_ipa - hyp_env.me_ipa_base +
+			       PLATFORM_ROOTVM_LMA_BASE;
+	assert(util_is_baligned(hyp_env_phys, PGTABLE_VM_PAGE_SIZE));
+
+	void *va = partition_phys_map(hyp_env_phys, env_data_size);
+	partition_phys_access_enable(va);
+
+	(void)memcpy(va, (void *)crt_env,
+		     (rm_env_data->data_payload_size + sizeof(*rm_env_data) +
+		      sizeof(*crt_env)));
+	CACHE_CLEAN_RANGE((rm_env_data_hdr_t *)va,
+			  (rm_env_data->data_payload_size +
+			   sizeof(*rm_env_data) + sizeof(*crt_env)));
+
+	partition_phys_access_disable(va);
+	partition_phys_unmap(va, hyp_env_phys, env_data_size);
+}
+
+static void
+rootvm_close_env_data(qcbor_enc_ctxt_t	*qcbor_enc_ctxt,
+		      rm_env_data_hdr_t *rm_env_data)
+{
+	qcbor_err_t	    cb_err;
+	const_useful_buff_t payload_out_buff;
+
+	payload_out_buff.ptr = NULL;
+	payload_out_buff.len = 0;
+
+	cb_err = QCBOREncode_Finish(qcbor_enc_ctxt, &payload_out_buff);
+
+	if (cb_err != QCBOR_SUCCESS) {
+		panic("Env data encoding error, increase the buffer size");
+	}
+
+	rm_env_data->data_payload_size = (uint32_t)payload_out_buff.len;
+}
+
+typedef struct {
+	hyp_env_data_t	   hyp_env;
+	qcbor_enc_ctxt_t  *qcbor_enc_ctxt;
+	rm_env_data_hdr_t *rm_env_data;
+	rt_env_data_t	  *crt_env;
+} rootvm_init_env_info;
+
+static rootvm_init_env_info
+rootvm_init_env_data(partition_t *root_partition, uint32_t env_data_size)
+{
+	void_ptr_result_t alloc_ret;
+	hyp_env_data_t	  hyp_env; // Local on stack used as context
+	qcbor_enc_ctxt_t *qcbor_enc_ctxt;
+
+	rm_env_data_hdr_t *rm_env_data;
+	rt_env_data_t	  *crt_env;
+	uint32_t	   remaining_size;
+
+	alloc_ret = partition_alloc(root_partition, env_data_size,
+				    PGTABLE_VM_PAGE_SIZE);
+	if (alloc_ret.e != OK) {
+		panic("Allocate env_data failed");
+	}
+	crt_env = (rt_env_data_t *)alloc_ret.r;
+	(void)memset_s(crt_env, env_data_size, 0, env_data_size);
+
+	alloc_ret = partition_alloc(root_partition, sizeof(*qcbor_enc_ctxt),
+				    alignof(*qcbor_enc_ctxt));
+	if (alloc_ret.e != OK) {
+		panic("Allocate cbor_ctxt failed");
+	}
+
+	qcbor_enc_ctxt = (qcbor_enc_ctxt_t *)alloc_ret.r;
+	memset_s(qcbor_enc_ctxt, sizeof(*qcbor_enc_ctxt), 0,
+		 sizeof(*qcbor_enc_ctxt));
+
+	memset_s(&hyp_env, sizeof(hyp_env), 0, sizeof(hyp_env));
+
+	hyp_env.env_data_size = env_data_size;
+	remaining_size	      = env_data_size;
+
+	crt_env->signature = ROOTVM_ENV_DATA_SIGNATURE;
+	crt_env->version   = 1;
+
+	size_t rm_config_offset =
+		util_balign_up(sizeof(*crt_env), alignof(*rm_env_data));
+	assert(remaining_size >= (rm_config_offset + sizeof(*rm_env_data)));
+
+	remaining_size -= rm_config_offset;
+	rm_env_data =
+		(rm_env_data_hdr_t *)((uintptr_t)crt_env + rm_config_offset);
+
+	crt_env->rm_config_offset = rm_config_offset;
+	crt_env->rm_config_size	  = remaining_size;
+
+	rm_env_data->signature		 = RM_ENV_DATA_SIGNATURE;
+	rm_env_data->version		 = 1;
+	rm_env_data->data_payload_offset = sizeof(*rm_env_data);
+	rm_env_data->data_payload_size	 = 0U;
+
+	remaining_size -= sizeof(*rm_env_data);
+
+	useful_buff_t qcbor_data_buff;
+	qcbor_data_buff.ptr =
+		(((uint8_t *)rm_env_data) + rm_env_data->data_payload_offset);
+	qcbor_data_buff.len = remaining_size;
+
+	QCBOREncode_Init(qcbor_enc_ctxt, qcbor_data_buff);
+
+	return (rootvm_init_env_info){
+		.crt_env	= crt_env,
+		.hyp_env	= hyp_env,
+		.qcbor_enc_ctxt = qcbor_enc_ctxt,
+		.rm_env_data	= rm_env_data,
+	};
+}
+
 void NOINLINE
 rootvm_init(void)
 {
@@ -115,65 +234,16 @@ rootvm_init(void)
 		goto cspace_fail;
 	}
 
-	void_ptr_result_t alloc_ret;
-	hyp_env_data_t	  hyp_env; // Local on stack used as context
-	qcbor_enc_ctxt_t *qcbor_enc_ctxt;
+	uint32_t env_data_size = 0x4000;
 
-	rm_env_data_hdr_t *rm_env_data;
-	rt_env_data_t	  *crt_env;
-	uint32_t	   env_data_size = 0x4000;
-	uint32_t	   remaining_size;
+	rootvm_init_env_info info =
+		rootvm_init_env_data(root_partition, env_data_size);
 
-	alloc_ret = partition_alloc(root_partition, env_data_size,
-				    PGTABLE_VM_PAGE_SIZE);
-	if (alloc_ret.e != OK) {
-		panic("Allocate env_data failed");
-	}
-	crt_env = (rt_env_data_t *)alloc_ret.r;
-	(void)memset_s(crt_env, env_data_size, 0, env_data_size);
+	hyp_env_data_t	  hyp_env	 = info.hyp_env;
+	qcbor_enc_ctxt_t *qcbor_enc_ctxt = info.qcbor_enc_ctxt;
 
-	alloc_ret = partition_alloc(root_partition, sizeof(*qcbor_enc_ctxt),
-				    alignof(*qcbor_enc_ctxt));
-	if (alloc_ret.e != OK) {
-		panic("Allocate cbor_ctxt failed");
-	}
-
-	qcbor_enc_ctxt = (qcbor_enc_ctxt_t *)alloc_ret.r;
-	memset_s(qcbor_enc_ctxt, sizeof(*qcbor_enc_ctxt), 0,
-		 sizeof(*qcbor_enc_ctxt));
-
-	memset_s(&hyp_env, sizeof(hyp_env), 0, sizeof(hyp_env));
-
-	hyp_env.env_data_size = env_data_size;
-	remaining_size	      = env_data_size;
-
-	crt_env->signature = ROOTVM_ENV_DATA_SIGNATURE;
-	crt_env->version   = 1;
-
-	size_t rm_config_offset =
-		util_balign_up(sizeof(*crt_env), alignof(*rm_env_data));
-	assert(remaining_size >= (rm_config_offset + sizeof(*rm_env_data)));
-
-	remaining_size -= rm_config_offset;
-	rm_env_data =
-		(rm_env_data_hdr_t *)((uintptr_t)crt_env + rm_config_offset);
-
-	crt_env->rm_config_offset = rm_config_offset;
-	crt_env->rm_config_size	  = remaining_size;
-
-	rm_env_data->signature		 = RM_ENV_DATA_SIGNATURE;
-	rm_env_data->version		 = 1;
-	rm_env_data->data_payload_offset = sizeof(*rm_env_data);
-	rm_env_data->data_payload_size	 = 0U;
-
-	remaining_size -= sizeof(*rm_env_data);
-
-	useful_buff_t qcbor_data_buff;
-	qcbor_data_buff.ptr =
-		(((uint8_t *)rm_env_data) + rm_env_data->data_payload_offset);
-	qcbor_data_buff.len = remaining_size;
-
-	QCBOREncode_Init(qcbor_enc_ctxt, qcbor_data_buff);
+	rm_env_data_hdr_t *rm_env_data = info.rm_env_data;
+	rt_env_data_t	  *crt_env     = info.crt_env;
 
 	QCBOREncode_OpenMap(qcbor_enc_ctxt);
 
@@ -213,21 +283,8 @@ rootvm_init(void)
 				  &hyp_env, qcbor_enc_ctxt);
 
 	QCBOREncode_CloseMap(qcbor_enc_ctxt);
-	{
-		qcbor_err_t	    cb_err;
-		const_useful_buff_t payload_out_buff;
 
-		payload_out_buff.ptr = NULL;
-		payload_out_buff.len = 0;
-
-		cb_err = QCBOREncode_Finish(qcbor_enc_ctxt, &payload_out_buff);
-
-		if (cb_err != QCBOR_SUCCESS) {
-			panic("Env data encoding error, increase the buffer size");
-		}
-
-		rm_env_data->data_payload_size = (uint32_t)payload_out_buff.len;
-	}
+	rootvm_close_env_data(qcbor_enc_ctxt, rm_env_data);
 
 	crt_env->runtime_ipa   = hyp_env.runtime_ipa;
 	crt_env->app_ipa       = hyp_env.app_ipa;
@@ -238,22 +295,8 @@ rootvm_init(void)
 	crt_env->gicr_base     = hyp_env.gicr_base;
 
 	// Copy the rm_env_data to the root VM memory
-	paddr_t hyp_env_phys = hyp_env.env_ipa - hyp_env.me_ipa_base +
-			       PLATFORM_ROOTVM_LMA_BASE;
-	assert(util_is_baligned(hyp_env_phys, PGTABLE_VM_PAGE_SIZE));
-
-	void *va = partition_phys_map(hyp_env_phys, env_data_size);
-	partition_phys_access_enable(va);
-
-	(void)memcpy(va, (void *)crt_env,
-		     (rm_env_data->data_payload_size + sizeof(*rm_env_data) +
-		      sizeof(*crt_env)));
-	CACHE_CLEAN_RANGE((rm_env_data_hdr_t *)va,
-			  (rm_env_data->data_payload_size +
-			   sizeof(*rm_env_data) + sizeof(*crt_env)));
-
-	partition_phys_access_disable(va);
-	partition_phys_unmap(va, hyp_env_phys, env_data_size);
+	copy_rm_env_data_to_rootvm_mem(hyp_env, rm_env_data, crt_env,
+				       env_data_size);
 
 	// Setup the root VM thread
 	if (object_activate_thread(root_thread) != OK) {

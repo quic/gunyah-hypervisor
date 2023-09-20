@@ -199,9 +199,9 @@ irq_max(void)
 }
 
 void
-irq_enable(hwirq_t *hwirq)
+irq_enable_shared(hwirq_t *hwirq)
 {
-	platform_irq_enable(hwirq->irq);
+	platform_irq_enable_shared(hwirq->irq);
 }
 
 void
@@ -211,9 +211,9 @@ irq_enable_local(hwirq_t *hwirq)
 }
 
 void
-irq_disable_nosync(hwirq_t *hwirq)
+irq_disable_shared_nosync(hwirq_t *hwirq)
 {
-	platform_irq_disable(hwirq->irq);
+	platform_irq_disable_shared(hwirq->irq);
 }
 
 void
@@ -229,16 +229,17 @@ irq_disable_local_nowait(hwirq_t *hwirq)
 }
 
 void
-irq_disable_sync(hwirq_t *hwirq)
+irq_disable_shared_sync(hwirq_t *hwirq)
 {
-	irq_disable_nosync(hwirq);
+	irq_disable_shared_nosync(hwirq);
 
 	// Wait for any in-progress IRQ deliveries on other CPUs to complete.
 	//
 	// This works regardless of the RCU implementation because IRQ delivery
-	// itself is in an RCU critical section, and the irq_disable_nosync()
-	// is enough to guarantee that any delivery that hasn't started its
-	// critical section yet will not receive the IRQ.
+	// itself is in an RCU critical section, and the
+	// irq_disable_shared_nosync() is enough to guarantee that any delivery
+	// that hasn't started its critical section yet will not receive the
+	// IRQ.
 	rcu_sync();
 }
 
@@ -270,7 +271,7 @@ irq_handle_object_deactivate_hwirq(hwirq_t *hwirq)
 		platform_irq_disable_local(hwirq->irq);
 		preempt_enable();
 	} else {
-		platform_irq_disable(hwirq->irq);
+		platform_irq_disable_shared(hwirq->irq);
 	}
 
 	// Remove this HWIRQ from the dispatch table.
@@ -280,11 +281,11 @@ irq_handle_object_deactivate_hwirq(hwirq_t *hwirq)
 static void
 disable_unhandled_irq(irq_result_t irq_r) REQUIRE_PREEMPT_DISABLED
 {
-	TRACE(DEBUG, WARN, "disabling unhandled HW IRQ {:d}", irq_r.r);
+	TRACE(ERROR, WARN, "disabling unhandled HW IRQ {:d}", irq_r.r);
 	if (platform_irq_is_percpu(irq_r.r)) {
 		platform_irq_disable_local(irq_r.r);
 	} else {
-		platform_irq_disable(irq_r.r);
+		platform_irq_disable_shared(irq_r.r);
 	}
 	platform_irq_priority_drop(irq_r.r);
 	platform_irq_deactivate(irq_r.r);
@@ -305,7 +306,7 @@ irq_interrupt_dispatch_one(void) REQUIRE_PREEMPT_DISABLED
 		goto out;
 	} else {
 		assert(irq_r.e == OK);
-		TRACE(DEBUG, INFO, "acknowledged HW IRQ {:d}", irq_r.r);
+		TRACE(INFO, INFO, "acknowledged HW IRQ {:d}", irq_r.r);
 
 		// The entire IRQ delivery is an RCU critical section.
 		//
@@ -350,7 +351,7 @@ irq_interrupt_dispatch(void)
 	}
 
 	if (spurious) {
-		TRACE(DEBUG, INFO, "spurious EL2 IRQ");
+		TRACE(INFO, INFO, "spurious EL2 IRQ");
 	}
 
 	return ipi_handle_relaxed();

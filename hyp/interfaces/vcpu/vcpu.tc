@@ -34,6 +34,21 @@ define vcpu_register_set public enumeration(explicit) {
 	// All values are arch-specific
 };
 
+// Relevant modules (such as the debug module) need to extend this bitfield
+// and add their configuration flags for the hypercall_vcpu_configure
+// hypercall. Then in their thread_activate handlers they need to check the
+// values of these flags and act on them.
+define vcpu_option_flags public bitfield<64> {
+	0		pinned			bool = 0;
+	8		critical		bool = 0;
+	others		unknown = 0;
+};
+
+// Private vcpu flags for modules to consolidate runtime boolean flags.
+define vcpu_runtime_flags bitfield<32> {
+	others		unknown = 0;
+};
+
 define vcpu_poweron_flags public bitfield<64> {
 	0	preserve_entry_point		bool;
 	1	preserve_context		bool;

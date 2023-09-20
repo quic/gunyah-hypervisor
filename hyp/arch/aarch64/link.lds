@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#define __ASSEMBLER__
 #include <hypconstants.h>
 
 #if ((PLATFORM_LMA_BASE & ((1 << 21) - 1)) != 0)
@@ -91,6 +92,7 @@ SECTIONS
 #endif
 
 	. = ALIGN(64);
+	. = ALIGN(MEMDB_MIN_SIZE);
 #if PLATFORM_RW_DATA_SIZE < 0x200000
 #error PLATFORM_RW_DATA_SIZE too small
 #endif

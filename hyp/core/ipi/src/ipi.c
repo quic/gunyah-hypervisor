@@ -342,6 +342,17 @@ ipi_handle_preempt_interrupt(void)
 #endif
 
 void
+ipi_handle_scheduler_quiescent(void)
+{
+	assert_preempt_disabled();
+
+	bool reschedule = ipi_handle_relaxed();
+	if (reschedule) {
+		scheduler_trigger();
+	}
+}
+
+void
 ipi_handle_scheduler_stop(void)
 {
 	ipi_others(IPI_REASON_ABORT_STOP);

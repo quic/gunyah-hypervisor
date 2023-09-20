@@ -2130,6 +2130,100 @@ pgtable_modify_mapping(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 	return vret;
 }
 
+static void
+map_modifier_insert_new_leaf(const pgtable_t *pgt, vmaddr_t virtual_address,
+			     index_t idx, stack_elem_t stack[PGTABLE_LEVEL_NUM],
+			     pgtable_map_modifier_args_t *margs,
+			     size_t addr_size, index_t level,
+			     const bool		 use_block,
+			     vmsa_level_table_t *cur_table)
+{
+	index_t new_page_start_level;
+	bool	page_block_fence;
+
+	if (margs->new_page_start_level != PGTABLE_INVALID_LEVEL) {
+		new_page_start_level	    = margs->new_page_start_level;
+		page_block_fence	    = false;
+		margs->new_page_start_level = PGTABLE_INVALID_LEVEL;
+	} else {
+		// if current level is start level, no need to update
+		// entry count
+		new_page_start_level = (level > pgt->start_level) ? (level - 1U)
+								  : level;
+		page_block_fence     = true;
+	}
+
+#if 0
+	// FIXME: also need to search forwards for occupied entries
+	bool contiguous = map_should_set_cont(
+		margs->orig_virtual_address, margs->orig_size,
+		virtual_address, level);
+#else
+	bool contiguous = false;
+#endif
+
+	// allowed to map a block
+	if (use_block) {
+		set_block_entry(cur_table, idx, margs->phys, margs->upper_attrs,
+				margs->lower_attrs, contiguous,
+				page_block_fence, false);
+	} else {
+		set_page_entry(cur_table, idx, margs->phys, margs->upper_attrs,
+			       margs->lower_attrs, contiguous,
+			       page_block_fence);
+	}
+
+	// check if need to set all page table levels
+	set_pgtables(virtual_address, stack, new_page_start_level, level, 1U,
+		     pgt->start_level);
+
+	// update the physical address for next mapping
+	margs->phys += addr_size;
+	assert(!util_add_overflows(margs->phys, addr_size));
+}
+
+static pgtable_modifier_ret_t
+map_modifier_update_existing_leaf(
+	pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
+	vmsa_entry_t cur_entry, index_t idx, index_t cur_level,
+	pgtable_entry_types_t type, stack_elem_t stack[PGTABLE_LEVEL_NUM],
+	index_t *next_level, vmaddr_t *next_virtual_address, size_t *next_size,
+	pgtable_map_modifier_args_t *margs)
+{
+	pgtable_modifier_ret_t vret = PGTABLE_MODIFIER_RET_CONTINUE;
+	// If the existing mapping is consistent with the required
+	// mapping, we don't need to do anything, even if try_map is
+	// true.
+	if (pgtable_maybe_keep_mapping(cur_entry, type, margs, cur_level)) {
+		goto out;
+	}
+
+	// If try_map is set, we will abort the mapping operation.
+	if (margs->try_map) {
+		margs->error		     = ERROR_EXISTING_MAPPING;
+		margs->partially_mapped_size = margs->orig_size - size;
+		vret			     = PGTABLE_MODIFIER_RET_ERROR;
+		goto out;
+	}
+
+	// If this is only an access update, we can do it in place.
+	if (pgtable_maybe_update_access(
+		    pgt, stack, idx, type, margs, cur_level, virtual_address,
+		    size, next_virtual_address, next_size, next_level)) {
+		goto out;
+	}
+
+	// We need a non-trivial update using a BBM sequence and/or a
+	// block split.
+	vret = pgtable_modify_mapping(pgt, virtual_address, size, cur_entry,
+				      idx, cur_level, type, stack, margs,
+				      next_level, next_virtual_address,
+				      next_size);
+
+out:
+	return vret;
+}
+
 // @brief Modify current entry for mapping the specified virt address to the
 // physical address.
 //
@@ -2161,36 +2255,10 @@ map_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 
 	// Handle existing block or page mappings.
 	if (!pgtable_entry_types_get_invalid(&type)) {
-		// If the existing mapping is consistent with the required
-		// mapping, we don't need to do anything, even if try_map is
-		// true.
-		if (pgtable_maybe_keep_mapping(cur_entry, type, margs,
-					       cur_level)) {
-			goto out;
-		}
-
-		// If try_map is set, we will abort the mapping operation.
-		if (margs->try_map) {
-			margs->error		     = ERROR_EXISTING_MAPPING;
-			margs->partially_mapped_size = margs->orig_size - size;
-			vret = PGTABLE_MODIFIER_RET_ERROR;
-			goto out;
-		}
-
-		// If this is only an access update, we can do it in place.
-		if (pgtable_maybe_update_access(pgt, stack, idx, type, margs,
-						cur_level, virtual_address,
-						size, next_virtual_address,
-						next_size, next_level)) {
-			goto out;
-		}
-
-		// We need a non-trivial update using a BBM sequence and/or a
-		// block split.
-		vret = pgtable_modify_mapping(pgt, virtual_address, size,
-					      cur_entry, idx, cur_level, type,
-					      stack, margs, next_level,
-					      next_virtual_address, next_size);
+		vret = map_modifier_update_existing_leaf(
+			pgt, virtual_address, size, cur_entry, idx, cur_level,
+			type, stack, next_level, next_virtual_address,
+			next_size, margs);
 		goto out;
 	}
 
@@ -2213,48 +2281,9 @@ map_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 	if ((addr_size <= level_size) &&
 	    (use_block || pgtable_entry_types_get_page(&allowed)) &&
 	    (util_is_baligned(margs->phys, addr_size))) {
-		index_t new_page_start_level;
-		bool	page_block_fence;
-
-		if (margs->new_page_start_level != PGTABLE_INVALID_LEVEL) {
-			new_page_start_level = margs->new_page_start_level;
-			page_block_fence     = false;
-			margs->new_page_start_level = PGTABLE_INVALID_LEVEL;
-		} else {
-			// if current level is start level, no need to update
-			// entry count
-			new_page_start_level =
-				level > pgt->start_level ? level - 1U : level;
-			page_block_fence = true;
-		}
-
-#if 0
-		// FIXME: also need to search forwards for occupied entries
-		bool contiguous = map_should_set_cont(
-			margs->orig_virtual_address, margs->orig_size,
-			virtual_address, level);
-#else
-		bool contiguous = false;
-#endif
-
-		// allowed to map a block
-		if (use_block) {
-			set_block_entry(cur_table, idx, margs->phys,
-					margs->upper_attrs, margs->lower_attrs,
-					contiguous, page_block_fence, false);
-		} else {
-			set_page_entry(cur_table, idx, margs->phys,
-				       margs->upper_attrs, margs->lower_attrs,
-				       contiguous, page_block_fence);
-		}
-
-		// check if need to set all page table levels
-		set_pgtables(virtual_address, stack, new_page_start_level,
-			     level, 1U, pgt->start_level);
-
-		// update the physical address for next mapping
-		margs->phys += addr_size;
-		assert(!util_add_overflows(margs->phys, addr_size));
+		map_modifier_insert_new_leaf(pgt, virtual_address, idx, stack,
+					     margs, addr_size, level, use_block,
+					     cur_table);
 	} else if (pgtable_entry_types_get_next_level_table(&allowed)) {
 		error_t ret = pgtable_add_table_entry(
 			pgt, margs, level, stack, virtual_address, size,

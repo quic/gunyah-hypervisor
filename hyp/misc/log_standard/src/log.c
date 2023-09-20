@@ -66,20 +66,13 @@ log_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 	char	      entry_buf[LOG_ENTRY_BUFFER_SIZE];
 
 	// Add the data to the log buffer only if:
-	// - The requested action is logging, and logging is enabled, or
-	// - The requested action is tracing, and putting trace messages in the
-	// log buffer is enabled.
-	bool	   trace_action = ((action == TRACE_ACTION_TRACE) ||
-				   (action == TRACE_ACTION_TRACE_AND_LOG));
-	bool	   log_action	= ((action == TRACE_ACTION_LOG) ||
-			   (action == TRACE_ACTION_TRACE_AND_LOG));
-	register_t class_flags	= trace_get_class_flags();
+	// - The requested action is logging, and logging is enabled
+	bool	   log_action  = ((action == TRACE_ACTION_LOG) ||
+				  (action == TRACE_ACTION_TRACE_AND_LOG));
+	register_t class_flags = trace_get_class_flags();
 	if (compiler_unexpected(
 		    ((!log_action ||
-		      ((class_flags & TRACE_CLASS_BITS(LOG_BUFFER)) == 0))) &&
-		    ((!trace_action ||
-		      ((class_flags & TRACE_CLASS_BITS(LOG_TRACE_BUFFER)) ==
-		       0))))) {
+		      ((class_flags & TRACE_CLASS_BITS(LOG_BUFFER)) == 0U))))) {
 		goto out;
 	}
 
@@ -88,7 +81,7 @@ log_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 	// values will be too big and unwieldy to use. Since log formatting is a
 	// slow process anyway, might as well add some nice time-stamps.
 	ticks_t	      now = platform_timer_get_current_ticks();
-	nanoseconds_t ns  = platform_convert_ticks_to_ns(now);
+	nanoseconds_t ns  = platform_timer_convert_ticks_to_ns(now);
 
 	microseconds_t usec = ns / (microseconds_t)1000;
 	uint64_t       sec  = usec / TIMER_MICROSECS_IN_SECOND;

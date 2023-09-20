@@ -171,25 +171,25 @@ define gicr_vlpi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 define gicr_sgi_base structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	reserved @ 0x0000	uint32(atomic);
 	igroupr0 @ 0x0080	uint32(atomic);
-	igroupr_e @ 0x0084	uint32(atomic);
+	igroupr_e @ 0x0084	array(2) uint32(atomic);
 	isenabler0 @ 0x0100	uint32(atomic);
-	isenabler_e @ 0x0104	uint32(atomic);
+	isenabler_e @ 0x0104	array(2) uint32(atomic);
 	icenabler0 @ 0x0180	uint32(atomic);
-	icenabler_e @ 0x0184	uint32(atomic);
+	icenabler_e @ 0x0184	array(2) uint32(atomic);
 	ispendr0 @ 0x0200	uint32(atomic);
-	ispendr_e @ 0x0204	uint32(atomic);
+	ispendr_e @ 0x0204	array(2) uint32(atomic);
 	icpendr0 @ 0x0280	uint32(atomic);
-	icpendr_e @ 0x0284	uint32(atomic);
+	icpendr_e @ 0x0284	array(2) uint32(atomic);
 	isactiver0 @ 0x0300	uint32(atomic);
-	isactiver_e @ 0x0304	uint32(atomic);
+	isactiver_e @ 0x0304	array(2) uint32(atomic);
 	icactiver0 @ 0x0380	uint32(atomic);
-	icactiver_e @ 0x0384	uint32(atomic);
+	icactiver_e @ 0x0384	array(2) uint32(atomic);
 	ipriorityr @ 0x0400	array(GIC_PPI_BASE + GIC_PPI_NUM) uint8(atomic);
 	ipriorityr_e @ 0x0420	array(GIC_PPI_EXT_NUM) uint8(atomic);
 	icfgr @ 0x0C00		array(2) uint32(atomic);
-	icfgr_e @ 0x0C08	uint32(atomic);
+	icfgr_e @ 0x0C08	array(4) uint32(atomic);
 	igrpmodr0 @ 0x0D00	uint32(atomic);
-	igrpmodr_e @ 0x0D04	uint32(atomic);
+	igrpmodr_e @ 0x0D04	array(2) uint32(atomic);
 	nsacr @ 0x0E00		uint32(atomic);
 };
 

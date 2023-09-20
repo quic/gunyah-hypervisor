@@ -104,6 +104,14 @@ memextent_unmap_all(memextent_t *me);
 error_t
 memextent_zero_range(memextent_t *me, size_t offset, size_t size);
 
+// Cache clean all owned regions of a memory extent in the given range.
+error_t
+memextent_cache_clean_range(memextent_t *me, size_t offset, size_t size);
+
+// Cache flush all owned regions of a memory extent in the given range.
+error_t
+memextent_cache_flush_range(memextent_t *me, size_t offset, size_t size);
+
 // Update the access rights on an existing mapping.
 //
 // There may still be in-progress EL2 operations using the old access rights.

@@ -54,7 +54,7 @@ platform_irq_is_percpu(irq_t irq);
 
 // Enable delivery of a specified IRQ, which must not be per-CPU.
 void
-platform_irq_enable(irq_t irq);
+platform_irq_enable_shared(irq_t irq);
 
 // Enable delivery of a specified per-CPU IRQ, on the calling CPU.
 void
@@ -72,7 +72,7 @@ platform_irq_enable_percpu(irq_t irq, cpu_index_t cpu);
 // On some platforms, this function must busy-wait until the IRQ controller has
 // acknowledged that the interrupt is disabled.
 void
-platform_irq_disable(irq_t irq);
+platform_irq_disable_shared(irq_t irq);
 
 // Disable delivery of a specified per-CPU IRQ, on the calling CPU.
 //

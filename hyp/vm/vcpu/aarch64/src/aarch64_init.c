@@ -90,7 +90,7 @@ vcpu_handle_boot_cold_init(void)
 		assert(rand_r.e == OK);
 		atomic_store_relaxed(&scxt_count, rand_r.r);
 	} else {
-		LOG(ERROR, WARN, "platform SCXTNUM_ELx access disabled!");
+		LOG(DEBUG, DEBUG, "platform SCXTNUM_ELx access disabled!");
 	}
 }
 #endif
@@ -250,8 +250,8 @@ vcpu_arch_handle_object_create_thread(thread_create_t thread_create)
 
 #if defined(ARCH_ARM_HAVE_SCXT)
 		if (!scxt_disabled) {
-			vcpu_option_flags_set_scxt_allowed(
-				&thread->vcpu_options, true);
+			vcpu_runtime_flags_set_scxt_allowed(&thread->vcpu_flags,
+							    true);
 		}
 #endif
 	}

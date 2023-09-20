@@ -732,7 +732,8 @@ gicd_access_allowed(size_t size, size_t offset)
 
 static bool
 gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
-		  size_t offset, register_t *val, size_t access_size)
+		  size_t offset, register_t *val, size_t access_size,
+		  bool last_gicr)
 {
 	bool ret = true;
 
@@ -764,16 +765,12 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		GICR_TYPER_set_Aff3(
 			&typer,
 			MPIDR_EL1_get_Aff3(&gicr_vcpu->vcpu_regs_mpidr_el1));
+		GICR_TYPER_set_Last(&typer, last_gicr);
 
-		// The last bit must indicate whether this is the last GICR in a
-		// contiguous range. This is true either if it is at the end of
-		// the VGIC's array, or if the next entry in the array is NULL.
-		GICR_TYPER_set_Last(
-			&typer,
-			(gicr_num == (vic->gicr_count - 1U)) ||
-				(atomic_load_relaxed(
-					 &vic->gicr_vcpus[gicr_num + 1U]) ==
-				 NULL));
+		// The Processor Number is used only to select the target GICR
+		// in ITS commands. When ARE is disabled, it also determines the
+		// CPU's bit in ITARGETSR, but we don't support that. So it is
+		// safe for this to be the logical VCPU index.
 		GICR_TYPER_set_Processor_Num(&typer, gicr_num);
 #if VGIC_HAS_LPI
 		GICR_TYPER_set_PLPIS(&typer, vgic_has_lpis(vic));
@@ -1105,7 +1102,8 @@ vgic_handle_gicd_access(vic_t *vic, size_t offset, size_t access_size,
 
 static vcpu_trap_result_t
 vgic_handle_gicr_access(vic_t *vic, thread_t *thread, size_t offset,
-			size_t access_size, register_t *value, bool is_write)
+			size_t access_size, register_t *value, bool is_write,
+			bool last_gicr)
 {
 	bool access_ok = false;
 
@@ -1117,7 +1115,7 @@ vgic_handle_gicr_access(vic_t *vic, thread_t *thread, size_t offset,
 			access_ok = gicr_vdevice_read(vic, thread,
 						      thread->vgic_gicr_index,
 						      offset, value,
-						      access_size);
+						      access_size, last_gicr);
 		}
 	}
 
@@ -1144,7 +1142,8 @@ vgic_handle_vdevice_access(vdevice_type_t type, vdevice_t *vdevice,
 		vic_t *vic = gicr_vcpu->vgic_vic;
 		assert(vic != NULL);
 		ret = vgic_handle_gicr_access(vic, gicr_vcpu, offset,
-					      access_size, value, is_write);
+					      access_size, value, is_write,
+					      gicr_vcpu->vgic_gicr_device_last);
 	}
 
 	return ret;
@@ -1178,15 +1177,19 @@ vgic_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 				vgic_get_thread_by_gicr_index(vic, gicr_num);
 
 			if (gicr_vcpu != NULL) {
+				bool is_last =
+					(gicr_num == (vic->gicr_count - 1U)) ||
+					(atomic_load_relaxed(
+						 &vic->gicr_vcpus[gicr_num +
+								  1U]) == NULL);
 				vmaddr_t gicr_base =
 					((vmaddr_t)PLATFORM_GICR_BASE +
 					 ((vmaddr_t)gicr_num
 					  << GICR_STRIDE_SHIFT));
 				size_t offset = (size_t)(ipa - gicr_base);
-				ret = vgic_handle_gicr_access(vic, gicr_vcpu,
-							      offset,
-							      access_size,
-							      value, is_write);
+				ret	      = vgic_handle_gicr_access(
+					  vic, gicr_vcpu, offset, access_size,
+					  value, is_write, is_last);
 			} else {
 				ret = VCPU_TRAP_RESULT_UNHANDLED;
 			}

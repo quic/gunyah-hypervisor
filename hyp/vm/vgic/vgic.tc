@@ -341,14 +341,16 @@ extend vic object {
 	// 1-of-N delivery is enabled, it also occurs when a group is enabled.
 	//
 	// Bits are set in this array after an attempt is made to deliver a
-	// corresponding IRQ, but no route can be found for it.
+	// corresponding IRQ, but no route can be found for it. The write must
+	// be release-ordered after the delivery state update.
 	//
 	// To search for a pending IRQ, the VCPU must find a set bit in the
-	// array, clear it, check all the IRQs in the corresponding range, and
-	// reset the bit if at least one unrouted pending IRQ was found,
-	// regardless of whether that IRQ was claimed by the VCPU. The search
-	// lock must be held, to prevent the transient clearing of a bit
-	// hiding an IRQ from a concurrent search.
+	// array, clear it with an atomic load-acquire and re-check that it
+	// was set, check all the IRQs in the corresponding range, and reset
+	// the bit if at least one unrouted pending IRQ was found, regardless
+	// of whether that IRQ was claimed by the VCPU. The search lock must
+	// be held, to prevent the transient clearing of a bit hiding an IRQ
+	// from a concurrent search.
 	search_ranges_low	BITMAP(VGIC_LOW_RANGES, atomic);
 
 	// Mapping between GICR indices and 4-level affinity values for
@@ -394,6 +396,15 @@ extend thread object module vgic {
 	// type is set to VDEVICE_TYPE_NONE, it has not been mapped. Mapping
 	// is protected by the gicd lock.
 	gicr_device		structure vdevice(contained);
+
+	// Flag indicating whether this GICR is the last in a contiguous range
+	// of mapped vdevices. This must be set correctly, because the Linux
+	// GIC driver relies on it to terminate GICR iterations; it does not
+	// check the sizes of the redistributor regions.
+	//
+	// This is only used for accesses through gicr_device; fixed access
+	// uses a hard-coded index check.
+	gicr_device_last	bool;
 
 	// Physical route register that should be used to target this thread.
 	irouter		bitfield GICD_IROUTER;
@@ -526,8 +537,15 @@ extend thread object module vgic {
 	// when an IRQ is kicked out of the list registers due to low priority.
 	//
 	// To search for a pending IRQ of a specific priority, the VCPU must
-	// find a set bit in the array, clear it, check all the IRQs in the
-	// corresponding range, and reset the bit if an IRQ was found.
+	// find a set bit in that priority's element in the array, clear it
+	// with an atomic load-acquire and re-check that it was set, check all
+	// the IRQs in the corresponding range, and reset the bit if the
+	// search did not fail (regardless of whether the IRQ found was
+	// successfully delivered).
+	//
+	// Reads of this bitmap when searching must be acquire-ordered before
+	// reads of the delivery states. Writes of this bitmap when flagging
+	// must be release-ordered after writes of the delivery states.
 	search_ranges_low	array(VGIC_PRIORITIES)
 		BITMAP(VGIC_LOW_RANGES, atomic);
 
@@ -575,6 +593,16 @@ extend thread object module vgic {
 	// To select a priority to search for, the VCPU must find the least
 	// significant set bit in the array, clear it, search for an interrupt
 	// of the corresponding priority, and reset the bit if one was found.
+	//
+	// To search for a pending IRQ of unknown priority, the VCPU must find
+	// a set bit in the bitmap, clear it, search the corresponding bitmap
+	// in the search_ranges array, and then reset the bit unless the search
+	// checked and cleared every bit in the search ranges bitmap.
+	//
+	// Reads of this bitmap when searching must be acquire-ordered before
+	// reads of the search ranges bitmap. Writes of this bitmap when
+	// flagging must be release-ordered after writes of the search ranges
+	// bitmap.
 	search_prios		BITMAP(VGIC_PRIORITIES, atomic);
 
 	// Record of active interrupts that were kicked out of the list
@@ -666,4 +694,14 @@ extend trace_id enumeration {
 extend vdevice_type enumeration {
 	vgic_gicd;
 	vgic_gicr;
+};
+
+define vgic_gicr_attach_flags public bitfield<64> {
+	0		last_valid	bool;
+	1		last		bool;
+	others		unknown=0;
+};
+
+extend addrspace_attach_vdevice_flags union {
+	vgic_gicr	bitfield vgic_gicr_attach_flags;
 };

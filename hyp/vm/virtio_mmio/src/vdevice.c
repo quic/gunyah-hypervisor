@@ -221,28 +221,8 @@ virtio_mmio_write_queue_notify(virtio_mmio_t *virtio_mmio, uint32_t val)
 static void
 virtio_mmio_write_interrupt_ack(virtio_mmio_t *virtio_mmio, uint32_t val)
 {
-	virtio_mmio_notify_reason_t reason;
-
-	atomic_store_relaxed(&virtio_mmio->regs->interrupt_ack, val);
-
-	spinlock_acquire(&virtio_mmio->lock);
-
-	uint32_t interrupt_status =
-		atomic_load_relaxed(&virtio_mmio->regs->interrupt_status);
-	interrupt_status &= ~val;
-	atomic_store_relaxed(&virtio_mmio->regs->interrupt_status,
-			     interrupt_status);
-
-	// Assert backend's IRQ so that the backend can continue raising
-	// interrupts
-	reason = atomic_load_relaxed(&virtio_mmio->reason);
-	virtio_mmio_notify_reason_set_interrupt_ack(&reason, true);
-	atomic_store_relaxed(&virtio_mmio->reason, reason);
-
-	spinlock_release(&virtio_mmio->lock);
-
-	atomic_thread_fence(memory_order_release);
-	(void)virq_assert(&virtio_mmio->frontend_source, false);
+	(void)atomic_fetch_and_explicit(&virtio_mmio->regs->interrupt_status,
+					~val, memory_order_relaxed);
 }
 
 static bool

@@ -315,8 +315,9 @@ etm_save_context_percpu(cpu_index_t cpu)
 
 	// pull trcstatr.pmstable until it's stable
 	// wait up to 100us
-	ticks_t start	= platform_timer_get_current_ticks();
-	ticks_t timeout = start + platform_convert_ns_to_ticks(100U * 1000U);
+	ticks_t start = platform_timer_get_current_ticks();
+	ticks_t timeout =
+		start + platform_timer_convert_ns_to_ticks(100U * 1000U);
 	do {
 		ETM_TRCSTATR_t trcstatr =
 			atomic_load_relaxed(&mapped_etms[cpu]->trcstatr);

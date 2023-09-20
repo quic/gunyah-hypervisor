@@ -33,4 +33,5 @@ handled_event addrspace_attach_vdevice
 	param index: index_t
 	param vbase: vmaddr_t
 	param size: size_t
+	param flags: addrspace_attach_vdevice_flags_t
 	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE

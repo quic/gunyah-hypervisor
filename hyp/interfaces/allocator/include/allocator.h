@@ -18,3 +18,6 @@ allocator_allocate_object(allocator_t *allocator, size_t size,
 
 error_t
 allocator_deallocate_object(allocator_t *allocator, void *object, size_t size);
+
+error_t
+allocator_heap_remove_memory(allocator_t *allocator, void *obj, size_t size);

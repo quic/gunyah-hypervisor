@@ -18,7 +18,7 @@ The Gunyah Hypervisor was developed by Qualcomm in Sydney Australia.
 ## Type-1 Hypervisor Concept
 
 Gunyah is a Type-1 hypervisor, meaning that it runs independently of any
-high-level OS kernel - such as Linux, and runs in a higher CPU privilege level
+high-level OS kernel such as Linux and runs in a higher CPU privilege level
 than VMs. It does not depend on any lower-privileged OS kernel/code for its
 core functionality. This increases its security and can support a much smaller
 trusted computing base than a Type-2 like hosted-hypervisors.
@@ -64,8 +64,14 @@ supported in future contributions.
 
 ## Getting Started
 - [Terminology](docs/terminology.md)
+- Other required Gunyah related repositories:
+    - [Setup Tools and Scripts](https://github.com/quic/gunyah-support-scripts) (Start setup here..!!)
+    - [Hypervisor](https://github.com/quic/gunyah-hypervisor.git) (Gunyah core hypervisor, this repository)
+    - [Resource Manager](https://github.com/quic/gunyah-resource-manager.git) (Platform policy engine)
+    - [C Runtime](https://github.com/quic/gunyah-c-runtime.git) (C runtime environment for Resource Manager)
+
 - [Setup Instructions](docs/setup.md)
-    + [Quick Start Instructions](https://github.com/quic/gunyah-support-scripts/blob/develop/quickstart.md)
+    + [Quick Start Instructions](https://github.com/quic/gunyah-support-scripts/blob/develop/quickstart.md) (will take to the setup tools and scripts repository)
 - [Build Instructions](docs/build.md)
 - [Status and Changelog](CHANGELOG.md)
 

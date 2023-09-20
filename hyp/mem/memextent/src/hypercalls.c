@@ -47,6 +47,12 @@ hypercall_memextent_modify(cap_id_t		    memextent_cap,
 		memextent_unmap_all(memextent);
 	} else if ((op == MEMEXTENT_MODIFY_OP_ZERO_RANGE) && !need_sync) {
 		err = memextent_zero_range(memextent, offset, size);
+	} else if ((op == MEMEXTENT_MODIFY_OP_CACHE_CLEAN_RANGE) &&
+		   !need_sync) {
+		err = memextent_cache_clean_range(memextent, offset, size);
+	} else if ((op == MEMEXTENT_MODIFY_OP_CACHE_FLUSH_RANGE) &&
+		   !need_sync) {
+		err = memextent_cache_flush_range(memextent, offset, size);
 	} else if (op == MEMEXTENT_MODIFY_OP_SYNC_ALL) {
 		err = need_sync ? OK : ERROR_ARGUMENT_INVALID;
 	} else {

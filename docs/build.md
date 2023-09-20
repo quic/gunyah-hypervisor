@@ -36,7 +36,7 @@ The build system has several configuration parameters that must be set:
 
 * `platform`: selects the target hardware platform
 * `featureset`:  selects a named hypervisor architecture configuration
-* `quality`: specifies the build quality, e.g. `debug`, `production` etc., which modify the build - such as including runtime assertions, compiler optimisations etc.
+* `quality`: specifies the build quality, e.g. `debug`, `production` etc., which modify the build, such as including runtime assertions, compiler optimisations etc.
 
 These parameters must be set on the build system's command line; if one or more
 of them is left unset, the build system will print the known values for the

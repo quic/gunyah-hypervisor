@@ -18,6 +18,12 @@ bitmap_set(register_t *bitmap, index_t bit);
 void
 bitmap_clear(register_t *bitmap, index_t bit);
 
+register_t
+bitmap_extract(const register_t *bitmap, index_t bit, index_t width);
+
+void
+bitmap_insert(register_t *bitmap, index_t bit, index_t width, register_t value);
+
 bool
 bitmap_ffs(const register_t *bitmap, index_t num_bits, index_t *bit);
 
@@ -61,6 +67,14 @@ bitmap_atomic_empty(const _Atomic register_t *bitmap, index_t num_bits);
 
 bool
 bitmap_atomic_full(const _Atomic register_t *bitmap, index_t num_bits);
+
+register_t
+bitmap_atomic_extract(const _Atomic register_t *bitmap, index_t bit,
+		      index_t width, memory_order order);
+
+void
+bitmap_atomic_insert(_Atomic register_t *bitmap, index_t bit, index_t width,
+		     register_t value, memory_order order);
 
 static inline register_t
 bitmap__get_word(const register_t *bitmap, index_t word)

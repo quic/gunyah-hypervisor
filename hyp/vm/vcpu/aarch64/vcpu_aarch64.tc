@@ -81,24 +81,8 @@ extend vcpu object {
 };
 
 #if !defined(PREEMPT_NULL)
-extend thread object module vcpu {
-	interrupted bool;
-	can_idle bool;
+extend vcpu_runtime_flags bitfield {
+	auto	vcpu_interrupted	bool = 0;
+	auto	vcpu_can_idle		bool = 0;
 };
 #endif
-
-extend vcpu_option_flags bitfield {
-	1		ras_error_handler	bool = 0;
-	2		amu_counting_disabled	bool = 0;
-	3		sve_allowed		bool = 0;
-	// 4		reserved: debug_allowed
-	// 5		reserved: trace_allowed
-#if defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_1p2) || \
-	defined(ARCH_ARM_FEAT_CSV2_3)
-	6		scxt_allowed		bool = 0;
-#endif
-	// 7		reserved: mpam_allowed
-	// 8		reserved: critical
-	63		hlos_vm			bool = 0;
-	others		unknown = 0;
-};

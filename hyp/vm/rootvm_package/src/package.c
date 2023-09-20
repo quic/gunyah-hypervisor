@@ -83,15 +83,15 @@ create_memextent(partition_t *root_partition, cspace_t *root_cspace,
 
 static paddr_t
 rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
-			vmaddr_t ipa_base, paddr_t phys_offset,
+			vmaddr_t ipa_base, paddr_t phys_base,
 			memextent_t *me_rm)
 {
 	error_t err;
 	count_t i;
 	paddr_t limit = 0;
 
-	assert(phys_offset >= PLATFORM_ROOTVM_LMA_BASE);
-	size_t offset = phys_offset - PLATFORM_ROOTVM_LMA_BASE;
+	assert(phys_base >= PLATFORM_ROOTVM_LMA_BASE);
+	size_t offset = phys_base - PLATFORM_ROOTVM_LMA_BASE;
 
 	paddr_t range_start = PLATFORM_ROOTVM_LMA_BASE;
 	paddr_t range_end = PLATFORM_ROOTVM_LMA_BASE + PLATFORM_ROOTVM_LMA_SIZE;
@@ -158,13 +158,13 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 		offset += size;
 	}
 
-	limit = limit + phys_offset;
+	limit = limit + phys_base;
 
 	if (limit > range_end) {
 		panic("ELF segment out of range");
 	}
 
-	err = elf_load_phys(elf, elf_max_size, phys_offset);
+	err = elf_load_phys(elf, elf_max_size, phys_base);
 	if (err != OK) {
 		panic("Error loading ELF");
 	}
@@ -213,16 +213,22 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 
 	addrspace_t *addrspace = root_thread->addrspace;
 
-	paddr_t map_base = (paddr_t)&image_pkg_start;
 	// FIXME: we could read headers and map incrementally as needed using
 	// segment rights. A single 512KiB mapping is sufficient for now!
-	size_t map_size = 0x00080000;
-	ret = hyp_aspace_map_direct(map_base, map_size, PGTABLE_ACCESS_R,
-				    PGTABLE_HYP_MEMTYPE_WRITEBACK,
-				    VMSA_SHAREABILITY_INNER_SHAREABLE);
-	assert(ret == OK);
+	size_t		    map_size	= 0x00080000;
+	virt_range_result_t map_range_r = hyp_aspace_allocate(map_size);
+	assert(map_range_r.e == OK);
 
-	rootvm_package_header_t *pkg_hdr = (rootvm_package_header_t *)map_base;
+	pgtable_hyp_start();
+	ret = pgtable_hyp_map(root_partition, map_range_r.r.base, map_size,
+			      (paddr_t)&image_pkg_start,
+			      PGTABLE_HYP_MEMTYPE_WRITEBACK, PGTABLE_ACCESS_R,
+			      VMSA_SHAREABILITY_INNER_SHAREABLE);
+	assert(ret == OK);
+	pgtable_hyp_commit();
+
+	rootvm_package_header_t *pkg_hdr =
+		(rootvm_package_header_t *)map_range_r.r.base;
 
 	if (pkg_hdr->ident != ROOTVM_PACKAGE_IDENT) {
 		panic("RootVM package header not found!");
@@ -281,8 +287,8 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 			LOG(DEBUG, INFO,
 			    "Processing package image ({:d}) type={:d}", i, t);
 
-			void *elf =
-				(void *)(map_base + pkg_hdr->list[i].offset);
+			void *elf = (void *)(map_range_r.r.base +
+					     pkg_hdr->list[i].offset);
 
 			if (pkg_hdr->list[i].offset > map_size) {
 				panic("ELF out of valid region");
@@ -369,8 +375,7 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 	LOG(DEBUG, INFO, "env_data_ipa: {:#x}", env_data_ipa);
 	LOG(DEBUG, INFO, "app_heap_ipa: {:#x}", app_heap_ipa);
 
-	ret = hyp_aspace_unmap_direct(map_base, map_size);
-	assert(ret == OK);
+	hyp_aspace_deallocate(root_partition, map_range_r.r);
 
 	// New code has been loaded, so we need to invalidate any physical
 	// I-cache entries possibly prefetched

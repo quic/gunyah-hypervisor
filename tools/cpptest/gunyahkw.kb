@@ -1,0 +1,7 @@
+partition_alloc - ALLOC hyp:$1, $2 GT(0):$$.r:$$.e NE(0)
+partition_alloc - BPS charlength($$.r)=infinity
+partition_alloc - BPS bytesize($$.r)=$1
+partition_alloc - NPD.SRC env : $$.r : $$.e NE(0)
+partition_alloc - UNINIT.HEAP 1 : *($$.r) : 1
+partition_alloc - UnsafeAllocSizeAccepter $2
+partition_free - FREE hyp $2

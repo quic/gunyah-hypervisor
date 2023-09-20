@@ -65,7 +65,8 @@ vrtc_pl031_reg_read(vrtc_t *vrtc, size_t offset, register_t *value)
 {
 	if (offset == offsetof(vrtc_pl031_t, RTCDR)) {
 		uint64_t now = platform_timer_get_current_ticks();
-		*value = platform_convert_ticks_to_ns(vrtc->time_base + now) /
+		*value = platform_timer_convert_ticks_to_ns(vrtc->time_base +
+							    now) /
 			 TIMER_NANOSECS_IN_SECOND;
 	} else if (offset == offsetof(vrtc_pl031_t, RTCLR)) {
 		*value = vrtc->lr;
@@ -97,7 +98,7 @@ static void
 vrtc_pl031_reg_write(vrtc_t *vrtc, size_t offset, register_t *value)
 {
 	if (offset == offsetof(vrtc_pl031_t, RTCLR)) {
-		ticks_t value_ticks = platform_convert_ns_to_ticks(
+		ticks_t value_ticks = platform_timer_convert_ns_to_ticks(
 			*value * TIMER_NANOSECS_IN_SECOND);
 		preempt_disable();
 		ticks_t now	= platform_timer_get_current_ticks();

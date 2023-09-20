@@ -41,9 +41,12 @@ define DBGWCR_EL1 bitfield<32> {
 
 define MDSCR_EL1 bitfield<32> {
 	0	SS		bool;
+	6	ERR		bool;
 	12	TDCC		bool;
+	13	KDE		bool;
+	14	HDE		bool;
 	15	MDE		bool;
-	31:16,14:13,11:1	unknown;
+	others	unknown=0;
 };
 
 define MDCCINT_EL1 bitfield<32> {

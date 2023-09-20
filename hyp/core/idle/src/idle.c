@@ -193,7 +193,7 @@ idle_loop(uintptr_t unused_params)
 		scheduler_yield();
 
 		// If yield returned, nothing is runnable
-		TRACE(DEBUG, INFO, "no runnable VCPUs, entering idle");
+		TRACE(INFO, INFO, "no runnable VCPUs, entering idle");
 
 		while (!idle_yield()) {
 			// Retry until an IRQ or other wakeup event occurs

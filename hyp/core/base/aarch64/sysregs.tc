@@ -676,6 +676,19 @@ define ID_AA64MMFR2_EL1 bitfield<64> {
 	63:60		E0PD		uint8;
 };
 
+define ID_AA64MMFR3_EL1 bitfield<64> {
+	3:0		TCRX		uint8;
+	7:4		SCTLRX		uint8;
+	27:8		unknown=0;
+	31:28		MEC		uint8;
+	59:32		unknown=0;
+	63:60		Spec_FPACC	uint8;
+};
+
+define ID_AA64MMFR4_EL1 bitfield<64> {
+	63:0		unknown=0;
+};
+
 define ID_AA64PFR0_EL1 bitfield<64> {
 	3:0		EL0		uint8;
 	7:4		EL1		uint8;

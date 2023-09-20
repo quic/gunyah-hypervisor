@@ -37,6 +37,7 @@ tests_thread_create(cpu_index_t i)
 		.scheduler_affinity_valid = true,
 		.kind			  = THREAD_KIND_TEST,
 		.params			  = i,
+		.stack_size		  = THREAD_STACK_MAX_SIZE,
 	};
 
 	thread_ptr_result_t ret =

@@ -16,8 +16,27 @@
 #include "debug_bps.h"
 #include "event_handlers.h"
 
-#if PLATFORM_DEBUG_SAVE_STATE
 static asm_ordering_dummy_t debug_asm_order;
+
+static void
+debug_os_unlock(void)
+{
+	OSLAR_EL1_t oslar = OSLAR_EL1_default();
+	OSLAR_EL1_set_oslk(&oslar, false);
+	register_OSLAR_EL1_write_ordered(oslar, &debug_asm_order);
+	OSDLR_EL1_t osdlr = OSDLR_EL1_default();
+	OSDLR_EL1_set_dlk(&osdlr, false);
+	register_OSDLR_EL1_write_ordered(osdlr, &debug_asm_order);
+	asm_context_sync_ordered(&debug_asm_order);
+}
+
+void
+debug_handle_boot_cpu_warm_init(void)
+{
+	debug_os_unlock();
+}
+
+#if PLATFORM_DEBUG_SAVE_STATE
 
 CPULOCAL_DECLARE_STATIC(debug_ext_state_t, debug_ext_state);
 
@@ -30,25 +49,10 @@ debug_os_lock(void)
 	asm_context_sync_ordered(&debug_asm_order);
 }
 
-static void
-debug_os_unlock(void)
-{
-	OSLAR_EL1_t oslar = OSLAR_EL1_default();
-	OSLAR_EL1_set_oslk(&oslar, false);
-	register_OSLAR_EL1_write_ordered(oslar, &debug_asm_order);
-	asm_context_sync_ordered(&debug_asm_order);
-}
-
 static inline bool
 debug_force_save_ext(void)
 {
 	return PLATFORM_DEBUG_SAVE_STATE > 1U;
-}
-
-void
-debug_handle_power_cpu_online(void)
-{
-	debug_os_unlock();
 }
 
 void

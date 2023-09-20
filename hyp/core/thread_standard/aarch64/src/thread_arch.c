@@ -174,7 +174,7 @@ thread_arch_set_thread(thread_t *thread)
 register_t
 thread_freeze(fptr_t fn, register_t param, register_t resumed_result)
 {
-	TRACE(DEBUG, INFO, "thread_freeze start fn: {:#x} param: {:#x}",
+	TRACE(INFO, INFO, "thread_freeze start fn: {:#x} param: {:#x}",
 	      (uintptr_t)fn, (uintptr_t)param);
 
 	trigger_thread_save_state_event();
@@ -232,9 +232,9 @@ thread_freeze(fptr_t fn, register_t param, register_t resumed_result)
 		x0 = resumed_result;
 		trigger_thread_load_state_event(false);
 
-		TRACE(DEBUG, INFO, "thread_freeze resumed: {:#x}", x0);
+		TRACE(INFO, INFO, "thread_freeze resumed: {:#x}", x0);
 	} else {
-		TRACE(DEBUG, INFO, "thread_freeze returned: {:#x}", x0);
+		TRACE(INFO, INFO, "thread_freeze returned: {:#x}", x0);
 	}
 
 	return x0;

@@ -137,7 +137,7 @@ platform_timer_lp_handle_boot_cold_init(void)
 	platform_timer_lp_visibility(true);
 
 	// FIXME:
-	// Unmap/remap the privileged timer frame in the HLOS S2 address space
+	// Unmap/remap the priviledged timer frame in the HLOS S2 address space
 }
 
 void
@@ -160,7 +160,7 @@ platform_timer_lp_handle_boot_hypervisor_start(void)
 		panic("Failed to activate low power timer IRQ");
 	}
 
-	irq_enable(ret.r);
+	irq_enable_shared(ret.r);
 }
 
 bool

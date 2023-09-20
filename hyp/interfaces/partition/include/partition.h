@@ -106,10 +106,18 @@ partition_phys_unmap(const void *vaddr, paddr_t paddr, size_t size);
 
 // Donate memory from partition
 //
-// Update address range ownership in the memory database
+// Update address range ownership in the memory database from src_partition to
+// dst_partition.
+//
+// If from_heap is false, the specified range must be unused memory owned by the
+// source partition.
+//
+// If from_heap is true, the specified range must have been returned by a call
+// to partition_alloc() with the specified source partition. This is useful when
+// allocating a new partition during bootstrap, from within the hypervisor.
 error_t
 partition_mem_donate(partition_t *src_partition, paddr_t base, size_t size,
-		     partition_t *dst_partition);
+		     partition_t *dst_partition, bool from_heap);
 
 // Add memory to the partition's allocators
 //

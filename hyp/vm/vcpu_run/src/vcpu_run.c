@@ -49,6 +49,36 @@ vcpu_run_is_enabled(const thread_t *vcpu)
 	return vcpu->vcpu_run_enabled;
 }
 
+static vcpu_run_state_t
+do_vcpu_run_check(const thread_t *vcpu, register_t *state_data_0,
+		  register_t *state_data_1, register_t *state_data_2)
+	REQUIRE_SCHEDULER_LOCK(vcpu)
+{
+	vcpu_run_state_t ret;
+
+	assert(vcpu->kind == THREAD_KIND_VCPU);
+	assert(!scheduler_is_runnable(vcpu));
+
+	thread_state_t state = atomic_load_relaxed(&vcpu->state);
+	if (compiler_expected(state == THREAD_STATE_READY)) {
+		ret = trigger_vcpu_run_check_event(vcpu, state_data_0,
+						   state_data_1, state_data_2);
+	} else if (state == THREAD_STATE_EXITED) {
+		vcpu_run_poweroff_flags_t flags =
+			vcpu_run_poweroff_flags_default();
+		ret = VCPU_RUN_STATE_POWERED_OFF;
+		vcpu_run_poweroff_flags_set_exited(&flags, true);
+		*state_data_0 = vcpu_run_poweroff_flags_raw(flags);
+	} else {
+		assert(state == THREAD_STATE_KILLED);
+		// The killed VCPU must be run until it has exited, and should
+		// only ever be blocked for hypervisor internal reasons.
+		ret = VCPU_RUN_STATE_BLOCKED;
+	}
+
+	return ret;
+}
+
 hypercall_vcpu_run_result_t
 hypercall_vcpu_run(cap_id_t vcpu_cap_id, register_t resume_data_0,
 		   register_t resume_data_1, register_t resume_data_2)
@@ -109,9 +139,9 @@ hypercall_vcpu_run(cap_id_t vcpu_cap_id, register_t resume_data_0,
 	if (scheduler_is_runnable(vcpu)) {
 		ret.vcpu_state = VCPU_RUN_STATE_READY;
 	} else {
-		ret.vcpu_state = trigger_vcpu_run_check_event(
-			vcpu, &ret.state_data_0, &ret.state_data_1,
-			&ret.state_data_2);
+		ret.vcpu_state = do_vcpu_run_check(vcpu, &ret.state_data_0,
+						   &ret.state_data_1,
+						   &ret.state_data_2);
 	}
 	vcpu->vcpu_run_last_state = ret.vcpu_state;
 
@@ -121,20 +151,6 @@ unlock:
 out_obj_put_thread:
 	object_put_thread(vcpu);
 out_err:
-	return ret;
-}
-
-vcpu_run_state_t
-vcpu_run_handle_vcpu_run_check(const thread_t *vcpu, register_t *state_data_0)
-{
-	vcpu_run_state_t ret = VCPU_RUN_STATE_BLOCKED;
-	if (compiler_unexpected(thread_has_exited(vcpu))) {
-		vcpu_run_poweroff_flags_t flags =
-			vcpu_run_poweroff_flags_default();
-		ret = VCPU_RUN_STATE_POWERED_OFF;
-		vcpu_run_poweroff_flags_set_exited(&flags, true);
-		*state_data_0 = vcpu_run_poweroff_flags_raw(flags);
-	}
 	return ret;
 }
 
@@ -163,9 +179,9 @@ hypercall_vcpu_run_check(cap_id_t vcpu_cap_id)
 	if (scheduler_is_runnable(vcpu)) {
 		ret.error = ERROR_BUSY;
 	} else {
-		ret.vcpu_state = trigger_vcpu_run_check_event(
-			vcpu, &ret.state_data_0, &ret.state_data_1,
-			&ret.state_data_2);
+		ret.vcpu_state = do_vcpu_run_check(vcpu, &ret.state_data_0,
+						   &ret.state_data_1,
+						   &ret.state_data_2);
 		if (ret.vcpu_state == VCPU_RUN_STATE_BLOCKED) {
 			ret.error = ERROR_BUSY;
 		}

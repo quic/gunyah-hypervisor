@@ -59,6 +59,13 @@ class Variable:
         self.category = type_definition.category
         if type_definition.category == "bitfield":
             self.type_name = type_definition.type_name
+        if type_definition.category == "union":
+            try:
+                raw_type, _ = type_definition.named_member('raw')
+                assert raw_type.size == self.size
+            except Exception:
+                raise Exception(
+                    "Public unions must have a correctly sized 'raw' member")
         self.ignore = name.startswith('res0') or name.startswith(
             'res1') or name.endswith('_')
         self.pointer = False

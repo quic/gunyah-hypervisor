@@ -46,17 +46,10 @@ static_assert(PLATFORM_MAX_CORES <= REGISTER_BITS,
 	      "PLATFORM_MAX_CORES > REGISTER_BITS");
 static _Atomic register_t vpm_active_pcpus_bitmap;
 
-// Set to 1 to boot enable the PSCI tracepoints
-#if defined(VERBOSE_TRACE) && VERBOSE_TRACE
-#define DEBUG_PSCI_TRACES 1
-#else
-#define DEBUG_PSCI_TRACES 0
-#endif
-
 void
 psci_handle_boot_cold_init(void)
 {
-#if !defined(NDEBUG) && DEBUG_PSCI_TRACES
+#if !defined(NDEBUG)
 	register_t flags = 0U;
 	TRACE_SET_CLASS(flags, PSCI);
 	trace_set_class_flags(flags);

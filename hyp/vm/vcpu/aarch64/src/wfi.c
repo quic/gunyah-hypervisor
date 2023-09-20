@@ -29,7 +29,7 @@ vcpu_handle_scheduler_selected_thread(thread_t *thread, bool *can_idle)
 	// decide whether to enable the WFI trap; otherwise it is used in the
 	// WFI trap handler to decide whether to call idle_yield() without
 	// scheduling.
-	thread->vcpu_can_idle = *can_idle;
+	vcpu_runtime_flags_set_vcpu_can_idle(&thread->vcpu_flags, *can_idle);
 }
 
 vcpu_trap_result_t
@@ -60,25 +60,36 @@ vcpu_handle_vcpu_trap_wfi(ESR_EL2_ISS_WFI_WFE_t iss)
 
 #if !defined(PREEMPT_NULL)
 #if !defined(VCPU_IDLE_IN_EL1) || !VCPU_IDLE_IN_EL1
-	if (current->vcpu_can_idle && !current->vcpu_interrupted) {
+	if (vcpu_runtime_flags_get_vcpu_can_idle(&current->vcpu_flags) &&
+	    !vcpu_runtime_flags_get_vcpu_interrupted(&current->vcpu_flags)) {
 		if (vcpu_block_start()) {
 			goto out;
 		}
 
 		bool need_schedule;
+		bool vcpu_can_idle;
+		bool vcpu_interrupted;
 		do {
 			need_schedule = idle_yield();
-		} while (!need_schedule && current->vcpu_can_idle &&
-			 !current->vcpu_interrupted);
+
+			vcpu_can_idle = vcpu_runtime_flags_get_vcpu_can_idle(
+				&current->vcpu_flags);
+			vcpu_interrupted =
+				vcpu_runtime_flags_get_vcpu_interrupted(
+					&current->vcpu_flags);
+		} while (!need_schedule && vcpu_can_idle && !vcpu_interrupted);
 
 		vcpu_block_finish();
 
+		vcpu_can_idle = vcpu_runtime_flags_get_vcpu_can_idle(
+			&current->vcpu_flags);
+		vcpu_interrupted = vcpu_runtime_flags_get_vcpu_interrupted(
+			&current->vcpu_flags);
 		// If this thread and another thread are woken concurrently, we
 		// need to reschedule with no yield hint before we return. If
 		// we haven't been woken, the need_reschedule is handled by the
 		// yield below after setting the WFI block flag.
-		if ((need_schedule || !current->vcpu_can_idle) &&
-		    current->vcpu_interrupted) {
+		if ((need_schedule || !vcpu_can_idle) && vcpu_interrupted) {
 			scheduler_schedule();
 		}
 	}
@@ -87,7 +98,7 @@ vcpu_handle_vcpu_trap_wfi(ESR_EL2_ISS_WFI_WFE_t iss)
        // taken. This could have been done either by a preemption before the
        // preempt_disable() above, or by an IPI during the idle_yield() in the
        // WFI fastpath (if it is enabled).
-	if (current->vcpu_interrupted) {
+	if (vcpu_runtime_flags_get_vcpu_interrupted(&current->vcpu_flags)) {
 		goto out;
 	}
 #endif // !PREEMPT_NULL
@@ -112,7 +123,8 @@ vcpu_handle_scheduler_quiescent(void)
 	if (compiler_expected(current->kind == THREAD_KIND_VCPU)) {
 		current->vcpu_regs_el2.hcr_el2 = register_HCR_EL2_read();
 		HCR_EL2_set_TWI(&current->vcpu_regs_el2.hcr_el2,
-				!current->vcpu_can_idle);
+				!vcpu_runtime_flags_get_vcpu_can_idle(
+					&current->vcpu_flags));
 		register_HCR_EL2_write(current->vcpu_regs_el2.hcr_el2);
 	}
 }
@@ -121,8 +133,9 @@ void
 vcpu_handle_thread_context_switch_post(void)
 {
 	thread_t *current = thread_get_self();
-	HCR_EL2_set_TWI(&current->vcpu_regs_el2.hcr_el2,
-			!current->vcpu_can_idle);
+	HCR_EL2_set_TWI(
+		&current->vcpu_regs_el2.hcr_el2,
+		!vcpu_runtime_flags_get_vcpu_can_idle(&current->vcpu_flags));
 }
 #endif // VCPU_IDLE_IN_EL1
 
@@ -134,7 +147,7 @@ vcpu_wakeup(thread_t *vcpu)
 
 #if !defined(PREEMPT_NULL)
 	// Inhibit sleep in preempted WFI handlers (see above)
-	vcpu->vcpu_interrupted = true;
+	vcpu_runtime_flags_set_vcpu_interrupted(&vcpu->vcpu_flags, true);
 #endif
 
 	trigger_vcpu_wakeup_event(vcpu);
@@ -152,7 +165,7 @@ vcpu_wakeup_self(void)
 
 #if !defined(PREEMPT_NULL)
 	// Inhibit sleep in preempted WFI handlers (see above)
-	current->vcpu_interrupted = true;
+	vcpu_runtime_flags_set_vcpu_interrupted(&current->vcpu_flags, true);
 #endif
 
 	trigger_vcpu_wakeup_self_event();
@@ -186,7 +199,8 @@ vcpu_pending_wakeup(void)
 #if defined(PREEMPT_NULL)
 	return trigger_vcpu_pending_wakeup_event();
 #else
-	return current->vcpu_interrupted || trigger_vcpu_pending_wakeup_event();
+	return vcpu_runtime_flags_get_vcpu_interrupted(&current->vcpu_flags) ||
+	       trigger_vcpu_pending_wakeup_event();
 #endif
 }
 
@@ -225,6 +239,6 @@ vcpu_handle_thread_exit_to_user(void)
 	thread_t *current = thread_get_self();
 
 	// Don't inhibit sleep in new WFI traps
-	current->vcpu_interrupted = false;
+	vcpu_runtime_flags_set_vcpu_interrupted(&current->vcpu_flags, false);
 #endif
 }

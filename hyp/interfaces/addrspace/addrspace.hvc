@@ -107,6 +107,6 @@ define addrspace_attach_vdevice hypercall {
 	index		input type index_t;
 	vbase		input type vmaddr_t;
 	size		input size;
-	res0		input uregister;
+	flags		input union addrspace_attach_vdevice_flags;
 	error		output enumeration error;
 };

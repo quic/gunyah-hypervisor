@@ -92,8 +92,17 @@ def main():
     if args.elf is not None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binfile = os.path.join(tmpdir, 'hyp.bin')
-            objcopy = os.path.join(os.environ['LLVM'], 'bin',
-                                   'llvm-objcopy')
+            try:
+                objcopy = os.path.join(os.environ['LLVM'], 'bin',
+                                       'llvm-objcopy')
+            except KeyError:
+                try:
+                    objcopy = os.path.join(os.environ['QCOM_LLVM'], 'bin',
+                                           'llvm-objcopy')
+                except KeyError:
+                    print("Error environment var LLVM or QCOM_LLVM not set")
+                    pass
+
             subprocess.check_call([objcopy, '-j', '.text',
                                    '-j', '.rodata', '-O', 'binary',
                                    args.elf.name, binfile])

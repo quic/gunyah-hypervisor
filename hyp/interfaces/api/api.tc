@@ -32,7 +32,7 @@ define hyp_api_flags0 public bitfield<64>(const) {
 	8		watchdog	bool = 0;
 	9		virtio_mmio	bool = 0;
 	10		prng		bool = 0;
-	16		reserved	bool = 0;
+	16		reserved_16	bool = 0;
 	31:28		scheduler	enumeration scheduler_variant = SCHEDULER_VARIANT;
 	63:32,27:17,15:11 res0_0	uint64 = 0;
 };

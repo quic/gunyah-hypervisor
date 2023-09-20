@@ -91,7 +91,9 @@ def generate_accessors(template, input, ns):
         if not tokens:
             continue
         name = tokens[0]
-        assert name not in registers
+        if name in registers:
+            raise Exception("duplicate register:", name)
+
         if len(tokens) == 1:
             registers[name] = register(name, name)
             continue

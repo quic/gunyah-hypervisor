@@ -34,6 +34,12 @@
 #endif
 #define util_balign_up(x, a) util_balign_down((x) + ((a)-1U), a)
 
+// Round up or down to a multiple of an unsigned constant, which may not be a
+// power of two. Rounding to a non-constant at runtime should be avoided,
+// because it will perform a slow divide operation.
+#define util_round_down(x, a) ((x) - ((x) % (a)))
+#define util_round_up(x, a)   util_round_down((x) + ((a)-1U), (a))
+
 // Align up or down to a power-of-two size (in bits)
 #define util_p2align_down(x, b)                                                \
 	(assert((sizeof(x) * 8U) > (b)), (((x) >> (b)) << (b)))

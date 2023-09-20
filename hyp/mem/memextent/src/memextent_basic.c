@@ -156,6 +156,43 @@ out:
 	return ret;
 }
 
+static void
+memextent_revert_activation_mappings(memextent_t *me,
+				     partition_t *hyp_partition)
+	REQUIRE_SPINLOCK(me->parent->lock) REQUIRE_LOCK(me->parent->mappings)
+{
+	error_t err;
+	for (index_t i = 0; i < MEMEXTENT_MAX_MAPS; i++) {
+		memextent_basic_mapping_t *map = &me->mappings.basic[i];
+
+		addrspace_t *as = atomic_load_relaxed(&map->addrspace);
+		if (as == NULL) {
+			continue;
+		}
+
+		memextent_mapping_t parent_map = memextent_lookup_mapping(
+			me->parent, me->phys_base, me->size, i);
+		assert(as == parent_map.addrspace);
+
+		if (!memextent_mapping_attrs_is_equal(map->attrs,
+						      parent_map.attrs)) {
+			map->attrs = parent_map.attrs;
+
+			err = memextent_do_map(me, map, 0, me->size);
+			assert(err == OK);
+		}
+
+		memextent_remove_map_from_addrspace_list(map);
+	}
+
+	// Revert the earlier memdb update.
+	err = memdb_update(hyp_partition, me->phys_base,
+			   me->phys_base + (me->size - 1U),
+			   (uintptr_t)me->parent, MEMDB_TYPE_EXTENT,
+			   (uintptr_t)me, MEMDB_TYPE_EXTENT);
+	assert(err == OK);
+}
+
 error_t
 memextent_activate_derive_basic(memextent_t *me)
 {
@@ -261,37 +298,7 @@ memextent_activate_derive_basic(memextent_t *me)
 
 	if (ret != OK) {
 		// Revert any remappings that were made.
-		error_t err;
-		for (index_t i = 0; i < MEMEXTENT_MAX_MAPS; i++) {
-			memextent_basic_mapping_t *map = &me->mappings.basic[i];
-
-			addrspace_t *as = atomic_load_relaxed(&map->addrspace);
-			if (as == NULL) {
-				continue;
-			}
-
-			memextent_mapping_t parent_map =
-				memextent_lookup_mapping(
-					me->parent, me->phys_base, me->size, i);
-			assert(as == parent_map.addrspace);
-
-			if (!memextent_mapping_attrs_is_equal(
-				    map->attrs, parent_map.attrs)) {
-				map->attrs = parent_map.attrs;
-
-				err = memextent_do_map(me, map, 0, me->size);
-				assert(err == OK);
-			}
-
-			memextent_remove_map_from_addrspace_list(map);
-		}
-
-		// Revert the earlier memdb update.
-		err = memdb_update(hyp_partition, me->phys_base,
-				   me->phys_base + (me->size - 1U),
-				   (uintptr_t)me->parent, MEMDB_TYPE_EXTENT,
-				   (uintptr_t)me, MEMDB_TYPE_EXTENT);
-		assert(err == OK);
+		memextent_revert_activation_mappings(me, hyp_partition);
 	}
 
 	memextent_release_mappings(me->parent, false);
@@ -690,7 +697,7 @@ memextent_is_mapped_basic(memextent_t *me, addrspace_t *addrspace,
 // Revert mappings of extent to the parent, assuming that the extent has no
 // children.
 static void
-memextent_revert_mappings(memextent_t *me)
+memextent_restore_parent_mappings(memextent_t *me)
 {
 	assert((me != NULL) && (me->parent != NULL));
 
@@ -806,7 +813,7 @@ memextent_deactivate_basic(memextent_t *me)
 	assert(list_is_empty(&me->children_list));
 
 	if (me->parent != NULL) {
-		memextent_revert_mappings(me);
+		memextent_restore_parent_mappings(me);
 	} else {
 		(void)memextent_unmap_all_basic(me);
 	}

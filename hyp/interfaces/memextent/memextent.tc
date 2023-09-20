@@ -82,6 +82,8 @@ define memextent_mapping structure {
 define memextent_modify_op public enumeration(explicit) {
 	unmap_all = 0;		// Remove all mappings from memextent
 	zero_range = 1;		// Zero a range of the memextent
+	cache_clean_range = 2;	// Cache clean a range of the memextent
+	cache_flush_range = 3;	// Cache flush a range of the memextent
 	sync_all = 255;		// Sync all previous memextent ops
 };
 

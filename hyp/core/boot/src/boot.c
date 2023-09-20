@@ -57,8 +57,9 @@ boot_cold_init(cpu_index_t cpu) LOCK_IMPL
 	trigger_boot_cpu_cold_init_event(cpu);
 
 	// It's safe to log now.
-	LOG(ERROR, WARN, "Hypervisor cold boot, version: {:s} ({:s})",
-	    (register_t)hypervisor_version, (register_t)hypervisor_build_date);
+	TRACE_AND_LOG(ERROR, WARN, "Hypervisor cold boot, version: {:s} ({:s})",
+		      (register_t)hypervisor_version,
+		      (register_t)hypervisor_build_date);
 
 	TRACE(DEBUG, INFO, "boot_cpu_warm_init");
 	trigger_boot_cpu_warm_init_event();
@@ -117,7 +118,8 @@ boot_secondary_init(cpu_index_t cpu) LOCK_IMPL
 	trigger_boot_cpu_cold_init_event(cpu);
 
 	// It's safe to log now.
-	LOG(ERROR, INFO, "secondary cpu ({:d}) cold boot", (register_t)cpu);
+	TRACE_AND_LOG(INFO, WARN, "secondary cpu ({:d}) cold boot",
+		      (register_t)cpu);
 
 	trigger_boot_cpu_warm_init_event();
 	trigger_boot_cpu_start_event();
@@ -131,7 +133,7 @@ noreturn void
 boot_warm_init(void) LOCK_IMPL
 {
 	trigger_boot_cpu_early_init_event();
-	TRACE_LOCAL(DEBUG, INFO, "cpu warm boot start");
+	TRACE_LOCAL(INFO, INFO, "cpu warm boot start");
 	trigger_boot_cpu_warm_init_event();
 	trigger_boot_cpu_start_event();
 	TRACE_LOCAL(DEBUG, INFO, "cpu warm boot complete");

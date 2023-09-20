@@ -6,8 +6,6 @@ module vdebug
 
 subscribe boot_cpu_cold_init()
 
-subscribe object_create_thread
-
 #if defined(INTERFACE_VCPU)
 subscribe vcpu_activate_thread
 #endif

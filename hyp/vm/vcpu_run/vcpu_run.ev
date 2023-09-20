@@ -64,7 +64,3 @@ subscribe vcpu_bind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu, vic, virq)
 subscribe vcpu_unbind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu)
 
 subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_VCPU_RUN]
-
-subscribe vcpu_run_check(vcpu, state_data_0)
-	priority first
-	require_scheduler_lock(vcpu)

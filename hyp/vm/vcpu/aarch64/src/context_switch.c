@@ -24,9 +24,6 @@
 // hypervisor.
 #if defined(MODULE_VM_VETM) || defined(MODULE_VM_VETM_NULL)
 #define VCPU_TRACE_CONTEXT_SAVED 1
-#elif defined(PLATFORM_ETM_BASE) &&                                            \
-	(defined(MODULE_PLATFORM_SOC_QCOM) && defined(MODULE_PLATFORM_QHEE))
-#define VCPU_TRACE_CONTEXT_SAVED 1
 #elif defined(PLATFORM_HAS_NO_ETM_BASE) && (PLATFORM_HAS_NO_ETM_BASE != 0)
 #pragma message(                                                               \
 	"PLATFORM_HAS_NO_ETM_BASE is nonzero; if an ETM is present it may be"  \
@@ -115,7 +112,7 @@ vcpu_context_switch_load(void)
 		register_FPSR_write(thread->vcpu_regs_fpr.fpsr);
 
 #if defined(ARCH_ARM_HAVE_SCXT)
-		if (vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		if (vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			register_SCXTNUM_EL0_write(
 				thread->vcpu_regs_el1.scxtnum_el0);
 			register_SCXTNUM_EL1_write(
@@ -203,7 +200,7 @@ vcpu_context_switch_save(void)
 		thread->vcpu_regs_fpr.fpsr    = register_FPSR_read();
 
 #if defined(ARCH_ARM_HAVE_SCXT)
-		if (vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		if (vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			thread->vcpu_regs_el1.scxtnum_el0 =
 				register_SCXTNUM_EL0_read();
 			thread->vcpu_regs_el1.scxtnum_el1 =

@@ -21,6 +21,12 @@ subscribe thread_exit_to_user
 subscribe optional preempt_interrupt
 	require_preempt_disabled
 
+// Other handlers might clear IPIs, so this has low priority to avoid
+// processing those IPIs prematurely.
+subscribe scheduler_quiescent
+	priority -1000
+	require_preempt_disabled
+
 // This handler IPIs all cores to stop, it has high priority
 subscribe scheduler_stop()
 	priority 1000

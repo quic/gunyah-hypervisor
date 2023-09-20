@@ -111,7 +111,8 @@ prng_simple_handle_boot_runtime_first_init(void)
 	CACHE_CLEAN_INVALIDATE_OBJECT(hypervisor_prng_seed);
 
 	prng_data->key_timestamp = platform_timer_get_current_ticks();
-	prng_data->key_timeout = platform_convert_ns_to_ticks(REKEY_TIMEOUT_NS);
+	prng_data->key_timeout =
+		platform_timer_convert_ns_to_ticks(REKEY_TIMEOUT_NS);
 
 	uint32_t serial[4];
 

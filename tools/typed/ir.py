@@ -2046,6 +2046,13 @@ class UnionDefinition(IGenCode, ICustomizedDefinition):
         for e in self.extensions:
             yield from e._members(prefix=prefix)
 
+    def named_member(self, name):
+        for member_name, member_type, member_decl in self._members():
+            if member_name == name:
+                return member_type, member_decl
+        raise DSLError("'union {:s}': no member named '{:s}'"
+                       .format(self.type_name, name))
+
     def update(self):
         """
         Update internal data, prepare to generate code

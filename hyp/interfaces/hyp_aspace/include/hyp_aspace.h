@@ -21,12 +21,13 @@ hyp_aspace_deallocate(partition_t *partition, virt_range_t virt_range);
 // This should only be used by platform-specific legacy code that assumes 1:1
 // mappings.
 error_t
-hyp_aspace_map_direct(paddr_t phys, size_t size, pgtable_access_t access,
-		      pgtable_hyp_memtype_t memtype, vmsa_shareability_t share);
+hyp_aspace_map_direct(partition_t *partition, paddr_t phys, size_t size,
+		      pgtable_access_t access, pgtable_hyp_memtype_t memtype,
+		      vmsa_shareability_t share);
 
 // Remove a mapping created by hyp_aspace_map_direct().
 error_t
-hyp_aspace_unmap_direct(paddr_t phys, size_t size);
+hyp_aspace_unmap_direct(partition_t *partition, paddr_t phys, size_t size);
 
 // Check for the existence of any mappings in the hypervisor address space for
 // the given range. Note that when the kernel is using ARMv8.1-PAN (or an

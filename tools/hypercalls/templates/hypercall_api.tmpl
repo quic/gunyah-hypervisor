@@ -10,17 +10,20 @@
 #if variable.category == 'bitfield'
 ## FIXME: this is an implementation detail of the type system
 ${variable.name}.bf[0]#slurp
+#elif variable.category == 'union'
+(uint${8 * variable.size}_t)${variable.name}.raw#slurp
 #else
 ${variable.name}#slurp
 #end if
 #end def
 
 #def register_init(variable, value)
-(${variable.ctype})#slurp
+
 #if variable.category == 'bitfield'
 ## FIXME: this is an implementation detail of the type system
-{ (uint${8 * variable.size}_t)$value }#slurp
+${variable.type_name}_cast((uint${8 * variable.size}_t)${value})#slurp
 #else
+(${variable.ctype})#slurp
 $value#slurp
 #end if
 #end def

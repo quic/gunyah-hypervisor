@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-module memdb
+module memdb_bitmap
 
-subscribe rcu_update[RCU_UPDATE_CLASS_MEMDB_RELEASE_LEVEL]
-	handler memdb_deallocate_level(entry)
+subscribe rcu_update[RCU_UPDATE_CLASS_MEMDB_RELEASE_LEVEL_TABLE]
+	handler memdb_bitmap_free_level_table(entry)
+
+subscribe rcu_update[RCU_UPDATE_CLASS_MEMDB_RELEASE_LEVEL_BITMAP]
+	handler memdb_bitmap_free_level_bitmap(entry)
 
 subscribe boot_cold_init()
 	// Must run after pagetable init and hyp_aspace initialisation.

@@ -18,3 +18,12 @@
 
 \#define PLATFORM_TIMER_NS_TO_FREQ_MULT (uint64_t)$ns_to_freq_mult
 \#define PLATFORM_TIMER_FREQ_TO_NS_MULT (uint64_t)$freq_to_ns_mult
+
+#set $ms_in_s = 1000
+#set $gcd = math.gcd(ms_in_s, $PLATFORM_ARCH_TIMER_FREQ)
+
+#set $ms_to_freq_mult = $PLATFORM_ARCH_TIMER_FREQ//$gcd
+#set $freq_to_ms_mult = $ms_in_s//$gcd
+
+\#define PLATFORM_TIMER_MS_TO_FREQ_MULT (uint64_t)$ms_to_freq_mult
+\#define PLATFORM_TIMER_FREQ_TO_MS_MULT (uint64_t)$freq_to_ms_mult

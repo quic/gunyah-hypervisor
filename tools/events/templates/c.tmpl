@@ -183,6 +183,7 @@ $prototype(e)
 #else
 #set ret=None
 #end if
+#if e.subscribers
     switch ($e.selector.name) {
 #for s in e.subscribers
 #for selector in $s.selectors
@@ -204,6 +205,13 @@ $prototype(e)
 #end if
         break;
     }
+#else
+    // No subscribers
+    (void)$e.selector.name;
+#if not $void
+    $ret = $e.result.default;
+#end if
+#end if
 
 #if not $void
     return ret;

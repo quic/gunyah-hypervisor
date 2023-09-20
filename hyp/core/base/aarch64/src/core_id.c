@@ -30,54 +30,66 @@ platform_cpu_get_coreid(MIDR_EL1_t midr)
 static core_id_t
 get_core_id(uint16_t partnum, uint8_t variant, uint8_t revision)
 {
-	static const coreid_info_t core_id_data[] = {
-		{ .part_num = 0xD03, .core_ID = CORE_ID_CORTEX_A53 },
-		{ .part_num = 0xD05, .core_ID = CORE_ID_CORTEX_A55 },
-		{ .part_num = 0xD07, .core_ID = CORE_ID_CORTEX_A57 },
-		{ .part_num = 0xD08, .core_ID = CORE_ID_CORTEX_A72 },
-		{ .part_num = 0xD09, .core_ID = CORE_ID_CORTEX_A73 },
-		{ .part_num = 0xD0A, .core_ID = CORE_ID_CORTEX_A75 },
-		{ .part_num = 0xD0B, .core_ID = CORE_ID_CORTEX_A76 },
-		{ .part_num = 0xD0C, .core_ID = CORE_ID_NEOVERSE_N1 },
-		{ .part_num = 0xD0D, .core_ID = CORE_ID_CORTEX_A77 },
-		{ .part_num = 0xD0E, .core_ID = CORE_ID_CORTEX_A76AE },
-		{ .part_num = 0xD40, .core_ID = CORE_ID_NEOVERSE_V1 },
-		{ .part_num = 0xD41, .core_ID = CORE_ID_CORTEX_A78 },
-		{ .part_num = 0xD42, .core_ID = CORE_ID_CORTEX_A78AE },
-		{ .part_num = 0xD44, .core_ID = CORE_ID_CORTEX_X1 },
-		{ .part_num = 0xD46, .core_ID = CORE_ID_CORTEX_A510 },
-		{ .part_num = 0xD47, .core_ID = CORE_ID_CORTEX_A710 },
-		{ .part_num = 0xD48, .core_ID = CORE_ID_CORTEX_X2 },
-		{ .part_num = 0xD49, .core_ID = CORE_ID_NEOVERSE_N2 },
-		{ .part_num = 0xD4B, .core_ID = CORE_ID_CORTEX_A78C },
-		{ .part_num = 0xD4D, .core_ID = CORE_ID_CORTEX_A715 },
-		{ .part_num = 0xD4E, .core_ID = CORE_ID_CORTEX_X3 },
+	static const core_id_info_t core_id_map[] = {
+		{ .part_num = 0xD03U, .core_id = CORE_ID_CORTEX_A53 },
+		{ .part_num = 0xD05U, .core_id = CORE_ID_CORTEX_A55 },
+		{ .part_num = 0xD07U, .core_id = CORE_ID_CORTEX_A57 },
+		{ .part_num = 0xD08U, .core_id = CORE_ID_CORTEX_A72 },
+		{ .part_num = 0xD09U, .core_id = CORE_ID_CORTEX_A73 },
+		{ .part_num = 0xD0AU, .core_id = CORE_ID_CORTEX_A75 },
+		{ .part_num = 0xD0BU, .core_id = CORE_ID_CORTEX_A76 },
+		{ .part_num = 0xD0CU, .core_id = CORE_ID_NEOVERSE_N1 },
+		{ .part_num = 0xD0DU, .core_id = CORE_ID_CORTEX_A77 },
+		{ .part_num = 0xD0EU, .core_id = CORE_ID_CORTEX_A76AE },
+		{ .part_num = 0xD40U, .core_id = CORE_ID_NEOVERSE_V1 },
+		{ .part_num = 0xD41U, .core_id = CORE_ID_CORTEX_A78 },
+		{ .part_num = 0xD42U, .core_id = CORE_ID_CORTEX_A78AE },
+		{ .part_num = 0xD44U, .core_id = CORE_ID_CORTEX_X1 },
+		{ .part_num = 0xD46U, .core_id = CORE_ID_CORTEX_A510 },
+		{ .part_num = 0xD47U, .core_id = CORE_ID_CORTEX_A710 },
+		{ .part_num = 0xD48U, .core_id = CORE_ID_CORTEX_X2 },
+		{ .part_num = 0xD49U, .core_id = CORE_ID_NEOVERSE_N2 },
+		{ .part_num = 0xD4BU, .core_id = CORE_ID_CORTEX_A78C },
+		{ .part_num = 0xD4DU, .core_id = CORE_ID_CORTEX_A715 },
+		{ .part_num = 0xD4EU, .core_id = CORE_ID_CORTEX_X3 },
+		{ .part_num = 0xD80U, .core_id = CORE_ID_CORTEX_A520 },
+	};
+	// List of cores that have specific revisions.
+	// If multiple revisions are assigned different core IDs, then keep
+	// them sorted by highest (variant_min,revision_min) first.
+	static const core_id_rev_info_t core_id_rev_map[] = {
+		{ .part_num	= 0xD81U,
+		  .core_id	= CORE_ID_CORTEX_A720,
+		  .variant_min	= 0,
+		  .revision_min = 1 },
+		{ .part_num	= 0xD82U,
+		  .core_id	= CORE_ID_CORTEX_X4,
+		  .variant_min	= 0,
+		  .revision_min = 1 }
 	};
 
-	static const count_t NUM_CORE_ID =
-		(count_t)util_array_size(core_id_data);
-	core_id_t coreid = CORE_ID_UNKNOWN;
+	core_id_t coreid;
+	index_t	  i;
 
-	uint32_t start;
-
-	bool core_identified = false;
-
-	for (start = 0; ((start < NUM_CORE_ID) && (!core_identified));
-	     start++) {
-		if (partnum == core_id_data[start].part_num) {
-			if ((partnum == 0xD81U) || (partnum == 0xD82U)) {
-				if ((variant == 0U) && (revision == 0U)) {
-					coreid = core_id_data[start].core_ID;
-				} else {
-					coreid = CORE_ID_UNKNOWN;
-				}
-			} else {
-				coreid = core_id_data[start].core_ID;
-			}
-			core_identified = true;
+	for (i = 0U; i < util_array_size(core_id_map); i++) {
+		if (partnum == core_id_map[i].part_num) {
+			coreid = core_id_map[i].core_id;
+			goto out;
 		}
 	}
 
+	for (i = 0U; i < util_array_size(core_id_rev_map); i++) {
+		if ((partnum == core_id_rev_map[i].part_num) ||
+		    (variant > core_id_rev_map[i].variant_min) ||
+		    ((variant == core_id_rev_map[i].variant_min) &&
+		     (revision >= core_id_rev_map[i].revision_min))) {
+			coreid = core_id_rev_map[i].core_id;
+			goto out;
+		}
+	}
+
+	coreid = CORE_ID_UNKNOWN;
+out:
 	return coreid;
 }
 

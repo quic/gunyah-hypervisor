@@ -24,26 +24,23 @@ doorbell_send(doorbell_t *doorbell, doorbell_flags_t new_flags)
 	assert(doorbell != NULL);
 	ret.e = OK;
 
-	if (new_flags == 0U) {
-		ret.e = ERROR_ARGUMENT_INVALID;
-		goto out;
-	}
-
 	spinlock_acquire(&doorbell->lock);
 
 	ret.r = doorbell->flags;
 
 	doorbell->flags |= new_flags;
 
-	if ((doorbell->flags & doorbell->enable_mask) != 0U) {
-		// Assert if there are flags enabled
-		(void)virq_assert(&doorbell->source, false);
+	// Level-triggered assert if there are flags enabled; else edge-only
+	bool edge_only = (doorbell->flags & doorbell->enable_mask) == 0U;
+	(void)virq_assert(&doorbell->source, edge_only);
+
+	// Automatically clear ack_mask flags if there was a level assertion
+	if (!edge_only) {
 		doorbell->flags &= ~doorbell->ack_mask;
 	}
 
 	spinlock_release(&doorbell->lock);
 
-out:
 	return ret;
 }
 

@@ -81,7 +81,7 @@ hypercall_vrtc_set_time_base(cap_id_t vrtc_cap, nanoseconds_t time_base,
 		goto out_preempt;
 	}
 
-	ticks_t time_base_ticks = platform_convert_ns_to_ticks(time_base);
+	ticks_t time_base_ticks = platform_timer_convert_ns_to_ticks(time_base);
 
 	// Set the time_base to the moment the device was turned on. By using
 	// "sys_timer_ref" instead of "now" we account for the time delta

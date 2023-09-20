@@ -145,10 +145,9 @@ hypercall_virtio_mmio_backend_assert_virq(cap_id_t virtio_mmio_cap,
 	if (virtio_mmio_status_reg_get_device_needs_reset(&status)) {
 		err = ERROR_DENIED;
 	} else {
-		spinlock_acquire(&virtio_mmio->lock);
-		atomic_store_relaxed(&virtio_mmio->regs->interrupt_status,
-				     interrupt_status);
-		spinlock_release(&virtio_mmio->lock);
+		(void)atomic_fetch_or_explicit(
+			&virtio_mmio->regs->interrupt_status, interrupt_status,
+			memory_order_relaxed);
 
 		atomic_thread_fence(memory_order_release);
 		// Assert frontend's IRQ

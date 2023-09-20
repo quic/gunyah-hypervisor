@@ -50,7 +50,6 @@ trace_and_log_init(void)
 	register_t flags = 0U;
 
 	TRACE_SET_CLASS(flags, ERROR);
-	TRACE_SET_CLASS(flags, TRACE_BUFFER);
 	TRACE_SET_CLASS(flags, DEBUG);
 
 	atomic_init(&hyp_trace.enabled_class_flags, flags);

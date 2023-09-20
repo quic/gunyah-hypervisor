@@ -171,6 +171,11 @@ hyp_aspace_handle_boot_cold_init(void)
 		assert(err == OK);
 		pgtable_hyp_commit();
 	}
+
+	// Reserve page table levels to map the direct mapped area.
+	err = pgtable_hyp_preallocate(hyp_partition, 0U,
+				      util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
+	assert(err == OK);
 }
 
 error_t
@@ -420,8 +425,9 @@ hyp_aspace_check_region(uintptr_t virt, size_t size)
 }
 
 error_t
-hyp_aspace_map_direct(paddr_t phys, size_t size, pgtable_access_t access,
-		      pgtable_hyp_memtype_t memtype, vmsa_shareability_t share)
+hyp_aspace_map_direct(partition_t *partition, paddr_t phys, size_t size,
+		      pgtable_access_t access, pgtable_hyp_memtype_t memtype,
+		      vmsa_shareability_t share)
 {
 	error_t	  err;
 	uintptr_t virt = (uintptr_t)phys;
@@ -440,8 +446,8 @@ hyp_aspace_map_direct(paddr_t phys, size_t size, pgtable_access_t access,
 
 	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-	err = pgtable_hyp_map_merge(partition_get_private(), virt, size, phys,
-				    memtype, access, share,
+	err = pgtable_hyp_map_merge(partition, virt, size, phys, memtype,
+				    access, share,
 				    util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
 	pgtable_hyp_commit();
 	spinlock_release(&hyp_aspace_direct_lock);
@@ -451,7 +457,7 @@ map_error:
 }
 
 error_t
-hyp_aspace_unmap_direct(paddr_t phys, size_t size)
+hyp_aspace_unmap_direct(partition_t *partition, paddr_t phys, size_t size)
 {
 	uintptr_t virt = (uintptr_t)phys;
 	error_t	  err;
@@ -470,8 +476,8 @@ hyp_aspace_unmap_direct(paddr_t phys, size_t size)
 
 	spinlock_acquire(&hyp_aspace_direct_lock);
 	pgtable_hyp_start();
-	pgtable_hyp_unmap(partition_get_private(), virt, size,
-			  PGTABLE_HYP_UNMAP_PRESERVE_NONE);
+	pgtable_hyp_unmap(partition, virt, size,
+			  util_bit(HYP_ASPACE_MAP_DIRECT_BITS));
 	pgtable_hyp_commit();
 	spinlock_release(&hyp_aspace_direct_lock);
 

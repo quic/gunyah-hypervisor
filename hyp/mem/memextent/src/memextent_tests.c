@@ -97,6 +97,10 @@ get_free_mem_range(paddr_t base, size_t size, void *arg)
 {
 	test_free_range_t *free_range = (test_free_range_t *)arg;
 
+	if (free_range->count >= util_array_size(free_range->phys_base)) {
+		panic("Too many free ranges");
+	}
+
 	free_range->phys_base[free_range->count] = base;
 	free_range->size[free_range->count]	 = size;
 	free_range->count++;

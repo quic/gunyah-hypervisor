@@ -162,18 +162,26 @@ partition_standard_handle_object_deactivate_partition(void)
 
 error_t
 partition_mem_donate(partition_t *src_partition, paddr_t base, size_t size,
-		     partition_t *dst_partition)
+		     partition_t *dst_partition, bool from_heap)
 {
 	error_t ret;
 
 	partition_t *hyp_partition = partition_get_private();
 
 	if ((size != 0U) && (!util_add_overflows(base, size - 1U))) {
-		ret = memdb_update(hyp_partition, base, base + (size - 1U),
-				   (uintptr_t)dst_partition,
-				   MEMDB_TYPE_PARTITION,
-				   (uintptr_t)src_partition,
-				   MEMDB_TYPE_PARTITION);
+		if (from_heap) {
+			ret = memdb_update(hyp_partition, base,
+					   base + (size - 1U),
+					   (uintptr_t)dst_partition,
+					   MEMDB_TYPE_PARTITION,
+					   (uintptr_t)&src_partition->allocator,
+					   MEMDB_TYPE_ALLOCATOR);
+		} else {
+			ret = memdb_update(
+				hyp_partition, base, base + (size - 1U),
+				(uintptr_t)dst_partition, MEMDB_TYPE_PARTITION,
+				(uintptr_t)src_partition, MEMDB_TYPE_PARTITION);
+		}
 	} else {
 		ret = ERROR_ARGUMENT_SIZE;
 	}

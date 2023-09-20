@@ -20,6 +20,62 @@
 
 #include "useraccess.h"
 
+static void
+useraccess_clean_range(const uint8_t *va, size_t size)
+{
+	CACHE_CLEAN_RANGE(va, size);
+}
+
+static void
+useraccess_clean_invalidate_range(const uint8_t *va, size_t size)
+{
+	CACHE_CLEAN_INVALIDATE_RANGE(va, size);
+}
+
+static size_t
+useraccess_copy_from_to_translated_pa(PAR_EL1_t par, gvaddr_t guest_va,
+				      size_t page_size, size_t page_offset,
+				      bool from_guest, void *hyp_buf,
+				      size_t remaining)
+{
+	paddr_t guest_pa = PAR_EL1_F0_get_PA(&par.f0);
+	guest_pa |= (paddr_t)guest_va & (page_size - 1U);
+
+	size_t mapped_size = page_size - page_offset;
+	void  *va	   = partition_phys_map(guest_pa, mapped_size);
+
+	MAIR_ATTR_t attr = PAR_EL1_F0_get_ATTR(&par.f0);
+	bool writeback = ((index_t)attr | (index_t)MAIR_ATTR_ALLOC_HINT_MASK) ==
+			 (index_t)MAIR_ATTR_NORMAL_WB;
+#if defined(ARCH_ARM_FEAT_MTE)
+	writeback = writeback || (attr == MAIR_ATTR_TAGGED_NORMAL_WB);
+#endif
+
+	partition_phys_access_enable(va);
+
+	if (compiler_unexpected(from_guest && !writeback)) {
+		useraccess_clean_range((uint8_t *)va,
+				       util_min(remaining, mapped_size));
+	}
+
+	size_t copied_size;
+	if (from_guest) {
+		copied_size = memscpy(hyp_buf, remaining, va, mapped_size);
+	} else {
+		copied_size = memscpy(va, mapped_size, hyp_buf, remaining);
+	}
+
+	if (compiler_unexpected(!from_guest && !writeback)) {
+		useraccess_clean_invalidate_range((uint8_t *)va, copied_size);
+	}
+
+	partition_phys_access_disable(va);
+
+	partition_phys_unmap(va, guest_pa, mapped_size);
+
+	return copied_size;
+}
+
 static size_result_t
 useraccess_copy_from_to_guest_va(gvaddr_t gvaddr, void *hvaddr, size_t size,
 				 bool from_guest, bool force_access)
@@ -69,47 +125,10 @@ useraccess_copy_from_to_guest_va(gvaddr_t gvaddr, void *hvaddr, size_t size,
 
 		if (compiler_expected(!PAR_EL1_base_get_F(&par.base))) {
 			// No fault; copy to/from the translated PA
-			paddr_t guest_pa = PAR_EL1_F0_get_PA(&par.f0);
-			guest_pa |= (paddr_t)guest_va & (page_size - 1U);
-
-			size_t mapped_size = page_size - page_offset;
-			void  *va = partition_phys_map(guest_pa, mapped_size);
-
-			MAIR_ATTR_t attr      = PAR_EL1_F0_get_ATTR(&par.f0);
-			bool	    writeback = ((index_t)attr |
-						 (index_t)MAIR_ATTR_ALLOC_HINT_MASK) ==
-					 (index_t)MAIR_ATTR_NORMAL_WB;
-#if defined(ARCH_ARM_FEAT_MTE)
-			writeback = writeback ||
-				    (attr == MAIR_ATTR_TAGGED_NORMAL_WB);
-#endif
-
-			partition_phys_access_enable(va);
-
-			if (compiler_unexpected(from_guest && !writeback)) {
-				CACHE_CLEAN_RANGE((uint8_t *)va,
-						  util_min(remaining,
-							   mapped_size));
-			}
-
-			size_t copied_size;
-			if (from_guest) {
-				copied_size = memscpy(hyp_buf, remaining, va,
-						      mapped_size);
-			} else {
-				copied_size = memscpy(va, mapped_size, hyp_buf,
-						      remaining);
-			}
-
-			if (compiler_unexpected(!from_guest && !writeback)) {
-				CACHE_CLEAN_INVALIDATE_RANGE((uint8_t *)va,
-							     copied_size);
-			}
-
-			partition_phys_access_disable(va);
-
-			partition_phys_unmap(va, guest_pa, mapped_size);
-
+			size_t copied_size =
+				useraccess_copy_from_to_translated_pa(
+					par, guest_va, page_size, page_offset,
+					from_guest, hyp_buf, remaining);
 			assert(copied_size > 0U);
 			guest_va += copied_size;
 			hyp_buf = (void *)((uintptr_t)hyp_buf + copied_size);
@@ -226,7 +245,7 @@ useraccess_copy_from_to_guest_ipa(addrspace_t *addrspace, vmaddr_t ipa,
 		if (from_guest) {
 			if (force_coherent ||
 			    (mapped_memtype != PGTABLE_VM_MEMTYPE_NORMAL_WB)) {
-				CACHE_CLEAN_INVALIDATE_RANGE(
+				useraccess_clean_invalidate_range(
 					vm_addr,
 					util_min(mapped_size, hyp_size));
 			}
@@ -239,7 +258,7 @@ useraccess_copy_from_to_guest_ipa(addrspace_t *addrspace, vmaddr_t ipa,
 
 			if (force_coherent ||
 			    (mapped_memtype != PGTABLE_VM_MEMTYPE_NORMAL_WB)) {
-				CACHE_CLEAN_RANGE(vm_addr, copied_size);
+				useraccess_clean_range(vm_addr, copied_size);
 			}
 		}
 

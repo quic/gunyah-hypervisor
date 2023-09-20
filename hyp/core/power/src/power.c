@@ -98,6 +98,11 @@ power_handle_boot_cpu_warm_init(void)
 
 	if (state == CPU_POWER_STATE_STARTED) {
 		trigger_power_cpu_online_event();
+
+#if defined(DISABLE_PSCI_CPU_OFF) && DISABLE_PSCI_CPU_OFF
+		power_voting_t *voting = &CPULOCAL(power_voting);
+		voting->vote_count++;
+#endif
 	}
 	spinlock_release_nopreempt(&CPULOCAL(power_voting).lock);
 

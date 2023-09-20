@@ -25,6 +25,7 @@ debug_save_common(debug_common_registers_t *regs,
 #end for
 	regs->mdscr = register_MDSCR_EL1_read_ordered(order);
         in_use = in_use && MDSCR_EL1_get_MDE(&regs->mdscr);
+        in_use = in_use && MDSCR_EL1_get_KDE(&regs->mdscr);
         in_use = in_use || MDSCR_EL1_get_TDCC(&regs->mdscr);
         in_use = in_use || MDSCR_EL1_get_SS(&regs->mdscr);
 

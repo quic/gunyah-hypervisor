@@ -24,5 +24,8 @@ extend core_id enumeration {
 	NEOVERSE_V1;
 	CORTEX_A715;
 	CORTEX_X3;
+	CORTEX_A520;
+	CORTEX_A720;
+	CORTEX_X4;
 	QEMU;
 };

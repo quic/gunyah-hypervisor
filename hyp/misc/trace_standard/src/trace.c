@@ -121,13 +121,13 @@ trace_boot_init(void)
 	// Default to enable trace buffer and error traces
 	TRACE_SET_CLASS(flags, ERROR);
 #if !defined(NDEBUG)
-	TRACE_SET_CLASS(flags, TRACE_BUFFER);
-#endif
-#if defined(VERBOSE_TRACE) && VERBOSE_TRACE
-	TRACE_SET_CLASS(flags, DEBUG);
+	TRACE_SET_CLASS(flags, INFO);
 #if !defined(UNITTESTS) || !UNITTESTS
 	TRACE_SET_CLASS(flags, USER);
 #endif
+#endif
+#if defined(VERBOSE_TRACE) && VERBOSE_TRACE
+	TRACE_SET_CLASS(flags, DEBUG);
 #endif
 	atomic_init(&hyp_trace.enabled_class_flags, flags);
 
@@ -135,7 +135,6 @@ trace_boot_init(void)
 	trace_public_class_flags = ~(register_t)0;
 	TRACE_CLEAR_CLASS(trace_public_class_flags, ERROR);
 	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_BUFFER);
-	TRACE_CLEAR_CLASS(trace_public_class_flags, LOG_TRACE_BUFFER);
 
 	trace_init_common(
 		partition_get_private(), &trace_boot_buffer,
@@ -240,11 +239,10 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 			   (action == TRACE_ACTION_TRACE_AND_LOG));
 	register_t class_flags	= trace_get_class_flags();
 	if (compiler_unexpected(
-		    ((!trace_action ||
-		      ((class_flags & TRACE_CLASS_BITS(TRACE_BUFFER)) == 0))) &&
-		    ((!log_action ||
-		      ((class_flags & TRACE_CLASS_BITS(TRACE_LOG_BUFFER)) ==
-		       0))))) {
+		    !trace_action &&
+		    (!log_action ||
+		     ((class_flags & TRACE_CLASS_BITS(TRACE_LOG_BUFFER)) ==
+		      0U)))) {
 		goto out;
 	}
 

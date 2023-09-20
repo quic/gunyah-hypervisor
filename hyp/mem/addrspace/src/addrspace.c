@@ -285,8 +285,10 @@ addrspace_handle_object_cleanup_addrspace(addrspace_t *addrspace)
 	gpt_destroy(&addrspace->vmmio_ranges);
 #endif
 
-	hyp_aspace_deallocate(addrspace->header.partition,
-			      addrspace->hyp_va_range);
+	if (addrspace->hyp_va_range.size != 0U) {
+		hyp_aspace_deallocate(addrspace->header.partition,
+				      addrspace->hyp_va_range);
+	}
 }
 
 void

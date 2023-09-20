@@ -41,6 +41,8 @@
 #include <events/vic.h>
 #include <events/virq.h>
 
+#include <asm/nospec_checks.h>
+
 #if defined(ARCH_ARM_FEAT_FGT) && ARCH_ARM_FEAT_FGT
 #include <arm_fgt.h>
 #endif
@@ -200,7 +202,8 @@ out:
 error_t
 vgic_handle_addrspace_attach_vdevice(addrspace_t *addrspace,
 				     cap_id_t vdevice_object_cap, index_t index,
-				     vmaddr_t vbase, size_t size)
+				     vmaddr_t vbase, size_t size,
+				     addrspace_attach_vdevice_flags_t flags)
 {
 	error_t	  err;
 	cspace_t *cspace = cspace_get_self();
@@ -212,15 +215,22 @@ vgic_handle_addrspace_attach_vdevice(addrspace_t *addrspace,
 		goto out;
 	}
 
-	if (index > vic_r.r->gicr_count + 1U) {
+	index_result_t index_r =
+		nospec_range_check(index, vic_r.r->gicr_count + 1U);
+	if (index_r.e != OK) {
 		err = ERROR_ARGUMENT_INVALID;
 		goto out_ref;
 	}
 
 	spinlock_acquire(&vic_r.r->gicd_lock);
 
-	if (index == 0U) {
+	if (index_r.r == 0U) {
 		// Attaching the GICD registers.
+		if (flags.raw != 0U) {
+			err = ERROR_ARGUMENT_INVALID;
+			goto out_locked;
+		}
+
 		if (vic_r.r->gicd_device.type != VDEVICE_TYPE_NONE) {
 			err = ERROR_BUSY;
 			goto out_locked;
@@ -234,9 +244,14 @@ vgic_handle_addrspace_attach_vdevice(addrspace_t *addrspace,
 		}
 	} else {
 		// Attaching GICR registers for a specific VCPU.
+		if (!vgic_gicr_attach_flags_is_clean(flags.vgic_gicr)) {
+			err = ERROR_ARGUMENT_INVALID;
+			goto out_locked;
+		}
+
 		rcu_read_start();
-		thread_t *gicr_vcpu =
-			atomic_load_consume(&vic_r.r->gicr_vcpus[index - 1U]);
+		thread_t *gicr_vcpu = atomic_load_consume(
+			&vic_r.r->gicr_vcpus[index_r.r - 1U]);
 
 		if (gicr_vcpu == NULL) {
 			err = ERROR_IDLE;
@@ -246,6 +261,18 @@ vgic_handle_addrspace_attach_vdevice(addrspace_t *addrspace,
 		if (gicr_vcpu->vgic_gicr_device.type != VDEVICE_TYPE_NONE) {
 			err = ERROR_BUSY;
 			goto out_gicr_rcu;
+		}
+
+		if (vgic_gicr_attach_flags_get_last_valid(&flags.vgic_gicr)) {
+			gicr_vcpu->vgic_gicr_device_last =
+				vgic_gicr_attach_flags_get_last(
+					&flags.vgic_gicr);
+		} else {
+			// Last flag is unspecified; set it by default if this
+			// is the highest-numbered GICR, which matches the old
+			// behaviour.
+			gicr_vcpu->vgic_gicr_device_last =
+				(index_r.r == vic_r.r->gicr_count);
 		}
 
 		gicr_vcpu->vgic_gicr_device.type = VDEVICE_TYPE_VGIC_GICR;
@@ -715,6 +742,88 @@ vgic_handle_object_cleanup_thread(thread_t *thread)
 	}
 }
 
+static void
+vgic_handle_rootvm_create_hwirq(partition_t	 *root_partition,
+				cspace_t	 *root_cspace,
+				qcbor_enc_ctxt_t *qcbor_enc_ctxt)
+{
+	index_t i = 0U;
+#if GICV3_EXT_IRQS
+	index_t last_spi = util_min((count_t)platform_irq_max(),
+				    GIC_SPI_EXT_BASE + GIC_SPI_EXT_NUM - 1U);
+#else
+	index_t last_spi = util_min((count_t)platform_irq_max(),
+				    GIC_SPI_BASE + GIC_SPI_NUM - 1U);
+#endif
+
+	QCBOREncode_OpenArrayInMap(qcbor_enc_ctxt, "vic_hwirq");
+	while (i <= last_spi) {
+		hwirq_create_t hwirq_params = {
+			.irq = i,
+		};
+
+		gicv3_irq_type_t irq_type = gicv3_get_irq_type(i);
+
+		if (irq_type == GICV3_IRQ_TYPE_SPI) {
+			hwirq_params.action = HWIRQ_ACTION_VGIC_FORWARD_SPI;
+		} else if (irq_type == GICV3_IRQ_TYPE_PPI) {
+			hwirq_params.action =
+				HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE;
+#if GICV3_EXT_IRQS
+		} else if (irq_type == GICV3_IRQ_TYPE_SPI_EXT) {
+			hwirq_params.action = HWIRQ_ACTION_VGIC_FORWARD_SPI;
+		} else if (irq_type == GICV3_IRQ_TYPE_PPI_EXT) {
+			hwirq_params.action =
+				HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE;
+#endif
+		} else {
+			QCBOREncode_AddUInt64(qcbor_enc_ctxt,
+					      CSPACE_CAP_INVALID);
+			goto next_index;
+		}
+
+		hwirq_ptr_result_t hwirq_r =
+			partition_allocate_hwirq(root_partition, hwirq_params);
+		if (hwirq_r.e != OK) {
+			panic("Unable to create HW IRQ object");
+		}
+
+		error_t err = object_activate_hwirq(hwirq_r.r);
+		if (err != OK) {
+			if ((err == ERROR_DENIED) ||
+			    (err == ERROR_ARGUMENT_INVALID) ||
+			    (err == ERROR_BUSY)) {
+				QCBOREncode_AddUInt64(qcbor_enc_ctxt,
+						      CSPACE_CAP_INVALID);
+				object_put_hwirq(hwirq_r.r);
+				goto next_index;
+			} else {
+				panic("Failed to activate HW IRQ object");
+			}
+		}
+
+		// Create a master cap for the HWIRQ
+		object_ptr_t	hwirq_optr = { .hwirq = hwirq_r.r };
+		cap_id_result_t cid_r	   = cspace_create_master_cap(
+			     root_cspace, hwirq_optr, OBJECT_TYPE_HWIRQ);
+		if (cid_r.e != OK) {
+			panic("Unable to create cap to HWIRQ");
+		}
+		QCBOREncode_AddUInt64(qcbor_enc_ctxt, cid_r.r);
+
+	next_index:
+		i++;
+#if GICV3_EXT_IRQS
+		// Skip large range between end of non-extended PPIs and start
+		// of extended SPIs to optimize encoding
+		if (i == GIC_PPI_EXT_BASE + GIC_PPI_EXT_NUM) {
+			i = GIC_SPI_EXT_BASE;
+		}
+#endif
+	}
+	QCBOREncode_CloseArray(qcbor_enc_ctxt);
+}
+
 void
 vgic_handle_rootvm_init(partition_t *root_partition, thread_t *root_thread,
 			cspace_t *root_cspace, hyp_env_data_t *hyp_env,
@@ -737,6 +846,19 @@ vgic_handle_rootvm_init(partition_t *root_partition, thread_t *root_thread,
 	hyp_env->gicd_base   = PLATFORM_GICD_BASE;
 	hyp_env->gicr_base   = PLATFORM_GICR_BASE;
 	hyp_env->gicr_stride = (size_t)util_bit(GICR_STRIDE_SHIFT);
+
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "gicd_base",
+				   PLATFORM_GICD_BASE);
+	QCBOREncode_AddUInt64ToMap(qcbor_enc_ctxt, "gicr_stride",
+				   (size_t)util_bit(GICR_STRIDE_SHIFT));
+	// Array of tuples of base address and number of GICRs for each
+	// contiguous GICR range. Currently only one range is supported.
+	QCBOREncode_OpenArrayInMap(qcbor_enc_ctxt, "gicr_ranges");
+	QCBOREncode_OpenArray(qcbor_enc_ctxt);
+	QCBOREncode_AddUInt64(qcbor_enc_ctxt, PLATFORM_GICR_BASE);
+	QCBOREncode_AddUInt64(qcbor_enc_ctxt, PLATFORM_GICR_COUNT);
+	QCBOREncode_CloseArray(qcbor_enc_ctxt);
+	QCBOREncode_CloseArray(qcbor_enc_ctxt);
 
 	if (vic_configure(vic_r.r, max_vcpus, max_virqs, max_msis, false) !=
 	    OK) {
@@ -766,61 +888,8 @@ vgic_handle_rootvm_init(partition_t *root_partition, thread_t *root_thread,
 	}
 
 	// Create a HWIRQ object for every SPI
-	index_t i;
-#if GICV3_EXT_IRQS
-#error Extended SPIs and PPIs not handled yet
-#endif
-	index_t last_spi = util_min((count_t)platform_irq_max(),
-				    GIC_SPI_BASE + GIC_SPI_NUM - 1U);
-
-	QCBOREncode_OpenArrayInMap(qcbor_enc_ctxt, "vic_hwirq");
-	for (i = 0; i <= last_spi; i++) {
-		hwirq_create_t hwirq_params = {
-			.irq = i,
-		};
-
-		if (gicv3_get_irq_type(i) == GICV3_IRQ_TYPE_SPI) {
-			hwirq_params.action = HWIRQ_ACTION_VGIC_FORWARD_SPI;
-		} else if (gicv3_get_irq_type(i) == GICV3_IRQ_TYPE_PPI) {
-			hwirq_params.action =
-				HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE;
-		} else {
-			QCBOREncode_AddUInt64(qcbor_enc_ctxt,
-					      CSPACE_CAP_INVALID);
-			continue;
-		}
-
-		hwirq_ptr_result_t hwirq_r =
-			partition_allocate_hwirq(root_partition, hwirq_params);
-		if (hwirq_r.e != OK) {
-			panic("Unable to create HW IRQ object");
-		}
-
-		error_t err = object_activate_hwirq(hwirq_r.r);
-		if (err != OK) {
-			if ((err == ERROR_DENIED) ||
-			    (err == ERROR_ARGUMENT_INVALID) ||
-			    (err == ERROR_BUSY)) {
-				QCBOREncode_AddUInt64(qcbor_enc_ctxt,
-						      CSPACE_CAP_INVALID);
-				object_put_hwirq(hwirq_r.r);
-				continue;
-			} else {
-				panic("Failed to activate HW IRQ object");
-			}
-		}
-
-		// Create a master cap for the HWIRQ
-		object_ptr_t hwirq_optr = { .hwirq = hwirq_r.r };
-		cid_r = cspace_create_master_cap(root_cspace, hwirq_optr,
-						 OBJECT_TYPE_HWIRQ);
-		if (cid_r.e != OK) {
-			panic("Unable to create cap to HWIRQ");
-		}
-		QCBOREncode_AddUInt64(qcbor_enc_ctxt, cid_r.r);
-	}
-	QCBOREncode_CloseArray(qcbor_enc_ctxt);
-
+	vgic_handle_rootvm_create_hwirq(root_partition, root_cspace,
+					qcbor_enc_ctxt);
 	hyp_env->gits_base   = 0U;
 	hyp_env->gits_stride = 0U;
 
@@ -876,23 +945,34 @@ vgic_handle_object_create_hwirq(hwirq_create_t hwirq_create)
 	hwirq_t *hwirq = hwirq_create.hwirq;
 	assert(hwirq != NULL);
 
-	error_t err = OK;
+	error_t err = ERROR_ARGUMENT_INVALID;
 
 	if (hwirq_create.action == HWIRQ_ACTION_VGIC_FORWARD_SPI) {
+		gicv3_irq_type_t irq_type =
+			gicv3_get_irq_type(hwirq_create.irq);
 		// The physical IRQ must be an SPI.
-		if (gicv3_get_irq_type(hwirq_create.irq) !=
-		    GICV3_IRQ_TYPE_SPI) {
-			err = ERROR_ARGUMENT_INVALID;
+		if (irq_type == GICV3_IRQ_TYPE_SPI) {
+			err = OK;
+#if GICV3_EXT_IRQS
+		} else if (irq_type == GICV3_IRQ_TYPE_SPI_EXT) {
+			err = OK;
+#endif
 		}
 	} else if (hwirq_create.action ==
 		   HWIRQ_ACTION_VIC_BASE_FORWARD_PRIVATE) {
+		gicv3_irq_type_t irq_type =
+			gicv3_get_irq_type(hwirq_create.irq);
 		// The physical IRQ must be an PPI.
-		if (gicv3_get_irq_type(hwirq_create.irq) !=
-		    GICV3_IRQ_TYPE_PPI) {
-			err = ERROR_ARGUMENT_INVALID;
+		if (irq_type == GICV3_IRQ_TYPE_PPI) {
+			err = OK;
+#if GICV3_EXT_IRQS
+		} else if (irq_type == GICV3_IRQ_TYPE_PPI_EXT) {
+			err = OK;
+#endif
 		}
 	} else {
 		// Not a forwarded IRQ
+		err = OK;
 	}
 
 	return err;
@@ -1009,7 +1089,7 @@ vgic_bind_hwirq_spi(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 	// Enable the HW IRQ if the virtual enable bit is set (unbound HW IRQs
 	// are always disabled).
 	if (vgic_delivery_state_get_enabled(&current_dstate)) {
-		irq_enable(hwirq);
+		irq_enable_shared(hwirq);
 	}
 
 	hwirq->vgic_enable_hw = true;
@@ -1044,7 +1124,7 @@ vgic_unbind_hwirq_spi(hwirq_t *hwirq)
 	rcu_read_finish();
 
 	// Disable the IRQ, and wait for running handlers to complete.
-	irq_disable_sync(hwirq);
+	irq_disable_shared_sync(hwirq);
 
 	// Remove the VIRQ binding, and wait until the source can be reused.
 	vic_unbind_sync(&hwirq->vgic_spi_source);
@@ -1063,10 +1143,10 @@ vgic_handle_virq_set_enabled_hwirq_spi(virq_source_t *source, bool enabled)
 
 	if (enabled) {
 		if (compiler_expected(hwirq->vgic_enable_hw)) {
-			irq_enable(hwirq);
+			irq_enable_shared(hwirq);
 		}
 	} else {
-		irq_disable_nosync(hwirq);
+		irq_disable_shared_nosync(hwirq);
 	}
 
 	return true;
@@ -1080,7 +1160,7 @@ vgic_handle_virq_set_mode_hwirq_spi(virq_source_t *source, irq_trigger_t mode)
 	assert(!source->is_private);
 	assert(!platform_irq_is_percpu(hwirq->irq));
 
-	return gicv3_irq_set_trigger(hwirq->irq, mode);
+	return gicv3_irq_set_trigger_shared(hwirq->irq, mode);
 }
 
 static void
@@ -1491,6 +1571,61 @@ out:
 	spinlock_release(&vic->gicd_lock);
 }
 
+static void
+vgic_gicd_set_irq_hardware_router(vic_t *vic, irq_t irq_num,
+				  vgic_delivery_state_t new_dstate,
+				  const thread_t       *new_target,
+				  index_t		route_index)
+{
+	virq_source_t *source = vgic_find_source(vic, NULL, irq_num);
+	bool	       is_hw  = (source != NULL) &&
+		     (source->trigger == VIRQ_TRIGGER_VGIC_FORWARDED_SPI);
+	if (is_hw) {
+		// Default to an invalid physical route
+		GICD_IROUTER_t physical_router = GICD_IROUTER_default();
+		GICD_IROUTER_set_IRM(&physical_router, false);
+		GICD_IROUTER_set_Aff0(&physical_router, 0xff);
+		GICD_IROUTER_set_Aff1(&physical_router, 0xff);
+		GICD_IROUTER_set_Aff2(&physical_router, 0xff);
+		GICD_IROUTER_set_Aff3(&physical_router, 0xff);
+
+		// Try to set the physical route based on the virtual target
+#if VGIC_HAS_1N && GICV3_HAS_1N
+		if (vgic_delivery_state_get_route_1n(&new_dstate)) {
+			GICD_IROUTER_set_IRM(&physical_router, true);
+		} else
+#endif
+			if (new_target != NULL) {
+			physical_router = new_target->vgic_irouter;
+		} else {
+			// No valid target
+		}
+
+		// Set the chosen physical route
+		VGIC_TRACE(ROUTE, vic, NULL, "route {:d}: virt {:d} phys {:#x}",
+			   irq_num, route_index,
+			   GICD_IROUTER_raw(physical_router));
+		irq_t irq = hwirq_from_virq_source(source)->irq;
+		(void)gicv3_spi_set_route(irq, physical_router);
+
+#if GICV3_HAS_GICD_ICLAR
+		if (GICD_IROUTER_get_IRM(&physical_router)) {
+			// Set the HW IRQ's 1-of-N routing classes.
+			(void)gicv3_spi_set_classes(
+				irq,
+				!vgic_delivery_state_get_nclass0(&new_dstate),
+				vgic_delivery_state_get_class1(&new_dstate));
+		}
+#endif
+	} else {
+		VGIC_TRACE(ROUTE, vic, NULL, "route {:d}: virt {:d} phys N/A",
+			   irq_num, route_index);
+	}
+#if !(VGIC_HAS_1N && GICV3_HAS_1N) && !GICV3_HAS_GICD_ICLAR
+	(void)new_dstate;
+#endif
+}
+
 void
 vgic_gicd_set_irq_router(vic_t *vic, irq_t irq_num, uint8_t aff0, uint8_t aff1,
 			 uint8_t aff2, uint8_t aff3, bool is_1n)
@@ -1560,50 +1695,8 @@ vgic_gicd_set_irq_router(vic_t *vic, irq_t irq_num, uint8_t aff0, uint8_t aff1,
 	}
 
 	// For hardware sourced IRQs, pass the change through to the hardware.
-	virq_source_t *source = vgic_find_source(vic, NULL, irq_num);
-	bool	       is_hw  = (source != NULL) &&
-		     (source->trigger == VIRQ_TRIGGER_VGIC_FORWARDED_SPI);
-	if (is_hw) {
-		// Default to an invalid physical route
-		GICD_IROUTER_t physical_router = GICD_IROUTER_default();
-		GICD_IROUTER_set_IRM(&physical_router, false);
-		GICD_IROUTER_set_Aff0(&physical_router, 0xff);
-		GICD_IROUTER_set_Aff1(&physical_router, 0xff);
-		GICD_IROUTER_set_Aff2(&physical_router, 0xff);
-		GICD_IROUTER_set_Aff3(&physical_router, 0xff);
-
-		// Try to set the physical route based on the virtual target
-#if VGIC_HAS_1N && GICV3_HAS_1N
-		if (vgic_delivery_state_get_route_1n(&new_dstate)) {
-			GICD_IROUTER_set_IRM(&physical_router, true);
-		} else
-#endif
-			if (new_target != NULL) {
-			physical_router = new_target->vgic_irouter;
-		} else {
-			// No valid target
-		}
-
-		// Set the chosen physical route
-		VGIC_TRACE(ROUTE, vic, NULL, "route {:d}: virt {:d} phys {:#x}",
-			   irq_num, route_index,
-			   GICD_IROUTER_raw(physical_router));
-		irq_t irq = hwirq_from_virq_source(source)->irq;
-		(void)gicv3_spi_set_route(irq, physical_router);
-
-#if GICV3_HAS_GICD_ICLAR
-		if (GICD_IROUTER_get_IRM(&physical_router)) {
-			// Set the HW IRQ's 1-of-N routing classes.
-			(void)gicv3_spi_set_classes(
-				irq,
-				!vgic_delivery_state_get_nclass0(&new_dstate),
-				vgic_delivery_state_get_class1(&new_dstate));
-		}
-#endif
-	} else {
-		VGIC_TRACE(ROUTE, vic, NULL, "route {:d}: virt {:d} phys N/A",
-			   irq_num, route_index);
-	}
+	vgic_gicd_set_irq_hardware_router(vic, irq_num, new_dstate, new_target,
+					  route_index);
 
 	spinlock_release(&vic->gicd_lock);
 	rcu_read_finish();
@@ -1700,7 +1793,7 @@ out:
 		// generation in the GICR & CPU interface (as opposed to the
 		// ITS), and recent CPUs don't implement it. So there is no way
 		// to report this to the VM. We just log it and continue.
-		TRACE_AND_LOG(DEBUG, WARN,
+		TRACE_AND_LOG(ERROR, WARN,
 			      "vgicr: LPI table copy-in failed: {:d}",
 			      (register_t)err);
 	}
@@ -1980,7 +2073,7 @@ vgic_gicr_rd_set_control(vic_t *vic, thread_t *gicr_vcpu, GICR_CTLR_t ctlr)
 			error_t err = vgic_gicr_enable_lpis(vic, gicr_vcpu);
 			if (err != OK) {
 				// LPI enable failed; clear the enable bit.
-				TRACE_AND_LOG(DEBUG, WARN,
+				TRACE_AND_LOG(ERROR, WARN,
 					      "vgicr: LPI enable failed: {:d}",
 					      (register_t)err);
 				(void)GICR_CTLR_atomic_difference(
@@ -2683,7 +2776,7 @@ vgic_handle_irq_received_forward_spi(hwirq_t *hwirq)
 
 	if (compiler_unexpected(ret.e != OK)) {
 		// Delivery failed, so disable the HW IRQ.
-		irq_disable_nosync(hwirq);
+		irq_disable_shared_nosync(hwirq);
 		deactivate = true;
 	}
 

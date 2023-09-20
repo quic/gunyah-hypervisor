@@ -1,0 +1,83 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include <types/bitmap.h>
+#include <util.h>
+
+define MEMDB_BITS_PER_LEVEL constant type index_t = 8;
+define MEMDB_NUM_ENTRIES constant type index_t = 1 << MEMDB_BITS_PER_LEVEL;
+
+// In unit test configurations, we give the memdb some extra levels so the
+// test cases don't interfere with the actual memdb.
+#if defined(UNITTESTS)
+define MEMDB_MAX_BITS constant type index_t = 64 - MEMDB_BITS_PER_LEVEL;
+#else
+define MEMDB_MAX_BITS constant type index_t = PLATFORM_PHYS_ADDRESS_BITS;
+#endif
+
+// We set the start bits to ensure that we can place a bitmap level such that
+// each object ID in the bitmap covers exactly one stage 2 page. This
+// maximises the memory efficiency of the memdb when recording single-page
+// memory shares, such as when the shared memory is allocated from an HLOS
+// VM's page allocator.
+define MEMDB_PAGE_BITS constant type index_t = msb(PGTABLE_VM_PAGE_SIZE);
+define MEMDB_START_BITS constant type index_t =
+		MEMDB_PAGE_BITS +
+		util_round_up(MEMDB_MAX_BITS - MEMDB_PAGE_BITS,
+			MEMDB_BITS_PER_LEVEL);
+define MEMDB_ROOT_ENTRY_BITS constant type index_t =
+		MEMDB_START_BITS - MEMDB_BITS_PER_LEVEL;
+
+// The granularity of the memdb might be between 1 byte (0 bits of address)
+// and half of MEMDB_NUM_ENTRIES (MEMDB_BITS_PER_LEVEL-1 bits of address).
+// This is generally ok as long as it is less than MEMDB_PAGE_BITS, because
+// the memdb doesn't need to track sub-page allocations in most cases. The
+// exception is allocator ranges at boot time which may not be page aligned,
+// but can be aligned up to MEMDB_MIN_SIZE if necessary.
+define MEMDB_MIN_BITS constant type index_t =
+		MEMDB_PAGE_BITS -
+		util_round_down(MEMDB_PAGE_BITS, MEMDB_BITS_PER_LEVEL);
+define MEMDB_MIN_SIZE constant size = (1 << MEMDB_MIN_BITS);
+
+extend rcu_update_class enumeration {
+	memdb_release_level_table;
+	memdb_release_level_bitmap;
+};
+
+define MEMDB_OBJECT_ALIGN_P2 constant type index_t = 3;
+
+define memdb_entry bitfield<64> {
+	auto	entry_type	enumeration memdb_type;
+	// Use a union of pointer types here so the type system can check
+	// that the pointer alignment is sufficient.
+	// FIXME:
+	63:(MEMDB_OBJECT_ALIGN_P2)
+		entry_ptr	uintptr lsl(MEMDB_OBJECT_ALIGN_P2);
+};
+
+define memdb_level_table structure {
+	entries		array(MEMDB_NUM_ENTRIES) bitfield memdb_entry(atomic);
+	rcu_entry	structure rcu_entry(contained);
+};
+
+define MEMDB_BITMAP_ID_BITS constant type index_t = 4;
+define MEMDB_BITMAP_SIZE constant type index_t =
+	MEMDB_BITMAP_ID_BITS * MEMDB_NUM_ENTRIES;
+define MEMDB_BITMAP_OBJECTS constant type index_t = 1 << MEMDB_BITMAP_ID_BITS;
+
+// Must be large enough to fit MEMDB_NUM_ENTRIES
+define memdb_bitmap_count_t newtype uint16;
+
+define memdb_level_bitmap structure {
+	bitmap		BITMAP(MEMDB_BITMAP_SIZE, atomic);
+	objects		array(MEMDB_BITMAP_OBJECTS)
+			bitfield memdb_entry(atomic);
+	counts		array(MEMDB_BITMAP_OBJECTS) type memdb_bitmap_count_t;
+	rcu_entry	structure rcu_entry(contained);
+};
+
+extend memdb_type enumeration {
+	LEVEL_TABLE;
+	LEVEL_BITMAP;
+};

@@ -73,13 +73,6 @@
 
 #include "event_handlers.h"
 
-// Set to 1 to boot enable the MEMDB tracepoints
-#if defined(VERBOSE_TRACE) && VERBOSE_TRACE
-#define DEBUG_MEMDB_TRACES 1
-#else
-#define DEBUG_MEMDB_TRACES 0
-#endif
-
 #define MEMDB_BITS_PER_ENTRY_MASK util_mask(MEMDB_BITS_PER_ENTRY)
 #define ADDR_SIZE		  (sizeof(paddr_t) * (size_t)CHAR_BIT)
 // levels + 1 for root
@@ -1779,7 +1772,7 @@ end_function:
 		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
 							  object, obj_type);
 		if (!cont) {
-			LOG(DEBUG, INFO,
+			LOG(ERROR, INFO,
 			    "<<< memdb_insert BUG!! range {:#x}..{:#x} should be contiguous",
 			    start_addr, end_addr);
 			panic("BUG in memdb_insert");
@@ -1838,7 +1831,7 @@ memdb_update(partition_t *partition, paddr_t start_addr, paddr_t end_addr,
 		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
 							  object, obj_type);
 		if (!cont) {
-			LOG(DEBUG, INFO,
+			LOG(ERROR, INFO,
 			    "<<< memdb_update BUG!! range {:#x}..{:#x} should be contiguous",
 			    start_addr, end_addr);
 			panic("BUG in memdb_update");
@@ -2218,7 +2211,7 @@ error:
 	return ret;
 }
 
-void
+static void
 memdb_init(void)
 {
 	atomic_entry_write(&memdb.root, memory_order_relaxed, 0,
@@ -2227,9 +2220,9 @@ memdb_init(void)
 }
 
 void
-memdb_handle_boot_cold_init(void)
+memdb_gpt_handle_boot_cold_init(void)
 {
-#if !defined(NDEBUG) && DEBUG_MEMDB_TRACES
+#if !defined(NDEBUG)
 	register_t flags = 0U;
 	TRACE_SET_CLASS(flags, MEMDB);
 	trace_set_class_flags(flags);
@@ -2271,8 +2264,8 @@ memdb_handle_boot_cold_init(void)
 }
 
 error_t
-memdb_handle_partition_add_ram_range(partition_t *owner, paddr_t phys_base,
-				     size_t size)
+memdb_gpt_handle_partition_add_ram_range(partition_t *owner, paddr_t phys_base,
+					 size_t size)
 {
 	partition_t *hyp_partition = partition_get_private();
 
@@ -2296,8 +2289,8 @@ memdb_handle_partition_add_ram_range(partition_t *owner, paddr_t phys_base,
 }
 
 error_t
-memdb_handle_partition_remove_ram_range(partition_t *owner, paddr_t phys_base,
-					size_t size)
+memdb_gpt_handle_partition_remove_ram_range(partition_t *owner,
+					    paddr_t phys_base, size_t size)
 {
 	partition_t *hyp_partition = partition_get_private();
 

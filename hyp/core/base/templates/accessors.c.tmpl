@@ -284,7 +284,8 @@ ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field
 #end for
 #if $dec.field_signed
 #set l=hex(1 << ($dec.field_length - 1)) + 'U'
-    return (${field_type_type_name})((val ^ $l) - $l);
+    val = (val ^ $l) - $l;
+    return (${field_type_type_name})val;
 #else
 #if not $dec.is_nested_bitfield
 #if $bool_type

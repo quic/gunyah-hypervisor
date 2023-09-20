@@ -20,16 +20,10 @@
 #include "etm.h"
 #include "event_handlers.h"
 
-#if defined(VERBOSE_TRACE) && VERBOSE_TRACE
-#define DEBUG_VETM_TRACES 1
-#else
-#define DEBUG_VETM_TRACES 0
-#endif
-
 void
 vetm_handle_boot_hypervisor_start(void)
 {
-#if !defined(NDEBUG) && DEBUG_VETM_TRACES
+#if !defined(NDEBUG)
 	register_t flags = 0U;
 	TRACE_SET_CLASS(flags, VETM);
 	trace_set_class_flags(flags);

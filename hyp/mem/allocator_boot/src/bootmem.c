@@ -17,6 +17,7 @@ static bootmem_allocator_t bootmem_allocator;
 // such as through boot configuration structures.
 extern uint8_t heap_private_start;
 extern uint8_t heap_private_end;
+extern uint8_t image_virt_end;
 
 void
 allocator_boot_handle_boot_runtime_first_init(void)
@@ -33,8 +34,11 @@ allocator_boot_handle_boot_runtime_first_init(void)
 	// will map the rest of the heap during the hyp_aspace init.
 	void	 *base	  = &heap_private_start;
 	uintptr_t map_end = util_balign_up((uintptr_t)base, 0x200000U);
-	uintptr_t end	  = util_min(
-		    map_end, (uintptr_t)base + (size_t)PLATFORM_HEAP_PRIVATE_SIZE);
+
+	uintptr_t hyp_priv_end =
+		(((uintptr_t)&image_virt_end) - (size_t)PLATFORM_RW_DATA_SIZE) +
+		(size_t)PLATFORM_HEAP_PRIVATE_SIZE;
+	uintptr_t end = util_min(map_end, hyp_priv_end);
 
 	assert((uintptr_t)base < end);
 	size_t size = end - (uintptr_t)base;

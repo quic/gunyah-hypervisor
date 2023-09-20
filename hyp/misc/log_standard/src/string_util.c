@@ -167,6 +167,115 @@ insert_padding(char *buf, size_t size, char fill_char, size_t len)
 	return padding;
 }
 
+static error_t
+itoa_insert_sign(const fmt_info_t *info, bool positive, size_t *remaining,
+		 char **pos_ptr)
+{
+	error_t ret = OK;
+	char   *pos = *pos_ptr;
+
+	switch (info->sign) {
+	case SIGN_BOTH:
+		if (positive) {
+			*pos = '+';
+		} else {
+			*pos = '-';
+		}
+		pos++;
+		(*remaining)--;
+		if (*remaining == 0U) {
+			ret = ERROR_STRING_TRUNCATED;
+			goto out;
+		}
+		break;
+
+	case SIGN_POS_LEADING:
+		if (positive) {
+			*pos = ' ';
+		} else {
+			*pos = '-';
+		}
+		pos++;
+		(*remaining)--;
+		if (*remaining == 0U) {
+			ret = ERROR_STRING_TRUNCATED;
+			goto out;
+		}
+		break;
+
+	case SIGN_NEG:
+	default:
+		if (!positive) {
+			*pos = '-';
+			(*remaining)--;
+			if (*remaining == 0U) {
+				ret = ERROR_STRING_TRUNCATED;
+				goto out;
+			}
+			pos++;
+		}
+		break;
+	}
+
+out:
+	*pos_ptr = pos;
+	return ret;
+}
+
+static error_t
+itoa_insert_base(uint8_t base, size_t *remaining, char **pos_ptr)
+{
+	error_t ret = OK;
+	char   *pos = *pos_ptr;
+
+	switch (base) {
+	case 2:
+		*pos = 'b';
+		pos++;
+		(*remaining)--;
+		break;
+	case 8:
+		*pos = 'o';
+		pos++;
+		(*remaining)--;
+		break;
+	case 16:
+		*pos = 'x';
+		pos++;
+		(*remaining)--;
+		break;
+	default:
+		// Unusual base. Nothing to do
+		break;
+	}
+
+	if (*remaining == 0U) {
+		ret = ERROR_STRING_TRUNCATED;
+		goto out;
+	}
+
+	switch (base) {
+	case 2:
+	case 8:
+	case 16:
+		*pos = '0';
+		pos++;
+		(*remaining)--;
+		break;
+	default:
+		// Unusual base. Nothing to do
+		break;
+	}
+
+	if (*remaining == 0U) {
+		ret = ERROR_STRING_TRUNCATED;
+	}
+
+out:
+	*pos_ptr = pos;
+	return ret;
+}
+
 static inline error_t
 itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
      bool positive)
@@ -264,47 +373,8 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 	}
 
 	if (info->alternate_form) {
-		switch (base) {
-		case 2:
-			*pos = 'b';
-			pos++;
-			remaining--;
-			break;
-		case 8:
-			*pos = 'o';
-			pos++;
-			remaining--;
-			break;
-		case 16:
-			*pos = 'x';
-			pos++;
-			remaining--;
-			break;
-		default:
-			// Unusual base. Nothing to do
-			break;
-		}
-
-		if (remaining == 0U) {
-			ret = ERROR_STRING_TRUNCATED;
-			goto reverse_out;
-		}
-
-		switch (base) {
-		case 2:
-		case 8:
-		case 16:
-			*pos = '0';
-			pos++;
-			remaining--;
-			break;
-		default:
-			// Unusual base. Nothing to do
-			break;
-		}
-
-		if (remaining == 0U) {
-			ret = ERROR_STRING_TRUNCATED;
+		ret = itoa_insert_base(base, &remaining, &pos);
+		if (ret != OK) {
 			goto reverse_out;
 		}
 	}
@@ -318,47 +388,9 @@ itoa(char *buf, size_t *size, uint64_t val, uint8_t base, fmt_info_t *info,
 		goto reverse_out;
 	}
 
-	switch (info->sign) {
-	case SIGN_BOTH:
-		if (positive) {
-			*pos = '+';
-		} else {
-			*pos = '-';
-		}
-		pos++;
-		remaining--;
-		if (remaining == 0U) {
-			ret = ERROR_STRING_TRUNCATED;
-			goto reverse_out;
-		}
-		break;
-
-	case SIGN_POS_LEADING:
-		if (positive) {
-			*pos = ' ';
-		} else {
-			*pos = '-';
-		}
-		pos++;
-		remaining--;
-		if (remaining == 0U) {
-			ret = ERROR_STRING_TRUNCATED;
-			goto reverse_out;
-		}
-		break;
-
-	case SIGN_NEG:
-	default:
-		if (!positive) {
-			*pos = '-';
-			remaining--;
-			if (remaining == 0U) {
-				ret = ERROR_STRING_TRUNCATED;
-				goto reverse_out;
-			}
-			pos++;
-		}
-		break;
+	ret = itoa_insert_sign(info, positive, &remaining, &pos);
+	if (ret != OK) {
+		goto reverse_out;
 	}
 
 	padding_ret =

@@ -46,6 +46,31 @@ bitmap_clear(register_t *bitmap, index_t bit)
 	bitmap[i] &= ~BITMAP_SET_BIT(bit);
 }
 
+register_t
+bitmap_extract(const register_t *bitmap, index_t bit, index_t width)
+{
+	BITMAP_SIZE_ASSERT(bitmap, bit + width - 1U);
+	assert((width <= BITMAP_WORD_BITS) &&
+	       (BITMAP_WORD(bit) == BITMAP_WORD(bit + width - 1U)));
+
+	index_t i = BITMAP_WORD(bit);
+
+	return (bitmap[i] >> (bit % BITMAP_WORD_BITS)) & util_mask(width);
+}
+
+void
+bitmap_insert(register_t *bitmap, index_t bit, index_t width, register_t value)
+{
+	BITMAP_SIZE_ASSERT(bitmap, bit + width - 1U);
+	assert((width <= BITMAP_WORD_BITS) &&
+	       (BITMAP_WORD(bit) == BITMAP_WORD(bit + width - 1U)));
+
+	index_t i = BITMAP_WORD(bit);
+
+	bitmap[i] &= ~(util_mask(width) << (bit % BITMAP_WORD_BITS));
+	bitmap[i] |= (value & util_mask(width)) << (bit % BITMAP_WORD_BITS);
+}
+
 bool
 bitmap_ffs(const register_t *bitmap, index_t num_bits, index_t *bit)
 {
@@ -250,4 +275,45 @@ bitmap_atomic_full(const _Atomic register_t *bitmap, index_t num_bits)
 	}
 
 	return result;
+}
+
+register_t
+bitmap_atomic_extract(const _Atomic register_t *bitmap, index_t bit,
+		      index_t width, memory_order order)
+{
+	BITMAP_SIZE_ASSERT(bitmap, bit + width - 1U);
+	assert((width <= BITMAP_WORD_BITS) &&
+	       (BITMAP_WORD(bit) == BITMAP_WORD(bit + width - 1U)));
+
+	index_t i = BITMAP_WORD(bit);
+
+	return (atomic_load_explicit(&bitmap[i], order) >>
+		(bit % BITMAP_WORD_BITS)) &
+	       util_mask(width);
+}
+
+void
+bitmap_atomic_insert(_Atomic register_t *bitmap, index_t bit, index_t width,
+		     register_t value, memory_order order)
+{
+	BITMAP_SIZE_ASSERT(bitmap, bit + width - 1U);
+	assert((width <= BITMAP_WORD_BITS) &&
+	       (BITMAP_WORD(bit) == BITMAP_WORD(bit + width - 1U)));
+
+	index_t i = BITMAP_WORD(bit);
+
+	memory_order load_order =
+		(order == memory_order_release)	  ? memory_order_relaxed
+		: (order == memory_order_acq_rel) ? memory_order_acquire
+						  : order;
+
+	register_t old_word = atomic_load_explicit(&bitmap[i], load_order),
+		   new_word;
+	do {
+		new_word = (old_word &
+			    ~(util_mask(width) << (bit % BITMAP_WORD_BITS))) |
+			   ((value & util_mask(width))
+			    << (bit % BITMAP_WORD_BITS));
+	} while (!atomic_compare_exchange_weak_explicit(
+		&bitmap[i], &old_word, new_word, order, load_order));
 }

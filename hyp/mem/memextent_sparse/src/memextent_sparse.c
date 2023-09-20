@@ -457,6 +457,37 @@ apply_mappings(memextent_t *me, paddr_t phys, size_t size, bool unmap,
 	return err;
 }
 
+static void
+revert_mapping_transfer(memextent_mapping_t x_mappings[],
+			memextent_mapping_t y_mappings[], const bool x_match[],
+			const bool y_match[], paddr_t curr_phys,
+			size_t curr_size, index_t x_idx, index_t y_idx)
+{
+	for (index_t i = 0U; i < MEMEXTENT_MAX_MAPS; i++) {
+		memextent_mapping_t *xmap = &x_mappings[i];
+		memextent_mapping_t *ymap = &y_mappings[i];
+
+		error_t revert_err = OK;
+
+		if ((i < x_idx) && (xmap->addrspace != NULL) && !x_match[i]) {
+			revert_err = do_as_map(xmap->addrspace, xmap->vbase,
+					       curr_size, curr_phys,
+					       xmap->attrs);
+		}
+
+		if ((revert_err == OK) && (i < y_idx) &&
+		    (ymap->addrspace != NULL) && !y_match[i]) {
+			revert_err = addrspace_unmap(ymap->addrspace,
+						     ymap->vbase, curr_size,
+						     curr_phys);
+		}
+
+		if (revert_err != OK) {
+			panic("Failed to revert mapping transfer");
+		}
+	}
+}
+
 static error_t
 do_mapping_transfer(memextent_t *x, memextent_t *y, paddr_t phys, size_t size,
 		    size_t *fail_offset) REQUIRE_SPINLOCK(x->lock)
@@ -553,33 +584,9 @@ do_mapping_transfer(memextent_t *x, memextent_t *y, paddr_t phys, size_t size,
 				panic("Failed to do sparse mapping transfer");
 			}
 
-			for (index_t i = 0U; i < MEMEXTENT_MAX_MAPS; i++) {
-				memextent_mapping_t *xmap = &x_mappings[i];
-				memextent_mapping_t *ymap = &y_mappings[i];
-
-				error_t revert_err = OK;
-
-				if ((i < x_idx) && (xmap->addrspace != NULL) &&
-				    !x_match[i]) {
-					revert_err = do_as_map(xmap->addrspace,
-							       xmap->vbase,
-							       curr_size,
-							       curr_phys,
-							       xmap->attrs);
-				}
-
-				if ((revert_err == OK) && (i < y_idx) &&
-				    (ymap->addrspace != NULL) && !y_match[i]) {
-					revert_err = addrspace_unmap(
-						ymap->addrspace, ymap->vbase,
-						curr_size, curr_phys);
-				}
-
-				if (revert_err != OK) {
-					panic("Failed to revert mapping transfer");
-				}
-			}
-
+			revert_mapping_transfer(x_mappings, y_mappings, x_match,
+						y_match, curr_phys, curr_size,
+						x_idx, y_idx);
 			break;
 		}
 

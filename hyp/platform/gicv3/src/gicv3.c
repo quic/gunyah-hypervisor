@@ -172,9 +172,6 @@ static count_t gicv3_ppi_ext_max_cache;
 static count_t gicv3_lpi_max_cache;
 #endif
 
-static_assert(PLATFORM_GICR_COUNT >= PLATFORM_MAX_CORES,
-	      "There must be enough GICRs for all possible CPUs");
-
 static error_t
 gicv3_spi_set_route_internal(irq_t irq, GICD_IROUTER_t route);
 
@@ -400,14 +397,30 @@ gicv3_irq_check(irq_t irq)
 static bool
 gicv3_spi_is_enabled(irq_t irq)
 {
-	uint32_t isenabler =
-		atomic_load_relaxed(&gicd->isenabler[GICD_ENABLE_GET_N(irq)]);
-	bool enabled = (isenabler & GIC_ENABLE_BIT(irq)) != 0U;
+	bool		 enabled  = false;
+	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
 
 #if GICV3_EXT_IRQS
-#error Check the extended IRQs
+	assert(irq_type == GICV3_IRQ_TYPE_SPI ||
+	       irq_type == GICV3_IRQ_TYPE_SPI_EXT);
+#else
+	assert(irq_type == GICV3_IRQ_TYPE_SPI);
 #endif
-
+	if (irq_type == GICV3_IRQ_TYPE_SPI) {
+		uint32_t isenabler = atomic_load_relaxed(
+			&gicd->isenabler[GICD_ENABLE_GET_N(irq)]);
+		enabled = (isenabler & GIC_ENABLE_BIT(irq)) != 0U;
+	}
+#if GICV3_EXT_IRQS
+	else {
+		// irq_type == GICV3_IRQ_TYPE_SPI_EXT
+		uint32_t isenabler =
+			atomic_load_relaxed(&gicd->isenabler[GICD_ENABLE_GET_N(
+				irq - GIC_SPI_EXT_BASE)]);
+		enabled = (isenabler &
+			   GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE)) != 0U;
+	}
+#endif
 	return enabled;
 }
 
@@ -667,6 +680,10 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 {
 	partition_t *hyp_partition = partition_get_private();
 
+	// There must be enough GICRs for all of the usable cores. This cannot
+	// be a static assertion.
+	assert(PLATFORM_GICR_COUNT >= compiler_popcount(PLATFORM_USABLE_CORES));
+
 	// FIXME: remove when read from device tree
 	size_t gicr_size = PLATFORM_GICR_COUNT * util_bit(GICR_STRIDE_SHIFT);
 	size_t gicd_size = 0x10000U; // GICD is always 64K
@@ -700,27 +717,12 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 			     (GICD_CTLR_t){ .ns = GICD_CTLR_NS_default() });
 	GICD_CTLR_NS_t ctlr = gicd_wait_for_write();
 
-#if GICV3_HAS_SECURITY_DISABLED
-	// If security disabled set all interrupts to group 1
-	GICD_CTLR_t ctlr_ds = atomic_load_relaxed(&(gicd->ctlr));
-	assert(GICD_CTLR_DS_get_DS(&ctlr_ds.ds));
-
-	for (index_t i = 0; i < util_array_size(gicd->igroupr); i++) {
-		atomic_store_relaxed(&gicd->igroupr[i], 0xffffffff);
-	}
-#if GICV3_EXT_IRQS
-	for (index_t i = 0; i < util_array_size(gicd->igroupr_e); i++) {
-		atomic_store_relaxed(&gicd->igroupr_e[i], 0xffffffff);
-	}
-#endif
-#endif
-
 	// Calculate the number of supported IRQs
 	GICD_TYPER_t typer = atomic_load_relaxed(&gicd->typer);
 
-	count_t lines	    = GICD_TYPER_get_ITLinesNumber(&typer);
+	count_t spi_ranges  = GICD_TYPER_get_ITLinesNumber(&typer) + 1U;
 	gicv3_spi_max_cache = util_min(GIC_SPI_BASE + GIC_SPI_NUM - 1U,
-				       (32U * (lines + 1U)) - 1U);
+				       (32U * spi_ranges) - 1U);
 
 #if GICV3_EXT_IRQS || GICV3_HAS_ITS
 	// Pick an arbitrary GICR to probe extended PPI and common LPI affinity
@@ -730,13 +732,14 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 #endif
 
 #if GICV3_EXT_IRQS
-	bool espi = GICD_TYPER_get_ESPI(&typer);
+	count_t espi_ranges;
 
-	if (espi) {
-		count_t espi_range = GICD_TYPER_get_ESPI_range(&typer);
+	if (GICD_TYPER_get_ESPI(&typer)) {
+		espi_ranges = GICD_TYPER_get_ESPI_range(&typer) + 1U;
 		gicv3_spi_ext_max_cache =
-			GIC_SPI_EXT_BASE - 1U + (32U * (espi_range + 1U));
+			GIC_SPI_EXT_BASE + (32U * espi_ranges) - 1U;
 	} else {
+		espi_ranges		= 0U;
 		gicv3_spi_ext_max_cache = 0U;
 	}
 
@@ -766,16 +769,31 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	atomic_store_relaxed(&gicd->ctlr, (GICD_CTLR_t){ .ns = ctlr });
 	ctlr = gicd_wait_for_write();
 
+#if GICV3_HAS_SECURITY_DISABLED
+	// If security disabled set all interrupts to group 1
+	GICD_CTLR_t ctlr_ds = atomic_load_relaxed(&(gicd->ctlr));
+	assert(GICD_CTLR_DS_get_DS(&ctlr_ds.ds));
+
+	for (index_t i = 1U; i < spi_ranges; i++) {
+		atomic_store_relaxed(&gicd->igroupr[i], 0xffffffffU);
+	}
+#if GICV3_EXT_IRQS
+	for (index_t i = 0U; i < espi_ranges; i++) {
+		atomic_store_relaxed(&gicd->igroupr_e[i], 0xffffffffU);
+	}
+#endif
+#endif
+
 	// Configure all SPIs to the default priority
-	for (irq_t i = GIC_SPI_BASE; i < (GIC_SPI_BASE + GIC_SPI_NUM); i++) {
+	for (irq_t i = GIC_SPI_BASE; i <= gicv3_spi_max_cache; i++) {
 		atomic_store_relaxed(&gicd->ipriorityr[i],
 				     GIC_PRIORITY_DEFAULT);
 	}
 
 #if GICV3_EXT_IRQS
 	// Configure all extended SPIs to the default priority
-	for (irq_t i = 0; i < GIC_SPI_EXT_NUM; i++) {
-		atomic_store_relaxed(&gicd->ipriorityr_e[i],
+	for (irq_t i = GIC_SPI_EXT_BASE; i <= gicv3_spi_ext_max_cache; i++) {
+		atomic_store_relaxed(&gicd->ipriorityr_e[i - GIC_SPI_EXT_BASE],
 				     GIC_PRIORITY_DEFAULT);
 	}
 #endif
@@ -797,12 +815,13 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	GICD_IROUTER_set_Aff2(&irouter, aff2);
 	GICD_IROUTER_set_Aff3(&irouter, aff3);
 
-	for (irq_t i = 0; i < GIC_SPI_NUM; i++) {
-		atomic_store_relaxed(&gicd->irouter[i], irouter);
+	for (irq_t i = GIC_SPI_BASE; i <= gicv3_spi_max_cache; i++) {
+		atomic_store_relaxed(&gicd->irouter[i - GIC_SPI_BASE], irouter);
 	}
 #if GICV3_EXT_IRQS
-	for (irq_t i = 0; i < GIC_SPI_EXT_NUM; i++) {
-		atomic_store_relaxed(&gicd->irouter_e[i], irouter);
+	for (irq_t i = GIC_SPI_EXT_BASE; i <= gicv3_spi_ext_max_cache; i++) {
+		atomic_store_relaxed(&gicd->irouter_e[i - GIC_SPI_EXT_BASE],
+				     irouter);
 	}
 #endif
 
@@ -813,13 +832,12 @@ gicv3_handle_boot_cold_init(cpu_index_t cpu)
 	// Disable forwarding of the all SPIs interrupts
 	// First 32 bits (index 0) correspond to SGIs and PPIs, which are now
 	// handled in the redistributor. Therefore, we start from index 1.
-	for (index_t i = 1; i < util_array_size(gicd->icenabler); i++) {
-		atomic_store_relaxed(&gicd->icenabler[i], 0xffffffff);
+	for (index_t i = 1U; i < spi_ranges; i++) {
+		atomic_store_relaxed(&gicd->icenabler[i], 0xffffffffU);
 	}
-
 #if GICV3_EXT_IRQS
-	for (index_t i = 0; i < util_array_size(gicd->icenabler_e); i++) {
-		atomic_store_relaxed(&gicd->icenabler_e[i], 0xffffffff);
+	for (index_t i = 0U; i < espi_ranges; i++) {
+		atomic_store_relaxed(&gicd->icenabler_e[i], 0xffffffffU);
 	}
 #endif
 	(void)gicd_wait_for_write();
@@ -891,9 +909,10 @@ gicv3_handle_boot_cpu_cold_init(cpu_index_t cpu)
 	}
 
 #if GICV3_EXT_IRQS
-	for (irq_t i = 0; i < GIC_PPI_EXT_NUM; i++) {
-		atomic_store_relaxed(&gicr->sgi.ipriorityr_e[i],
-				     GIC_PRIORITY_DEFAULT);
+	for (irq_t i = GIC_PPI_EXT_BASE; i < gicv3_ppi_ext_max_cache; i++) {
+		atomic_store_relaxed(
+			&gicr->sgi.ipriorityr_e[i - GIC_PPI_EXT_BASE],
+			GIC_PRIORITY_DEFAULT);
 	}
 #endif
 
@@ -902,9 +921,14 @@ gicv3_handle_boot_cpu_cold_init(cpu_index_t cpu)
 	GICD_CTLR_t ctlr_ds = atomic_load_relaxed(&(gicd->ctlr));
 	assert(GICD_CTLR_DS_get_DS(&ctlr_ds.ds));
 
-	atomic_store_relaxed(&gicr->sgi.igroupr0, 0xffffffff);
+	atomic_store_relaxed(&gicr->sgi.igroupr0, 0xffffffffU);
 #if GICV3_EXT_IRQS
-	atomic_store_relaxed(&gicr->sgi.igroupr_e, 0xffffffff);
+	if (gicv3_ppi_ext_max_cache >= GIC_PPI_EXT_BASE) {
+		atomic_store_relaxed(&gicr->sgi.igroupr_e[0], 0xffffffffU);
+	}
+	if (gicv3_ppi_ext_max_cache >= (GIC_PPI_EXT_BASE + 32U)) {
+		atomic_store_relaxed(&gicr->sgi.igroupr_e[1], 0xffffffffU);
+	}
 #endif
 
 	GICR_WAKER_t waker = GICR_WAKER_default();
@@ -919,10 +943,13 @@ gicv3_handle_boot_cpu_cold_init(cpu_index_t cpu)
 #endif
 
 	// Disable all local IRQs
-	atomic_store_relaxed(&gicr->sgi.icenabler0, 0xffffffff);
+	atomic_store_relaxed(&gicr->sgi.icenabler0, 0xffffffffU);
 #if GICV3_EXT_IRQS
-	for (index_t i = 0; i < util_array_size(gicr->sgi.icenabler_e); i++) {
-		atomic_store_relaxed(&gicr->sgi.icenabler_e, 0xffffffff);
+	if (gicv3_ppi_ext_max_cache >= GIC_PPI_EXT_BASE) {
+		atomic_store_relaxed(&gicr->sgi.icenabler_e[0], 0xffffffffU);
+	}
+	if (gicv3_ppi_ext_max_cache >= (GIC_PPI_EXT_BASE + 32U)) {
+		atomic_store_relaxed(&gicr->sgi.icenabler_e[1], 0xffffffffU);
 	}
 #endif
 	gicr_wait_for_write(gicr);
@@ -1135,75 +1162,71 @@ gicv3_handle_power_cpu_resume(void)
 }
 
 void
-gicv3_irq_enable(irq_t irq)
+gicv3_irq_enable_shared(irq_t irq)
 {
 	assert(irq <= gicv3_irq_max());
-
 	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
+#if GICV3_EXT_IRQS
+	assert(irq_type == GICV3_IRQ_TYPE_SPI ||
+	       irq_type == GICV3_IRQ_TYPE_SPI_EXT);
+#else
+	assert(irq_type == GICV3_IRQ_TYPE_SPI);
+#endif
 
-	switch (irq_type) {
-	case GICV3_IRQ_TYPE_SPI:
-		// Ensure the route is still valid if we enable the irq for the
-		// first time
+	// Ensure the route is still valid if we enable the irq for the
+	// first time
 
-		// Take the SPI lock so we can fetch the current route
-		// If it has a specific target CPU (not 1:N) ensure it is online
-		spinlock_acquire(&spi_route_lock);
+	// Take the SPI lock so we can fetch the current route
+	// If it has a specific target CPU (not 1:N) ensure it is online
+	spinlock_acquire(&spi_route_lock);
 
-		if (!gicv3_spi_is_enabled(irq)) {
-			GICD_IROUTER_t route =
-				atomic_load_relaxed(&gicd->irouter[irq]);
-			if (!GICD_IROUTER_get_IRM(&route)) {
-				cpu_index_t target;
-				gicr_cpu_t *gc = NULL;
-				bool valid = gicv3_spi_get_route_cpu_affinity(
-					&route, &target);
-				if (valid) {
-					gc = &CPULOCAL_BY_INDEX(gicr_cpu,
-								target);
-				}
-				// Set affinity to this CPU if needed
-				if (!valid || !gc->online) {
-					gc = &CPULOCAL(gicr_cpu);
-					assert(gc->online);
-					gicv3_spi_set_route_cpu_affinity(
-						&route, cpulocal_get_index());
-					(void)gicv3_spi_set_route_internal(
-						irq, route);
-				}
+	if (!gicv3_spi_is_enabled(irq)) {
+#if GICV3_EXT_IRQS
+		GICD_IROUTER_t route;
+		if (irq_type == GICV3_IRQ_TYPE_SPI) {
+			route = atomic_load_relaxed(
+				&gicd->irouter[irq - GIC_SPI_BASE]);
+		} else {
+			route = atomic_load_relaxed(
+				&gicd->irouter_e[irq - GIC_SPI_EXT_BASE]);
+		}
+#else
+		GICD_IROUTER_t route =
+			atomic_load_relaxed(&gicd->irouter[irq - GIC_SPI_BASE]);
+#endif
+		if (!GICD_IROUTER_get_IRM(&route)) {
+			cpu_index_t target;
+			gicr_cpu_t *gc = NULL;
+			bool valid = gicv3_spi_get_route_cpu_affinity(&route,
+								      &target);
+			if (valid) {
+				gc = &CPULOCAL_BY_INDEX(gicr_cpu, target);
+			}
+			// Set affinity to this CPU if needed
+			if (!valid || !gc->online) {
+				gc = &CPULOCAL(gicr_cpu);
+				assert(gc->online);
+				gicv3_spi_set_route_cpu_affinity(
+					&route, cpulocal_get_index());
+				(void)gicv3_spi_set_route_internal(irq, route);
 			}
 		}
-
-		atomic_store_release(&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
-				     GIC_ENABLE_BIT(irq));
-
-		spinlock_release(&spi_route_lock);
-
-		break;
+	}
 
 #if GICV3_EXT_IRQS
-	case GICV3_IRQ_TYPE_SPI_EXT:
-		// Extended SPI
-#error TODO check route is valid
-
+	if (irq_type == GICV3_IRQ_TYPE_SPI) {
+		atomic_store_release(&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
+				     GIC_ENABLE_BIT(irq));
+	} else {
 		atomic_store_release(&gicd->isenabler_e[GICD_ENABLE_GET_N(
 					     irq - GIC_SPI_EXT_BASE)],
 				     GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE));
-		break;
-#endif
-#if GICV3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
-#endif
-	case GICV3_IRQ_TYPE_SGI:
-	case GICV3_IRQ_TYPE_PPI:
-#if GICV3_EXT_IRQS
-	case GICV3_IRQ_TYPE_PPI_EXT:
-#endif
-	case GICV3_IRQ_TYPE_SPECIAL:
-	case GICV3_IRQ_TYPE_RESERVED:
-	default:
-		panic("Incorrect IRQ type");
 	}
+#else
+	atomic_store_release(&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
+			     GIC_ENABLE_BIT(irq));
+#endif
+	spinlock_release(&spi_route_lock);
 }
 
 void
@@ -1257,7 +1280,7 @@ gicv3_irq_enable_local(irq_t irq)
 }
 
 void
-gicv3_irq_disable(irq_t irq)
+gicv3_irq_disable_shared(irq_t irq)
 {
 	assert(irq <= gicv3_irq_max());
 
@@ -1463,7 +1486,7 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
 		uint32_t isenabler_e = atomic_load_relaxed(
-			gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
+			&gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
 				irq - GIC_PPI_EXT_BASE)]);
 		bool enabled = (isenabler_e &
 				GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE)) != 0U;
@@ -1473,7 +1496,7 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		}
 
 		register_t icfg = (register_t)atomic_load_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16]);
+			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16U]);
 
 		if ((trigger == IRQ_TRIGGER_LEVEL_HIGH) ||
 		    (trigger == IRQ_TRIGGER_LEVEL_LOW)) {
@@ -1483,16 +1506,16 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		}
 
 		atomic_store_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16],
+			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16U],
 			(uint32_t)icfg);
 
 		if (enabled) {
-			gicv3_irq_enable_percpu(irq);
+			gicv3_irq_enable_percpu(irq, cpu);
 		}
 
 		// Read back the value in case it could not be changed
 		icfg = (register_t)atomic_load_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16]);
+			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16U]);
 		ret = irq_trigger_result_ok(
 			bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
 				? IRQ_TRIGGER_EDGE_RISING
@@ -1525,59 +1548,15 @@ end_function:
 }
 
 irq_trigger_result_t
-gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
+gicv3_irq_set_trigger_shared(irq_t irq, irq_trigger_t trigger)
 {
 	irq_trigger_result_t ret;
 
 	assert(irq <= gicv3_irq_max());
 
-	gicv3_irq_type_t irq_type = gicv3_get_irq_type(irq);
-
 	spinlock_acquire(&bitmap_update_lock);
 
-	switch (irq_type) {
-	case GICV3_IRQ_TYPE_SGI:
-		// SGIs only support edge-triggered behavior
-		ret = irq_trigger_result_ok(IRQ_TRIGGER_EDGE_RISING);
-		break;
-
-	case GICV3_IRQ_TYPE_PPI: {
-		gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
-
-		uint32_t isenabler0 =
-			atomic_load_relaxed(&gicr->sgi.isenabler0);
-		bool enabled = (isenabler0 & GIC_ENABLE_BIT(irq)) != 0U;
-
-		if (enabled) {
-			gicv3_irq_disable(irq);
-		}
-
-		register_t icfg =
-			(register_t)atomic_load_relaxed(&gicr->sgi.icfgr[1]);
-
-		if ((trigger == IRQ_TRIGGER_LEVEL_HIGH) ||
-		    (trigger == IRQ_TRIGGER_LEVEL_LOW)) {
-			bitmap_clear(&icfg, ((irq % 16U) * 2U) + 1U);
-		} else {
-			bitmap_set(&icfg, ((irq % 16U) * 2U) + 1U);
-		}
-
-		atomic_store_relaxed(&gicr->sgi.icfgr[1], (uint32_t)icfg);
-
-		if (enabled) {
-			gicv3_irq_enable(irq);
-		}
-
-		// Read back the value in case it could not be changed
-		icfg = atomic_load_relaxed(&gicr->sgi.icfgr[1]);
-		ret  = irq_trigger_result_ok(
-			 bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
-				 ? IRQ_TRIGGER_EDGE_RISING
-				 : IRQ_TRIGGER_LEVEL_HIGH);
-
-		break;
-	}
-
+	switch (gicv3_get_irq_type(irq)) {
 	case GICV3_IRQ_TYPE_SPI: {
 		// Disable the interrupt if it is already enabled
 		uint32_t isenabler = atomic_load_relaxed(
@@ -1585,7 +1564,7 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		bool enabled = (isenabler & GIC_ENABLE_BIT(irq)) != 0U;
 
 		if (enabled) {
-			gicv3_irq_disable(irq);
+			gicv3_irq_disable_shared(irq);
 		}
 
 		register_t icfg =
@@ -1601,7 +1580,7 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		atomic_store_relaxed(&gicd->icfgr[irq / 16], (uint32_t)icfg);
 
 		if (enabled) {
-			gicv3_irq_enable(irq);
+			gicv3_irq_enable_shared(irq);
 		}
 
 		// Read back the value in case it could not be changed
@@ -1613,63 +1592,17 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 
 		break;
 	}
-
 #if GICV3_EXT_IRQS
-	case GICV3_IRQ_TYPE_PPI_EXT: {
-		// Extended PPI
-		gicr_t *gicr = CPULOCAL(gicr_cpu).gicr;
-
-		uint32_t isenabler_e = atomic_load_relaxed(
-			gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
-				irq - GIC_PPI_EXT_BASE)]);
-		bool enabled = (isenabler_e &
-				GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE)) != 0U;
-
-		if (enabled) {
-			gicv3_irq_disable(irq);
-		}
-
-		register_t icfg = (register_t)atomic_load_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16]);
-
-		if ((trigger == IRQ_TRIGGER_LEVEL_HIGH) ||
-		    (trigger == IRQ_TRIGGER_LEVEL_LOW)) {
-			bitmap_clear(&icfg, ((irq % 16U) * 2U) + 1U);
-		} else {
-			bitmap_set(&icfg, ((irq % 16U) * 2U) + 1U);
-		}
-
-		atomic_store_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16],
-			(uint32_t)icfg);
-
-		if (enabled) {
-			gicv3_irq_enable(irq);
-		}
-
-		// Read back the value in case it could not be changed
-		icfg = (register_t)atomic_load_relaxed(
-			&gicr->sgi.icfgr_e[(irq - GIC_PPI_EXT_BASE) / 16]);
-		ret = irq_trigger_result_ok(
-			bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
-				? IRQ_TRIGGER_EDGE_RISING
-				: IRQ_TRIGGER_LEVEL_HIGH);
-
-		break;
-	}
-
 	case GICV3_IRQ_TYPE_SPI_EXT: {
-		// Extended SPI
-
 		// Disable the interrupt if it is already enabled
-		uint32_t isenabler = atomic_load_relaxed(
+		uint32_t isenabler_e = atomic_load_relaxed(
 			&gicd->isenabler_e[GICD_ENABLE_GET_N(
 				irq - GIC_SPI_EXT_BASE)]);
-		bool enabled = (isenabler &
+		bool enabled = (isenabler_e &
 				GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE)) != 0U;
 
 		if (enabled) {
-			gicv3_irq_disable(irq);
+			gicv3_irq_disable_shared(irq);
 		}
 
 		register_t icfg = (register_t)atomic_load_relaxed(
@@ -1683,17 +1616,16 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		}
 
 		atomic_store_relaxed(
-			&gicd->icfgr[(irq - GIC_SPI_EXT_BASE) / 16U],
+			&gicd->icfgr_e[(irq - GIC_SPI_EXT_BASE) / 16U],
 			(uint32_t)icfg);
 
 		if (enabled) {
-			gicv3_irq_enable(irq);
+			gicv3_irq_enable_shared(irq);
 		}
 
 		// Read back the value in case it could not be changed
 		icfg = (register_t)atomic_load_relaxed(
-			&gicd->icfgr_e[GICD_ENABLE_GET_N(irq -
-							 GIC_SPI_EXT_BASE)]);
+			&gicd->icfgr_e[(irq - GIC_SPI_EXT_BASE) / 16U]);
 		ret = irq_trigger_result_ok(
 			bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
 				? IRQ_TRIGGER_EDGE_RISING
@@ -1707,6 +1639,11 @@ gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger)
 		// LPIs are always message-signalled
 		ret = irq_trigger_result_ok(IRQ_TRIGGER_MESSAGE);
 		break;
+#endif
+	case GICV3_IRQ_TYPE_SGI:
+	case GICV3_IRQ_TYPE_PPI:
+#if GICV3_EXT_IRQS
+	case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 	case GICV3_IRQ_TYPE_SPECIAL:
 	case GICV3_IRQ_TYPE_RESERVED:
@@ -2039,13 +1976,13 @@ platform_ipi_clear(ipi_reason_t ipi)
 void
 platform_ipi_mask(ipi_reason_t ipi)
 {
-	gicv3_irq_disable((irq_t)ipi);
+	gicv3_irq_disable_shared((irq_t)ipi);
 }
 
 void
 platform_ipi_unmask(ipi_reason_t ipi)
 {
-	gicv3_irq_enable((irq_t)ipi);
+	gicv3_irq_enable_shared((irq_t)ipi);
 }
 #else
 void
@@ -2487,8 +2424,11 @@ gicv3_handle_boot_hypervisor_handover(void)
 	atomic_store_relaxed(&gicd->ctlr, ctlr);
 	(void)gicd_wait_for_write();
 
+	GICD_TYPER_t typer	= atomic_load_relaxed(&gicd->typer);
+	count_t	     spi_ranges = GICD_TYPER_get_ITLinesNumber(&typer) + 1U;
+
 	// Deactivate and clear edge pending for all SPIs
-	for (index_t i = 0U; i < 32U; i++) {
+	for (index_t i = 1U; i < spi_ranges; i++) {
 		atomic_store_relaxed(&gicd->icactiver[i], 0xffffffffU);
 		atomic_store_relaxed(&gicd->icpendr[i], 0xffffffffU);
 	}
@@ -2499,8 +2439,52 @@ gicv3_handle_boot_hypervisor_handover(void)
 		atomic_store_relaxed(&gicr->sgi.icactiver0, 0xffffffffU);
 		atomic_store_relaxed(&gicr->sgi.icpendr0, 0xffffffffU);
 	}
+
 #if GICV3_EXT_IRQS
-#error Hand-over clean up of the extended IRQs
+	count_t espi_ranges;
+	if (GICD_TYPER_get_ESPI(&typer)) {
+		espi_ranges = GICD_TYPER_get_ESPI_range(&typer) + 1U;
+		gicv3_spi_ext_max_cache =
+			GIC_SPI_EXT_BASE + (32U * espi_ranges) - 1U;
+	} else {
+		espi_ranges		= 0U;
+		gicv3_spi_ext_max_cache = 0U;
+	}
+
+	// Deactivate and clear edge pending for all extended SPIs
+	for (index_t i = 0U; i < espi_ranges; i++) {
+		atomic_store_relaxed(&gicd->icactiver_e[i], 0xffffffffU);
+		atomic_store_relaxed(&gicd->icpendr_e[i], 0xffffffffU);
+	}
+
+	GICR_TYPER_t gicr_typer =
+		atomic_load_relaxed(&mapped_gicrs[0]->rd.typer);
+	GICR_TYPER_PPInum_t eppi = GICR_TYPER_get_PPInum(&gicr_typer);
+
+	count_t eppi_ranges;
+	switch (eppi) {
+	case GICR_TYPER_PPINUM_MAX_1087:
+		eppi_ranges = 1U;
+		break;
+	case GICR_TYPER_PPINUM_MAX_1119:
+		eppi_ranges = 2U;
+		break;
+	case GICR_TYPER_PPINUM_MAX_31:
+	default:
+		eppi_ranges = 0U;
+		break;
+	}
+
+	// Deactivate and clear edge pending for extended PPIs on all GICRs
+	for (index_t i = 0U; i < PLATFORM_GICR_COUNT; i++) {
+		gicr_t *gicr = mapped_gicrs[i];
+		for (index_t j = 0U; j < eppi_ranges; j++) {
+			atomic_store_relaxed(&gicr->sgi.icactiver_e[j],
+					     0xffffffffU);
+			atomic_store_relaxed(&gicr->sgi.icpendr_e[j],
+					     0xffffffffU);
+		}
+	}
 #endif
 
 #if GICV3_HAS_LPI
@@ -2517,15 +2501,79 @@ gicv3_handle_power_cpu_online(void)
 {
 	gicr_cpu_t *gc = &CPULOCAL(gicr_cpu);
 
-	// Mark this CPU as online and availbable for SPI route migration
+	// Mark this CPU as online and available for SPI route migration
 	assert_preempt_disabled();
 	spinlock_acquire_nopreempt(&spi_route_lock);
 	gc->online = true;
 	spinlock_release_nopreempt(&spi_route_lock);
 }
 
+// Tries to move 32 continuous SPIs non-extended or extended from irq_base to a
+// specified CPU, given route route_cmp it's trying to move away from.
+static void
+gicv3_try_move_32_spis_to_cpu(cpu_index_t target, irq_t irq_base,
+			      GICD_IROUTER_t route_cmp) REQUIRE_PREEMPT_DISABLED
+{
+	assert_preempt_disabled();
+	// Take the SPI lock so we can search the route table safely
+	spinlock_acquire_nopreempt(&spi_route_lock);
+	// To advance 32 IRQs at a time, our base should start on a boundary
+	assert(irq_base % 32 == 0);
+	gicv3_irq_type_t irq_base_type = gicv3_get_irq_type(irq_base);
+	uint32_t	 isenabler;
+#if GICV3_EXT_IRQS
+	assert(irq_base_type == GICV3_IRQ_TYPE_SPI ||
+	       irq_base_type == GICV3_IRQ_TYPE_SPI_EXT);
+	if (irq_base_type == GICV3_IRQ_TYPE_SPI) {
+		isenabler = atomic_load_relaxed(
+			&gicd->isenabler[GICD_ENABLE_GET_N(irq_base)]);
+	} else {
+		// irq_base_type == GICV3_IRQ_TYPE_SPI_EXT
+		isenabler = atomic_load_relaxed(
+			&gicd->isenabler_e[GICD_ENABLE_GET_N(
+				irq_base - GIC_SPI_EXT_BASE)]);
+	}
+#else
+	assert(irq_base_type == GICV3_IRQ_TYPE_SPI);
+	isenabler = atomic_load_relaxed(
+		&gicd->isenabler[GICD_ENABLE_GET_N(irq_base)]);
+#endif
+
+	GICD_IROUTER_t route = GICD_IROUTER_default();
+	while (isenabler != 0U) {
+		index_t i = compiler_ctz(isenabler);
+		isenabler &= ~((index_t)util_bit(i));
+
+		irq_t irq = irq_base + i;
+
+		// Special or reserved IRQs should never be enabled
+#if GICV3_EXT_IRQS
+		if (irq_base_type == GICV3_IRQ_TYPE_SPI) {
+			assert(gicv3_get_irq_type(irq) == GICV3_IRQ_TYPE_SPI);
+			route = atomic_load_relaxed(
+				&gicd->irouter[irq - GIC_SPI_BASE]);
+		} else {
+			// irq_base_type == GICV3_IRQ_TYPE_SPI_EXT
+			route = atomic_load_relaxed(
+				&gicd->irouter_e[irq - GIC_SPI_EXT_BASE]);
+		}
+#else
+		assert(gicv3_get_irq_type(irq) == GICV3_IRQ_TYPE_SPI);
+		route = atomic_load_relaxed(&gicd->irouter[irq - GIC_SPI_BASE]);
+#endif
+		if (GICD_IROUTER_is_equal(route_cmp, route)) {
+			gicv3_spi_set_route_cpu_affinity(&route, target);
+			error_t ret = gicv3_spi_set_route_internal(irq, route);
+			if (ret != OK) {
+				panic("Failed to move SPI");
+			}
+		}
+	}
+	spinlock_release_nopreempt(&spi_route_lock);
+}
+
 static bool
-gicv3_try_move_spi_to_cpu(cpu_index_t target) REQUIRE_PREEMPT_DISABLED
+gicv3_try_move_spis_to_cpu(cpu_index_t target) REQUIRE_PREEMPT_DISABLED
 {
 	// Hold the spi_route_lock before scanning the SPI route table so it
 	// does not change while we are working with it. Holding the lock also
@@ -2536,63 +2584,34 @@ gicv3_try_move_spi_to_cpu(cpu_index_t target) REQUIRE_PREEMPT_DISABLED
 
 	assert_preempt_disabled();
 
-	// Take the SPI lock so we can search the route table safely
-	spinlock_acquire_nopreempt(&spi_route_lock);
-
 	if (gc->online) {
 		// We have an online target CPU we can use. Search SPI routes
 		// that need migration
-		GICD_IROUTER_t route	 = GICD_IROUTER_default();
 		GICD_IROUTER_t route_cmp = GICD_IROUTER_default();
 
+		// Take the SPI lock so we can search the route table safely
+		spinlock_acquire_nopreempt(&spi_route_lock);
 		// Create a route with our affinity to compare against
 		// Ignore 1:N routes
 		gicv3_spi_set_route_cpu_affinity(&route_cmp,
 						 cpulocal_get_index());
-
-		// To advance 32 IRQs at a time, our base should start on a
-		// boundary
-		static_assert(GIC_SPI_BASE % 32U == 0,
-			      "GIC_SPI_BASE not 32bit aligned");
+		spinlock_release_nopreempt(&spi_route_lock);
 
 		for (irq_t irq_base = GIC_SPI_BASE;
 		     irq_base <= gicv3_spi_max_cache; irq_base += 32U) {
-			uint32_t isenabler = atomic_load_relaxed(
-				&gicd->isenabler[GICD_ENABLE_GET_N(irq_base)]);
-			while (isenabler != 0U) {
-				index_t i = compiler_ctz(isenabler);
-				isenabler &= ~((index_t)util_bit(i));
-
-				irq_t irq = irq_base + i;
-
-				// Special or reserved IRQs should never be
-				// enabled
-				assert(gicv3_get_irq_type(irq) ==
-				       GICV3_IRQ_TYPE_SPI);
-
-				route = atomic_load_relaxed(
-					&gicd->irouter[irq]);
-				if (GICD_IROUTER_is_equal(route_cmp, route)) {
-					gicv3_spi_set_route_cpu_affinity(
-						&route, target);
-					error_t ret =
-						gicv3_spi_set_route_internal(
-							irq, route);
-					if (ret != OK) {
-						panic("Failed to move SPI");
-					}
-				}
-			}
+			gicv3_try_move_32_spis_to_cpu(target, irq_base,
+						      route_cmp);
 		}
 
 #if GICV3_EXT_IRQS
-#error Migration of the extended IRQs
+		for (irq_t irq_base = GIC_SPI_EXT_BASE;
+		     irq_base <= gicv3_spi_ext_max_cache; irq_base += 32U) {
+			gicv3_try_move_32_spis_to_cpu(target, irq_base,
+						      route_cmp);
+		}
 #endif
-
 		moved = true;
 	}
-
-	spinlock_release_nopreempt(&spi_route_lock);
 
 	return moved;
 }
@@ -2623,7 +2642,7 @@ gicv3_handle_power_cpu_offline(void)
 	bool found_target = false;
 	while (!found_target) {
 		if (platform_cpu_exists(target)) {
-			if (gicv3_try_move_spi_to_cpu(target)) {
+			if (gicv3_try_move_spis_to_cpu(target)) {
 				found_target = true;
 				break;
 			}
@@ -2642,3 +2661,11 @@ gicv3_handle_power_cpu_offline(void)
 		panic("Could not find target CPU for SPI migration");
 	}
 }
+
+#if defined(UNIT_TESTS)
+gicd_t *
+gicv3_get_gicd_pointer(void)
+{
+	return gicd;
+}
+#endif

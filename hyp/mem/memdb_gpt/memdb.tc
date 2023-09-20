@@ -5,13 +5,13 @@
 define MEMDB_BITS_PER_ENTRY constant type index_t = 4;
 define MEMDB_NUM_ENTRIES constant type index_t = (1 << MEMDB_BITS_PER_ENTRY);
 
+// The GPT memdb starts all levels at a multiple of MEMDB_BITS_PER_ENTRY, so
+// it has no alignment requirements.
+define MEMDB_MIN_BITS constant type index_t = 0;
+define MEMDB_MIN_SIZE constant size = (1 << MEMDB_MIN_BITS);
+
 extend rcu_update_class enumeration {
 	memdb_release_level;
-};
-
-extend error enumeration {
-	MEMDB_EMPTY = 110;
-	MEMDB_NOT_OWNER = 111;
 };
 
 define memdb_entry_info bitfield<64> {
@@ -20,17 +20,13 @@ define memdb_entry_info bitfield<64> {
 	63:12	guard uint64;
 };
 
-define memdb_obj_type structure {
-	object	uintptr;
-	type	enumeration memdb_type;
-};
-
 define memdb_entry structure {
 	info	bitfield memdb_entry_info;
 	next	uintptr;
 };
 
-// FIXME: remove aligned() when Issue #27 is fixed.
+// The aligned() directive here should be automatic.
+// FIXME:
 define memdb_level structure {
 	level		array(MEMDB_NUM_ENTRIES) structure memdb_entry(atomic,
 			aligned(sizeof(structure memdb_entry)));
@@ -54,6 +50,9 @@ define memdb_op enumeration {
 	CONTIGUOUSNESS;
 };
 
-extend trace_class enumeration {
-	MEMDB = 7;
+extend memdb_type enumeration {
+	LEVEL;
+	// FIXME:
+	// Memory which may not be mapped, e.g. converted to secure memory
+	PARTITION_NOMAP;
 };

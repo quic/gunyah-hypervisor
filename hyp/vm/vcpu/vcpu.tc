@@ -13,7 +13,8 @@ define vcpu object {
 extend thread object module vcpu {
 	regs		object vcpu;
 	// The option variable used for the hypercall_vcpu_configure hypercall.
-	options		bitfield vcpu_option_flags;
+	options		bitfield vcpu_option_flags(group(context_switch, x));
+	flags		bitfield vcpu_runtime_flags(group(context_switch, x));
 	halt_virq_src	structure virq_source(contained);
 };
 
@@ -39,16 +40,6 @@ extend hyp_api_flags0 bitfield {
 
 extend abort_reason enumeration {
 	UNHANDLED_EXCEPTION;
-};
-
-// Relevant modules (such as the debug module) need to extend this bitfield
-// and add their configuration flags for the hypercall_vcpu_configure
-// hypercall. Then in their thread_activate handlers they need to check the
-// values of these flags and act on them.
-define vcpu_option_flags public bitfield<64> {
-	0		pinned			bool = 0;
-	8		critical		bool = 0;
-	others		unknown = 0;
 };
 
 extend vcpu_virq_type enumeration {

@@ -1,0 +1,16 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define root_env_mmio_range_properties public bitfield<64> {
+	31:0	num_pages	uint32;	// Number of 4K pages
+	34:32	access		enumeration pgtable_access; // Access permissions i.e., R, RW, RWX etc.,
+	47:40	res_s2pt_attr	uint8;	// Reserved for S2 page attributes
+	63	non_exclusive	bool;	// If true, this mmio range may overlap another mmio range descriptor
+	others	unknown=0;
+};
+
+define root_env_mmio_range_descriptor public structure {
+	address	type paddr_t;
+	attrs	bitfield root_env_mmio_range_properties;
+};

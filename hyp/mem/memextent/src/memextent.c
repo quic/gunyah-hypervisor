@@ -514,24 +514,33 @@ memextent_unmap_all(memextent_t *extent)
 }
 
 static error_t
-memextent_do_zero(paddr_t base, size_t size, void *arg)
+memextent_do_clean(paddr_t base, size_t size, void *arg)
 {
+	memextent_clean_flags_t *flags = (memextent_clean_flags_t *)arg;
+	assert(flags != NULL);
+
 	void *addr = partition_phys_map(base, size);
 	partition_phys_access_enable(addr);
 
-	(void)memset_s(addr, size, 0, size);
-	CACHE_CLEAN_RANGE((uint8_t *)addr, size);
+	if (memextent_clean_flags_get_zero(flags)) {
+		(void)memset_s(addr, size, 0, size);
+	}
+
+	if (memextent_clean_flags_get_flush(flags)) {
+		CACHE_CLEAN_INVALIDATE_RANGE((uint8_t *)addr, size);
+	} else {
+		CACHE_CLEAN_RANGE((uint8_t *)addr, size);
+	}
 
 	partition_phys_access_disable(addr);
 	partition_phys_unmap(addr, base, size);
 
-	(void)arg;
-
 	return OK;
 }
 
-error_t
-memextent_zero_range(memextent_t *extent, size_t offset, size_t size)
+static error_t
+memextent_clean_range(memextent_t *extent, size_t offset, size_t size,
+		      memextent_clean_flags_t flags)
 {
 	error_t err;
 
@@ -565,10 +574,35 @@ memextent_zero_range(memextent_t *extent, size_t offset, size_t size)
 	}
 
 	err = memdb_range_walk((uintptr_t)extent, MEMDB_TYPE_EXTENT, phys,
-			       phys + size - 1U, memextent_do_zero, NULL);
+			       phys + size - 1U, memextent_do_clean, &flags);
 
 out:
 	return err;
+}
+
+error_t
+memextent_zero_range(memextent_t *extent, size_t offset, size_t size)
+{
+	memextent_clean_flags_t flags = memextent_clean_flags_default();
+	memextent_clean_flags_set_zero(&flags, true);
+
+	return memextent_clean_range(extent, offset, size, flags);
+}
+
+error_t
+memextent_cache_clean_range(memextent_t *me, size_t offset, size_t size)
+{
+	return memextent_clean_range(me, offset, size,
+				     memextent_clean_flags_default());
+}
+
+error_t
+memextent_cache_flush_range(memextent_t *me, size_t offset, size_t size)
+{
+	memextent_clean_flags_t flags = memextent_clean_flags_default();
+	memextent_clean_flags_set_flush(&flags, true);
+
+	return memextent_clean_range(me, offset, size, flags);
 }
 
 static bool

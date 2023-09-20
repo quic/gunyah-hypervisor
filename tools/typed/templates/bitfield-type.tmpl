@@ -42,7 +42,7 @@ typedef struct ${type_name}_b {
 ## in contexts that require constant expressions, e.g. in case labels.
 #define ${type_name}_default() \
 	(${type_name}_t){ .bf = { #slurp
-${', '.join(hex(v) for v in $init_values)} } }
+${', '.join(hex(v) + 'U' for v in $init_values)} } }
 
 #define ${type_name}_cast(#slurp
 #for i in range($unit_cnt)

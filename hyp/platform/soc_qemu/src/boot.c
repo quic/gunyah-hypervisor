@@ -64,7 +64,7 @@ platform_add_root_heap(partition_t *partition)
 
 	// Add 1MiB to the hypervisor private partition
 	error_t err = partition_mem_donate(partition, base, priv_size,
-					   partition_get_private());
+					   partition_get_private(), false);
 	if (err != OK) {
 		panic("Error donating memory");
 	}

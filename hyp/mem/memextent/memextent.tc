@@ -50,6 +50,11 @@ extend memextent object {
 	attached_size		size;
 };
 
+define memextent_clean_flags bitfield<32> {
+	auto	zero	bool;
+	auto	flush	bool;
+};
+
 #if defined(HYPERCALLS)
 extend hyp_api_flags0 bitfield {
 	delete	memextent;

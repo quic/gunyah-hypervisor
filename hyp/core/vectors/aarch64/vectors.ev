@@ -12,3 +12,6 @@ subscribe vectors_trap_unknown_el2
 // are sent. We may consider changing this priority if it causes problems.
 subscribe abort_kernel()
 	priority 2000
+
+subscribe abort_kernel_remote
+	handler vectors_handle_abort_kernel()

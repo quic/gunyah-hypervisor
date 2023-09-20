@@ -163,10 +163,11 @@ arm_pv_time_handle_thread_context_switch_post(ticks_t curticks,
 	      "arm_pv_time: {:#x} increment steal time by {:d}ns; "
 	      "last run at {:d}ns (+ {:d}ns yielding), unblocked at {:d}ns",
 	      (uintptr_t)current,
-	      platform_convert_ticks_to_ns(curticks - steal_start),
-	      platform_convert_ticks_to_ns(prevticks),
-	      platform_convert_ticks_to_ns(current->arm_pv_time.yield_time),
-	      platform_convert_ticks_to_ns(last_self_unblock));
+	      platform_timer_convert_ticks_to_ns(curticks - steal_start),
+	      platform_timer_convert_ticks_to_ns(prevticks),
+	      platform_timer_convert_ticks_to_ns(
+		      current->arm_pv_time.yield_time),
+	      platform_timer_convert_ticks_to_ns(last_self_unblock));
 
 	assert((curticks >= adjusted_last_run) &&
 	       (curticks >= last_self_unblock));
@@ -174,7 +175,7 @@ arm_pv_time_handle_thread_context_switch_post(ticks_t curticks,
 	current->arm_pv_time.yield_time = 0;
 	current->arm_pv_time.stolen_ticks += curticks - steal_start;
 	if (current->arm_pv_time.data != NULL) {
-		uint64_t stolen_ns = platform_convert_ticks_to_ns(
+		uint64_t stolen_ns = platform_timer_convert_ticks_to_ns(
 			current->arm_pv_time.stolen_ticks);
 		atomic_store_relaxed(&current->arm_pv_time.data->stolen_ns,
 				     stolen_ns);

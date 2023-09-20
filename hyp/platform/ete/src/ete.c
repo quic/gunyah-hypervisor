@@ -62,8 +62,9 @@ ete_wait_stable(bool wait_pmstable, bool wait_idle)
 	bool idle     = false;
 
 	// wait 100us
-	ticks_t start	= platform_timer_get_current_ticks();
-	ticks_t timeout = start + platform_convert_ns_to_ticks(100U * 1000U);
+	ticks_t start = platform_timer_get_current_ticks();
+	ticks_t timeout =
+		start + platform_timer_convert_ns_to_ticks(100U * 1000U);
 	while (1) {
 		TRCSTATR_t trcstatr =
 			register_TRCSTATR_read_ordered(&vet_ordering);
@@ -72,10 +73,10 @@ ete_wait_stable(bool wait_pmstable, bool wait_idle)
 		pmstable = TRCSTATR_get_pmstable(&trcstatr);
 		idle	 = TRCSTATR_get_idle(&trcstatr);
 
-		// possible exit conditions:
+		// compilated for exit condition:
 		// * when pmstable and idle are true
-		// * when idle and not waiting for pmstable
-		// * when pmstable and not waiting for idle
+		// * when idle are true and not check pmstable
+		// * when pmstable are true and not check idle
 		if ((pmstable && idle) || (idle && (!wait_pmstable)) ||
 		    (pmstable && (!wait_idle))) {
 			break;

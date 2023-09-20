@@ -41,6 +41,8 @@ abort_handle_ipi_received(void)
 		trigger_thread_save_state_event();
 	}
 
+	trigger_abort_kernel_remote_event();
+
 	void *mem = NULL;
 	while (1) {
 		asm_event_wait(&mem);
@@ -53,12 +55,11 @@ abort(const char *str, abort_reason_t reason) LOCK_IMPL
 	void *from  = __builtin_return_address(0);
 	void *frame = __builtin_frame_address(0);
 
+	from = __builtin_extract_return_addr(from);
+
 	// Stop all cores and disable preemption
 	trigger_scheduler_stop_event();
 
-#if defined(ARCH_ARM_FEAT_PAuth)
-	__asm__("xpaci %0;" : "+r"(from));
-#endif
 	TRACE_AND_LOG(ERROR, PANIC, "Abort: {:s} from PC {:#x}, FP {:#x}",
 		      (register_t)(uintptr_t)str, (register_t)(uintptr_t)from,
 		      (register_t)(uintptr_t)frame);

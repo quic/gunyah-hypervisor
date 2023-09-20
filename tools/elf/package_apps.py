@@ -209,6 +209,66 @@ class NewELF():
         if self.header.e_shoff >= p_prev:
             self.header.e_shoff += p_off
 
+    # Align LOAD segment's p_filesz
+    def segment_filesz_align(self, align):
+        print("segment align...")
+
+        assert (align & (align - 1)) == 0
+        last_end = 0
+
+        # Adjust file offsets for affected sections
+        for seg in self.segments:
+            # print(seg, seg.header.p_type)
+            if seg.header.p_type == 'PT_LOAD':
+                assert seg.header.p_offset >= last_end
+                if seg.header.p_align < align:
+                    print('WARN: segment {:#x} / {:#x} p_align < {:d}'.format(
+                          seg.header.p_paddr, seg.header.p_vaddr, align))
+                    continue
+                p_filesz = seg.header.p_filesz
+                seg.header.p_filesz += align - 1
+                seg.header.p_filesz &= ~(align - 1)
+                if p_filesz < seg.header.p_filesz:
+                    assert len(seg._data) == p_filesz
+                    pad = bytes([0] * (seg.header.p_filesz-p_filesz))
+                    seg._data = seg._data + pad
+                if seg.header.p_memsz < seg.header.p_filesz:
+                    seg.header.p_memsz = seg.header.p_filesz
+                last_end = seg.header.p_offset + seg.header.p_filesz
+
+    # Merge physically adjacent segments
+    def merge_physical(self):
+        print("merge physical...")
+
+        prev = None
+
+        next_list = []
+
+        # Adjust file offsets for affected sections
+        for seg in self.segments:
+            # print(seg, seg.header.p_type)
+            if seg.header.p_type != 'PT_LOAD':
+                next_list.append(seg)
+                continue
+            if prev:
+                prev_end = prev.header.p_paddr + prev.header.p_filesz
+                if prev_end == seg.header.p_paddr:
+                    assert prev.header.p_filesz == prev.header.p_memsz
+                    prev.header.p_filesz += seg.header.p_filesz
+                    prev.header.p_memsz += seg.header.p_memsz
+                    prev.header.p_flags |= seg.header.p_flags
+                    self.header.e_phnum -= 1
+                    prev._data = prev._data + seg._data
+                    # self.segments.remove(seg)
+                    # seg = prev
+                else:
+                    next_list.append(seg)
+                    prev = seg
+            else:
+                next_list.append(seg)
+                prev = seg
+        self.segments = next_list
+
     def write(self, f):
 
         print("writing...")
@@ -246,7 +306,8 @@ class NewELF():
                 continue
 
 
-def package_files(base, app, runtime, output):
+def package_files(base, app, runtime, output, p_filesz_align=None,
+                  merge_phys=False):
 
     base_elf = ELFFile(base)
     new = NewELF(base_elf)
@@ -319,6 +380,10 @@ def package_files(base, app, runtime, output):
     segment.add_data(app_data)
 
     new.insert_segment(segment, pkg_phys)
+    if p_filesz_align:
+        new.segment_filesz_align(p_filesz_align)
+    if merge_phys:
+        new.merge_physical()
     new.write(output)
 
 
@@ -330,6 +395,12 @@ def main():
 
     args = argparse.ArgumentParser()
 
+    args.add_argument('--segment-size-align',
+                      type=int,
+                      help="Align p_filesz to page-size")
+    args.add_argument('--merge-phys-segments',
+                      action='store_true',
+                      help="Merge physically adjacent segments")
     args.add_argument('-a', "--app",
                       type=argparse.FileType('rb'),
                       help="Input application ELF",
@@ -348,8 +419,15 @@ def main():
                       help="Input hypervisor ELF")
     options = args.parse_args()
 
+    p_filesz_align = options.segment_size_align
+
+    if p_filesz_align is not None:
+        if (p_filesz_align == 0) or \
+           ((p_filesz_align & (p_filesz_align - 1)) != 0):
+            raise ValueError("segment-size-align must be a power of 2!")
+
     package_files(options.input[0], options.app, options.runtime,
-                  options.output)
+                  options.output, p_filesz_align, options.merge_phys_segments)
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@
 define trace_class public enumeration(explicit) {
 	ERROR = 0;	// Critical errors
 	DEBUG = 1;	// Debugging information
+	INFO = 6;	// Informative messages
 };
 
 define trace_id enumeration(explicit) {

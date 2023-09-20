@@ -69,6 +69,12 @@ vcpu_power_handle_vcpu_stopped(void)
 	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
 	bool	    should_vote = cpulocal_index_valid(cpu);
 
+#if defined(INTERFACE_VCPU_RUN)
+	if (vcpu_run_is_enabled(vcpu)) {
+		should_vote = false;
+	}
+#endif
+
 	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF)) {
 		// If the VCPU is already powered off, it does not hold a vote.
 		should_vote = false;

@@ -179,7 +179,7 @@ thread_switch_to(thread_t *thread, ticks_t schedtime)
 	thread_t *current = thread_get_self();
 	assert(thread != current);
 
-	TRACE_LOCAL(DEBUG, INFO, "thread: ctx switch from: {:#x} to: {:#x}",
+	TRACE_LOCAL(INFO, INFO, "thread: ctx switch from: {:#x} to: {:#x}",
 		    (uintptr_t)current, (uintptr_t)thread);
 
 	trigger_thread_save_state_event();

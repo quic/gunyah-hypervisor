@@ -13,7 +13,7 @@ define TRACE_VERSION constant = 0x0100;
 #include <types/bitmap.h>
 
 extend trace_class enumeration {
-	TRACE_BUFFER = 3;
+	// TRACE_BUFFER = 3;	// Deprecated
 	TRACE_LOG_BUFFER = 4;	// Put the log messages in the trace buffer
 };
 

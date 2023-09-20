@@ -116,7 +116,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 #endif
 #if defined(ARCH_ARM_HAVE_SCXT) &&                                             \
 	(defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_3))
-		if (vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		if (vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 #if defined(ARCH_ARM_FEAT_CSV2_3)
 			ID_AA64PFR0_EL1_set_CSV2(&pfr0, 3U);
 #else
@@ -155,7 +155,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 #endif
 #endif
 #if defined(ARCH_ARM_HAVE_SCXT) && defined(ARCH_ARM_FEAT_CSV2_1p2)
-		if (vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		if (vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			ID_AA64PFR1_EL1_set_CSV2_frac(&pfr0, 2U);
 		} else {
 			ID_AA64PFR1_EL1_set_CSV2_frac(&pfr0, 1U);
@@ -450,6 +450,16 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		reg_val = ID_AA64MMFR2_EL1_raw(mmfr2);
 		break;
 	}
+	case ISS_MRS_MSR_ID_AA64MMFR3_EL1: {
+		ID_AA64MMFR3_EL1_t mmfr3    = ID_AA64MMFR3_EL1_default();
+		ID_AA64MMFR3_EL1_t hw_mmfr3 = register_ID_AA64MMFR3_EL1_read();
+		ID_AA64MMFR3_EL1_copy_Spec_FPACC(&mmfr3, &hw_mmfr3);
+		reg_val = ID_AA64MMFR3_EL1_raw(mmfr3);
+		break;
+	}
+	case ISS_MRS_MSR_ID_AA64MMFR4_EL1:
+		reg_val = 0;
+		break;
 	case ISS_MRS_MSR_ID_PFR0_EL1: {
 		ID_PFR0_EL1_t pfr0 = ID_PFR0_EL1_default();
 		ID_PFR0_EL1_set_State0(&pfr0, 1U);
@@ -457,7 +467,7 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 		ID_PFR0_EL1_set_State2(&pfr0, 1U);
 #if defined(ARCH_ARM_HAVE_SCXT) &&                                             \
 	(defined(ARCH_ARM_FEAT_CSV2_2) || defined(ARCH_ARM_FEAT_CSV2_3))
-		if (vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		if (vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			// At the time of writing, ARM does not have CSV2_3
 			// encoding for ID_PFR0_EL1.CSV2
 			ID_PFR0_EL1_set_CSV2(&pfr0, 2U);
@@ -765,8 +775,7 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		}
 #endif
 #if defined(ARCH_ARM_HAVE_SCXT)
-		if (!vcpu_option_flags_get_scxt_allowed(
-			    &thread->vcpu_options)) {
+		if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
 		}
 #elif defined(ARCH_ARM_FEAT_CSV2)
@@ -914,8 +923,7 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		ID_AA64PFR0_EL1_set_EL2(&pfr0, 1U);
 		ID_AA64PFR0_EL1_set_EL3(&pfr0, 1U);
 #if defined(ARCH_ARM_HAVE_SCXT)
-		if (!vcpu_option_flags_get_scxt_allowed(
-			    &thread->vcpu_options)) {
+		if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
 			ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
 		}
 #elif defined(ARCH_ARM_FEAT_CSV2)
@@ -1153,6 +1161,16 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 		reg_val = ID_AA64MMFR2_EL1_raw(mmfr2);
 		break;
 	}
+	case ISS_MRS_MSR_ID_AA64MMFR3_EL1: {
+		ID_AA64MMFR3_EL1_t mmfr3    = ID_AA64MMFR3_EL1_default();
+		ID_AA64MMFR3_EL1_t hw_mmfr3 = register_ID_AA64MMFR3_EL1_read();
+		ID_AA64MMFR3_EL1_copy_Spec_FPACC(&mmfr3, &hw_mmfr3);
+		reg_val = ID_AA64MMFR3_EL1_raw(mmfr3);
+		break;
+	}
+	case ISS_MRS_MSR_ID_AA64MMFR4_EL1:
+		reg_val = 0;
+		break;
 	// The trapped ACTLR_EL1 by default returns 0 for reads.
 	// The particular access should be handled in sysreg_read_cpu.
 	case ISS_MRS_MSR_ACTLR_EL1: {
@@ -1173,7 +1191,7 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 			// traps MRS accesses to the registers in this range
 			// (that have not been handled above). If we ever get
 			// here print a debug message so we can investigate.
-			TRACE_AND_LOG(DEBUG, WARN,
+			TRACE_AND_LOG(DEBUG, DEBUG,
 				      "Emulated RAZ for ID register: ISS {:#x}",
 				      ESR_EL2_ISS_MSR_MRS_raw(iss));
 			reg_val = 0U;

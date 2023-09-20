@@ -979,8 +979,7 @@ void
 scheduler_block(thread_t *thread, scheduler_block_t block)
 	REQUIRE_SCHEDULER_LOCK(thread)
 {
-	TRACE(DEBUG, INFO,
-	      "scheduler: block {:#x}, reason: {:d}, others: {:#x}",
+	TRACE(INFO, INFO, "scheduler: block {:#x}, reason: {:d}, others: {:#x}",
 	      (uintptr_t)thread, (register_t)block,
 	      thread->scheduler_block_bits[0]);
 
@@ -1035,7 +1034,7 @@ scheduler_unblock(thread_t *thread, scheduler_block_t block)
 		}
 	}
 
-	TRACE(DEBUG, INFO,
+	TRACE(INFO, INFO,
 	      "scheduler: unblock {:#x}, reason: {:d}, others: {:#x}, local run: {:d}",
 	      (uintptr_t)thread, (register_t)block,
 	      thread->scheduler_block_bits[0], (register_t)need_schedule);
@@ -1272,6 +1271,12 @@ scheduler_fprr_handle_thread_killed(thread_t *thread)
 
 	scheduler_lock(thread);
 
+	if (sched_state_get_exited(&thread->scheduler_state)) {
+		// The thread managed to exit prior to this event being
+		// triggered, nothing to do.
+		goto out;
+	}
+
 	// Many of the block flags will be ignored once the killed
 	// flag is set, so check if the thread becomes runnable.
 	bool was_blocked = !can_be_scheduled(thread);
@@ -1298,6 +1303,7 @@ scheduler_fprr_handle_thread_killed(thread_t *thread)
 		// scheduled to run, so there is nothing to do.
 	}
 
+out:
 	scheduler_unlock_nopreempt(thread);
 
 	if (need_schedule) {

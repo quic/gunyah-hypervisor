@@ -6,3 +6,5 @@ interface abort
 
 event abort_kernel
 	param reason: abort_reason_t
+
+event abort_kernel_remote

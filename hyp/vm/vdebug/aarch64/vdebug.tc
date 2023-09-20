@@ -4,9 +4,8 @@
 
 extend thread object module vdebug {
 	state		structure debug_common_registers;
-	enabled		bool;
 };
 
-extend vcpu_option_flags bitfield {
-	4		debug_allowed		bool = 0;
+extend vcpu_runtime_flags bitfield {
+	auto		debug_active		bool = 0;
 };

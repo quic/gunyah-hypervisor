@@ -3,13 +3,23 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 define memdb_type enumeration {
-	LEVEL = 0;
-	NOTYPE;
+	NOTYPE = 0;
 	PARTITION;
 	ALLOCATOR;
 	EXTENT;
-	// FIXME:
-	// Memory which may not be mapped, e.g. converted to secure memory
-	PARTITION_NOMAP;
 	TRACE;
+};
+
+define memdb_obj_type structure {
+	object	uintptr;
+	type	enumeration memdb_type;
+};
+
+extend error enumeration {
+	MEMDB_EMPTY = 110;
+	MEMDB_NOT_OWNER = 111;
+};
+
+extend trace_class enumeration {
+	MEMDB = 7;
 };

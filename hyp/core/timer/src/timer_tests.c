@@ -21,7 +21,8 @@
 #if defined(PLATFORM_QEMU)
 #define MAX_TICKS_DIFFERENCE 0x500000
 #else
-#define MAX_TICKS_DIFFERENCE 0x100
+// Leave enough slack for console messages to be printed
+#define MAX_TICKS_DIFFERENCE 0x140
 #endif
 
 CPULOCAL_DECLARE_STATIC(timer_t, timer1);

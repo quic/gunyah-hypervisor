@@ -28,9 +28,9 @@ platform_irq_is_percpu(irq_t irq)
 }
 
 void
-platform_irq_enable(irq_t irq)
+platform_irq_enable_shared(irq_t irq)
 {
-	gicv3_irq_enable(irq);
+	gicv3_irq_enable_shared(irq);
 }
 
 void
@@ -40,9 +40,9 @@ platform_irq_enable_local(irq_t irq)
 }
 
 void
-platform_irq_disable(irq_t irq)
+platform_irq_disable_shared(irq_t irq)
 {
-	gicv3_irq_disable(irq);
+	gicv3_irq_disable_shared(irq);
 }
 
 void

@@ -16,7 +16,6 @@ define log_control object {
 
 extend trace_class enumeration {
 	LOG_BUFFER = 5;
-	LOG_TRACE_BUFFER = 6;	// Put the trace messages in the log buffer
 };
 
 extend trace_action enumeration {

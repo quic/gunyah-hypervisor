@@ -43,8 +43,9 @@ subscribe object_create_thread
 
 subscribe irq_received[HWIRQ_ACTION_GICV3_ITS_DOORBELL]
 	handler gicv3_vpe_handle_irq_received_doorbell(hwirq)
-#endif
-#endif
+
+#endif // GICV3_HAS_VLPI_V4_1
+#endif // defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE
 
 #if GICV3_HAS_ITS
 subscribe abort_kernel()

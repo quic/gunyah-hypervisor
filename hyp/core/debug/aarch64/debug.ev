@@ -4,8 +4,11 @@
 
 module debug
 
+// High priority to permit debugger to attach as early as possible
+subscribe boot_cpu_warm_init
+	priority 500
+
 #if PLATFORM_DEBUG_SAVE_STATE
-subscribe power_cpu_online
 
 subscribe power_cpu_suspend(may_poweroff)
 	unwinder(may_poweroff)

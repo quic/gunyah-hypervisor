@@ -94,7 +94,8 @@ out:
 
 error_t
 hypercall_addrspace_attach_vdevice(cap_id_t addrspace_cap, cap_id_t vdevice_cap,
-				   index_t index, vmaddr_t vbase, size_t size)
+				   index_t index, vmaddr_t vbase, size_t size,
+				   addrspace_attach_vdevice_flags_t flags)
 {
 	error_t	  err;
 	cspace_t *cspace = cspace_get_self();
@@ -107,7 +108,7 @@ hypercall_addrspace_attach_vdevice(cap_id_t addrspace_cap, cap_id_t vdevice_cap,
 	}
 
 	err = trigger_addrspace_attach_vdevice_event(addrspace_r.r, vdevice_cap,
-						     index, vbase, size);
+						     index, vbase, size, flags);
 
 	object_put_addrspace(addrspace_r.r);
 out:

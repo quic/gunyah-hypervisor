@@ -17,23 +17,23 @@
 #include <partition.h>
 #include <partition_init.h>
 #include <rcu.h>
+#include <scheduler.h>
 #include <spinlock.h>
 #include <trace.h>
 #include <util.h>
 
 #include "event_handlers.h"
 
-extern count_t	  test_memdb_count;
-extern spinlock_t test_memdb_spinlock;
+static count_t test_memdb_count;
 
-count_t	   test_memdb_count;
-spinlock_t test_memdb_spinlock;
+static partition_t dummy_partition_1;
+static partition_t dummy_partition_2;
+static allocator_t dummy_allocator;
 
 void
 memdb_handle_tests_init(void)
 {
 	test_memdb_count = 0;
-	spinlock_init(&test_memdb_spinlock);
 }
 
 static error_t
@@ -110,22 +110,16 @@ check_ranges_in_memdb(memdb_data_t *memdb_data)
 	memset(memdb_data, 0, sizeof(memdb_data_t));
 
 	LOG(DEBUG, INFO, "----------------- RANGES IN MEMDB -----------------");
-	LOG(DEBUG, INFO, "-- HYP PARTITION --");
-	partition_t *partition = partition_get_private();
-	get_inserted_ranges(memdb_data, (uintptr_t)partition,
+	LOG(DEBUG, INFO, "-- DUMMY PARTITION 1 --");
+	get_inserted_ranges(memdb_data, (uintptr_t)&dummy_partition_1,
 			    MEMDB_TYPE_PARTITION);
 
-	LOG(DEBUG, INFO, "-- HYP ALLOCATOR --");
-	get_inserted_ranges(memdb_data, (uintptr_t)&partition->allocator,
-			    MEMDB_TYPE_ALLOCATOR);
-
-	LOG(DEBUG, INFO, "-- ROOT PARTITION --");
-	partition = partition_get_root();
-	get_inserted_ranges(memdb_data, (uintptr_t)partition,
+	LOG(DEBUG, INFO, "-- DUMMY PARTITION 2 --");
+	get_inserted_ranges(memdb_data, (uintptr_t)&dummy_partition_2,
 			    MEMDB_TYPE_PARTITION);
 
-	LOG(DEBUG, INFO, "-- ROOT ALLOCATOR --");
-	get_inserted_ranges(memdb_data, (uintptr_t)&partition->allocator,
+	LOG(DEBUG, INFO, "-- DUMMY ALLOCATOR --");
+	get_inserted_ranges(memdb_data, (uintptr_t)&dummy_allocator,
 			    MEMDB_TYPE_ALLOCATOR);
 	LOG(DEBUG, INFO, "---------------------------------------------------");
 }
@@ -161,11 +155,9 @@ memdb_test1(void)
 
 	// Use addresses in: (0x300000000..0x5FFFFFFFFF)
 
-	partition_t	       *root_partition = partition_get_root();
-	partition_t	       *hyp_partition  = partition_get_private();
-	allocator_t	       *root_allocator = &root_partition->allocator;
-	paddr_t			start_addr     = 0U;
-	paddr_t			end_addr       = 0U;
+	partition_t	       *hyp_partition = partition_get_private();
+	paddr_t			start_addr    = 0U;
+	paddr_t			end_addr      = 0U;
 	uintptr_t		obj;
 	memdb_type_t		type;
 	uintptr_t		prev_obj;
@@ -209,26 +201,25 @@ memdb_test1(void)
 
 	start_addr = 0x3000000000;
 	end_addr   = 0x300003FFFF;
-	obj	   = (uintptr_t)hyp_partition;
+	obj	   = (uintptr_t)&dummy_partition_2;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Check all ranges in memdb to see if everything has been done
 	// correctly
 	check_ranges_in_memdb(memdb_data);
 
-	// start_addr =
 	start_addr = 0x3000040000;
 	end_addr   = 0x5FFFFFFFFFF;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
-	// Lookup an address from root_partition that I know it is not
+	// Lookup an address from &dummy_partition_1 that I know it is not
 	// explicitly in an entry since it is in a skipped level due to a guard;
 	paddr_t addr = 0x3000100000;
 	rcu_read_start();
@@ -242,23 +233,23 @@ memdb_test1(void)
 
 	start_addr = 0x3000100000;
 	end_addr   = 0x3000aFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
-	prev_obj   = (uintptr_t)root_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
 	start_addr = 0x3010000000;
 	end_addr   = 0x33FFFFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
-	prev_obj   = (uintptr_t)root_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -271,23 +262,23 @@ memdb_test1(void)
 
 	start_addr = 0x3000100000;
 	end_addr   = 0x3000aFFFFF;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_allocator;
+	prev_obj   = (uintptr_t)&dummy_allocator;
 	prev_type  = MEMDB_TYPE_ALLOCATOR;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
 	start_addr = 0x3010000000;
 	end_addr   = 0x33FFFFFFFF;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_allocator;
+	prev_obj   = (uintptr_t)&dummy_allocator;
 	prev_type  = MEMDB_TYPE_ALLOCATOR;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -295,12 +286,12 @@ memdb_test1(void)
 	// test
 	start_addr = 0x3000040000;
 	end_addr   = 0x5FFFFFFFFFF;
-	obj	   = (uintptr_t)hyp_partition;
+	obj	   = (uintptr_t)&dummy_partition_2;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -313,12 +304,12 @@ memdb_test1(void)
 	// Make it fail in the end address path
 	start_addr = 0x3040000000;
 	end_addr   = 0x6FFFFFFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
-	prev_obj   = (uintptr_t)hyp_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_2;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == ERROR_MEMDB_NOT_OWNER);
 
@@ -337,24 +328,24 @@ memdb_test1(void)
 	// that fails in the start path
 	start_addr = 0x3040000000;
 	end_addr   = 0x30FFFFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
-	prev_obj   = (uintptr_t)hyp_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_2;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
 	// Make it fail in the start path
 	start_addr = 0x3000000000;
 	end_addr   = 0x5FFFFFFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
-	prev_obj   = (uintptr_t)hyp_partition;
+	prev_obj   = (uintptr_t)&dummy_partition_2;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == ERROR_MEMDB_NOT_OWNER);
 
@@ -367,7 +358,7 @@ memdb_test1(void)
 
 	start_addr = 0x3040000000;
 	end_addr   = 0x30FFFFFFFF;
-	obj	   = (uintptr_t)root_allocator;
+	obj	   = (uintptr_t)&dummy_allocator;
 	type	   = MEMDB_TYPE_ALLOCATOR;
 
 	cont = memdb_is_ownership_contiguous(start_addr, end_addr, obj, type);
@@ -378,7 +369,7 @@ memdb_test1(void)
 // This kind of tests do:
 // - Success cases:
 // 1. memdb_insert with range and object specified in the input arguments, but
-// with type MEMDB_TYPE_PARTITION_NOMAP as type. [needs to return OK]
+// with type MEMDB_TYPE_TRACE as type. [needs to return OK]
 // 2. memdb_update of same range to now have the type specified in input. [needs
 // to return OK]
 // 3. memdb_lookup and memdb_is_ownership_contiguous to check if the range has
@@ -394,8 +385,7 @@ memdb_test1(void)
 static void
 memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 {
-	partition_t *root_partition = partition_get_root();
-	partition_t *hyp_partition  = partition_get_private();
+	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
 	memdb_data_t	 *memdb_data;
@@ -436,8 +426,8 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		assert(type != MEMDB_TYPE_EXTENT);
 
 		// Success cases:
-		error_t err = memdb_insert(root_partition, start_addr, end_addr,
-					   obj, MEMDB_TYPE_PARTITION_NOMAP);
+		error_t err = memdb_insert(hyp_partition, start_addr, end_addr,
+					   obj, MEMDB_TYPE_TRACE);
 		if (err != OK) {
 			LOG(DEBUG, INFO,
 			    " memdb_insert ret:{%d}, should have returned: {:%d}",
@@ -445,8 +435,8 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		}
 		assert(err == OK);
 
-		err = memdb_update(root_partition, start_addr, end_addr, obj,
-				   type, obj, MEMDB_TYPE_PARTITION_NOMAP);
+		err = memdb_update(hyp_partition, start_addr, end_addr, obj,
+				   type, obj, MEMDB_TYPE_TRACE);
 		if (err != OK) {
 			LOG(DEBUG, INFO,
 			    " memdb_update ret:{%d}, should have returned: {:%d}",
@@ -466,8 +456,8 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		assert(cont);
 
 		// Failure cases:
-		err = memdb_insert(root_partition, start_addr, end_addr, obj,
-				   MEMDB_TYPE_PARTITION_NOMAP);
+		err = memdb_insert(hyp_partition, start_addr, end_addr, obj,
+				   MEMDB_TYPE_TRACE);
 		if (err != ERROR_MEMDB_NOT_OWNER) {
 			LOG(DEBUG, INFO,
 			    " memdb_insert ret:{%d}, should have returned: {:%d}",
@@ -475,7 +465,7 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 		}
 		assert(err == ERROR_MEMDB_NOT_OWNER);
 
-		err = memdb_update(root_partition, start_addr, end_addr, obj,
+		err = memdb_update(hyp_partition, start_addr, end_addr, obj,
 				   type, (uintptr_t)NULL, MEMDB_TYPE_EXTENT);
 		if (err != ERROR_MEMDB_NOT_OWNER) {
 			LOG(DEBUG, INFO,
@@ -518,17 +508,17 @@ memdb_test2(void)
 
 	test_data->ranges[0].base = 0x3000000;
 	test_data->ranges[0].size = 0x0086000;
-	test_data->ranges[0].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[0].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[0].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[1].base = 0x5000000;
 	test_data->ranges[1].size = 0x0080000;
-	test_data->ranges[1].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[1].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[1].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[2].base = 0x5100000;
 	test_data->ranges[2].size = 0x0180000;
-	test_data->ranges[2].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[2].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[2].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges_count = 3;
@@ -561,27 +551,27 @@ memdb_test3(void)
 
 	test_data->ranges[0].base = 0xB00000000;
 	test_data->ranges[0].size = 0x000860000;
-	test_data->ranges[0].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[0].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[0].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[1].base = 0xB08800000;
 	test_data->ranges[1].size = 0x03F580000;
-	test_data->ranges[1].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[1].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[1].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[2].base = 0xC00DC0000;
 	test_data->ranges[2].size = 0x000002000;
-	test_data->ranges[2].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[2].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[2].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[3].base = 0xC00C10000;
 	test_data->ranges[3].size = 0x000002000;
-	test_data->ranges[3].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[3].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[3].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[4].base = 0xC18000000;
 	test_data->ranges[4].size = 0x0BE800000;
-	test_data->ranges[4].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[4].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[4].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges_count = 5;
@@ -614,32 +604,32 @@ memdb_test4(void)
 
 	test_data->ranges[0].base = 0x80000000000;
 	test_data->ranges[0].size = 0x00860000000;
-	test_data->ranges[0].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[0].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[0].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[1].base = 0x0C000000000000;
 	test_data->ranges[1].size = 0x14000000000000;
-	test_data->ranges[1].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[1].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[1].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[2].base = 0x80DDC00000000;
 	test_data->ranges[2].size = 0x0000200000000;
-	test_data->ranges[2].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[2].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[2].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[3].base = 0x80DC000000000;
 	test_data->ranges[3].size = 0x0000300000000;
-	test_data->ranges[3].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[3].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[3].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[4].base = 0x8088000000000;
 	test_data->ranges[4].size = 0x0048000000000;
-	test_data->ranges[4].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[4].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[4].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[5].base = 0x8240000000000;
 	test_data->ranges[5].size = 0x3D60000000000;
-	test_data->ranges[5].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[5].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[5].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges_count = 6;
@@ -657,8 +647,7 @@ memdb_test5(void)
 
 	LOG(DEBUG, INFO, " Start TEST 5:");
 
-	partition_t *root_partition = partition_get_root();
-	partition_t *hyp_partition  = partition_get_private();
+	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
 	memdb_data_t	 *test_data;
@@ -675,27 +664,27 @@ memdb_test5(void)
 
 	test_data->ranges[0].base = 0x0;
 	test_data->ranges[0].size = 0x1000;
-	test_data->ranges[0].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[0].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[0].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[1].base = 0x1000;
 	test_data->ranges[1].size = 0x1000;
-	test_data->ranges[1].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[1].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[1].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[2].base = 0x20000;
 	test_data->ranges[2].size = 0x10000;
-	test_data->ranges[2].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[2].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[2].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[3].base = 0x300000;
 	test_data->ranges[3].size = 0x100000;
-	test_data->ranges[3].obj  = (uintptr_t)hyp_partition;
+	test_data->ranges[3].obj  = (uintptr_t)&dummy_partition_2;
 	test_data->ranges[3].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges[4].base = 0x17C2000;
 	test_data->ranges[4].size = 0x1000;
-	test_data->ranges[4].obj  = (uintptr_t)root_partition;
+	test_data->ranges[4].obj  = (uintptr_t)&dummy_partition_1;
 	test_data->ranges[4].type = MEMDB_TYPE_PARTITION;
 
 	test_data->ranges_count = 5;
@@ -711,8 +700,7 @@ static void
 memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 		  memdb_type_t initial_type, uintptr_t initial_obj)
 {
-	partition_t *root_partition = partition_get_root();
-	partition_t *hyp_partition  = partition_get_private();
+	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
 	memdb_data_t	 *memdb_data;
@@ -741,7 +729,7 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 
 	LOG(DEBUG, INFO, "<<< Adding range: {:#x}-{:#x}", start, end);
 
-	error_t err = memdb_insert(root_partition, start, end, initial_obj,
+	error_t err = memdb_insert(hyp_partition, start, end, initial_obj,
 				   initial_type);
 	assert(err == OK);
 
@@ -755,7 +743,7 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 		uintptr_t    obj  = test_data->ranges[i].obj;
 		memdb_type_t type = test_data->ranges[i].type;
 
-		err = memdb_update(root_partition, start_addr, end_addr, obj,
+		err = memdb_update(hyp_partition, start_addr, end_addr, obj,
 				   type, initial_obj, initial_type);
 		assert(err == OK);
 	}
@@ -792,7 +780,7 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 		uintptr_t    obj  = test_data->ranges[i].obj;
 		memdb_type_t type = test_data->ranges[i].type;
 
-		err = memdb_update(root_partition, start_addr, end_addr,
+		err = memdb_update(hyp_partition, start_addr, end_addr,
 				   initial_obj, initial_type, obj, type);
 		assert(err == OK);
 	}
@@ -823,8 +811,7 @@ memdb_test0(void)
 
 	LOG(DEBUG, INFO, " Start TEST 0:");
 
-	partition_t *root_partition = partition_get_root();
-	partition_t *hyp_partition  = partition_get_private();
+	partition_t *hyp_partition = partition_get_private();
 
 	void_ptr_result_t alloc_ret;
 	memdb_data_t	 *test_data;
@@ -841,18 +828,18 @@ memdb_test0(void)
 
 	test_data->ranges[0].base = 0x410fc4000;
 	test_data->ranges[0].size = 0x1000;
-	test_data->ranges[0].obj  = (uintptr_t)root_partition;
-	test_data->ranges[0].type = MEMDB_TYPE_PARTITION_NOMAP;
+	test_data->ranges[0].obj  = (uintptr_t)&dummy_partition_1;
+	test_data->ranges[0].type = MEMDB_TYPE_TRACE;
 
 	test_data->ranges[1].base = 0x57FFFf000;
 	test_data->ranges[1].size = 0x1000;
-	test_data->ranges[1].obj  = (uintptr_t)root_partition;
-	test_data->ranges[1].type = MEMDB_TYPE_PARTITION_NOMAP;
+	test_data->ranges[1].obj  = (uintptr_t)&dummy_partition_1;
+	test_data->ranges[1].type = MEMDB_TYPE_TRACE;
 
 	test_data->ranges[2].base = 0x3D8100000;
 	test_data->ranges[2].size = 0x38EC0000;
-	test_data->ranges[2].obj  = (uintptr_t)root_partition;
-	test_data->ranges[2].type = MEMDB_TYPE_PARTITION_NOMAP;
+	test_data->ranges[2].obj  = (uintptr_t)&dummy_partition_1;
+	test_data->ranges[2].type = MEMDB_TYPE_TRACE;
 
 	test_data->ranges_count = 3;
 
@@ -860,14 +847,14 @@ memdb_test0(void)
 	paddr_t end_addr   = 0x57FFFFFFF;
 
 	memdb_test_update(test_data, start_addr, end_addr, MEMDB_TYPE_PARTITION,
-			  (uintptr_t)root_partition);
+			  (uintptr_t)&dummy_partition_1);
 
 	// Insert a range in same address to see if the common level is locked
 	paddr_t start_addr2 = 0x580000000;
 	paddr_t end_addr2   = 0x69FFFFFFF;
 
-	error_t err = memdb_insert(root_partition, start_addr2, end_addr2,
-				   (uintptr_t)root_partition,
+	error_t err = memdb_insert(hyp_partition, start_addr2, end_addr2,
+				   (uintptr_t)&dummy_partition_1,
 				   MEMDB_TYPE_PARTITION);
 	assert(err == OK);
 
@@ -877,15 +864,15 @@ memdb_test0(void)
 	rcu_read_finish();
 
 	bool cont = memdb_is_ownership_contiguous(start_addr, end_addr2,
-						  (uintptr_t)root_partition,
+						  (uintptr_t)&dummy_partition_1,
 						  MEMDB_TYPE_PARTITION);
 	assert(cont);
 
 	paddr_t start_addr3 = 0x380000000;
 	paddr_t end_addr3   = 0x3D4FFFFFF;
 
-	err = memdb_insert(root_partition, start_addr3, end_addr3,
-			   (uintptr_t)root_partition, MEMDB_TYPE_PARTITION);
+	err = memdb_insert(hyp_partition, start_addr3, end_addr3,
+			   (uintptr_t)&dummy_partition_1, MEMDB_TYPE_PARTITION);
 	assert(err == OK);
 
 	rcu_read_start();
@@ -894,7 +881,7 @@ memdb_test0(void)
 	rcu_read_finish();
 
 	cont = memdb_is_ownership_contiguous(start_addr3, end_addr2,
-					     (uintptr_t)root_partition,
+					     (uintptr_t)&dummy_partition_1,
 					     MEMDB_TYPE_PARTITION);
 	assert(cont);
 }
@@ -904,10 +891,9 @@ memdb_test6(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 6:");
 
-	partition_t	       *root_partition = partition_get_root();
-	partition_t	       *hyp_partition  = partition_get_private();
-	paddr_t			start_addr     = 0U;
-	paddr_t			end_addr       = 0U;
+	partition_t	       *hyp_partition = partition_get_private();
+	paddr_t			start_addr    = 0U;
+	paddr_t			end_addr      = 0U;
 	uintptr_t		obj;
 	memdb_type_t		type;
 	uintptr_t		prev_obj;
@@ -947,23 +933,23 @@ memdb_test6(void)
 	obj	   = fake_extent;
 	type	   = MEMDB_TYPE_EXTENT;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	start_addr = 0x2080000000000;
 	end_addr   = 0x2080fffffffff;
-	obj	   = (uintptr_t)hyp_partition;
+	obj	   = (uintptr_t)&dummy_partition_2;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	start_addr = 0x2090000000000;
 	end_addr   = 0x213ffffffffff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump initial state
@@ -975,12 +961,12 @@ memdb_test6(void)
 
 	start_addr = 0x2100020000000;
 	end_addr   = 0x2100020ffffff;
-	obj	   = (uintptr_t)root_partition;
-	type	   = MEMDB_TYPE_PARTITION_NOMAP;
-	prev_obj   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
+	type	   = MEMDB_TYPE_TRACE;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -993,12 +979,12 @@ memdb_test6(void)
 
 	start_addr = 0x2100020000000;
 	end_addr   = 0x2100020ffffff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_partition;
-	prev_type  = MEMDB_TYPE_PARTITION_NOMAP;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
+	prev_type  = MEMDB_TYPE_TRACE;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1016,10 +1002,9 @@ memdb_test7(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 7:");
 
-	partition_t	       *root_partition = partition_get_root();
-	partition_t	       *hyp_partition  = partition_get_private();
-	paddr_t			start_addr     = 0U;
-	paddr_t			end_addr       = 0U;
+	partition_t	       *hyp_partition = partition_get_private();
+	paddr_t			start_addr    = 0U;
+	paddr_t			end_addr      = 0U;
 	uintptr_t		obj;
 	memdb_type_t		type;
 	uintptr_t		prev_obj;
@@ -1059,23 +1044,23 @@ memdb_test7(void)
 	obj	   = fake_extent;
 	type	   = MEMDB_TYPE_EXTENT;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	start_addr = 0x3000080000000;
 	end_addr   = 0x3000080ffffff;
-	obj	   = (uintptr_t)hyp_partition;
+	obj	   = (uintptr_t)&dummy_partition_2;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	start_addr = 0x3000090000000;
 	end_addr   = 0x300123fffffff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump initial state
@@ -1087,12 +1072,12 @@ memdb_test7(void)
 
 	start_addr = 0x3000100020000;
 	end_addr   = 0x3000100020fff;
-	obj	   = (uintptr_t)root_partition;
-	type	   = MEMDB_TYPE_PARTITION_NOMAP;
-	prev_obj   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
+	type	   = MEMDB_TYPE_TRACE;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1105,12 +1090,12 @@ memdb_test7(void)
 
 	start_addr = 0x3000100020000;
 	end_addr   = 0x3000100020fff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_partition;
-	prev_type  = MEMDB_TYPE_PARTITION_NOMAP;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
+	prev_type  = MEMDB_TYPE_TRACE;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1128,10 +1113,9 @@ memdb_test8(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 8:");
 
-	partition_t	       *root_partition = partition_get_root();
-	partition_t	       *hyp_partition  = partition_get_private();
-	paddr_t			start_addr     = 0U;
-	paddr_t			end_addr       = 0U;
+	partition_t	       *hyp_partition = partition_get_private();
+	paddr_t			start_addr    = 0U;
+	paddr_t			end_addr      = 0U;
 	uintptr_t		obj;
 	memdb_type_t		type;
 	uintptr_t		prev_obj;
@@ -1171,15 +1155,15 @@ memdb_test8(void)
 	obj	   = fake_extent;
 	type	   = MEMDB_TYPE_EXTENT;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	start_addr = 0x4000080000000;
 	end_addr   = 0x4000080ffffff;
-	obj	   = (uintptr_t)hyp_partition;
+	obj	   = (uintptr_t)&dummy_partition_2;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump state
@@ -1191,10 +1175,10 @@ memdb_test8(void)
 
 	start_addr = 0x4000a0000c000;
 	end_addr   = 0x4000a0000cfff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump state
@@ -1206,10 +1190,10 @@ memdb_test8(void)
 
 	start_addr = 0x4000a0000d000;
 	end_addr   = 0x4000cffffffff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump state
@@ -1221,10 +1205,10 @@ memdb_test8(void)
 
 	start_addr = 0x4000a00000000;
 	end_addr   = 0x4000a0000bfff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 
 	// Dump state
@@ -1236,12 +1220,12 @@ memdb_test8(void)
 
 	start_addr = 0x4000a00012000;
 	end_addr   = 0x4000a00012fff;
-	obj	   = (uintptr_t)root_partition;
-	type	   = MEMDB_TYPE_PARTITION_NOMAP;
-	prev_obj   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
+	type	   = MEMDB_TYPE_TRACE;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1254,12 +1238,12 @@ memdb_test8(void)
 
 	start_addr = 0x4000a00013000;
 	end_addr   = 0x4000a0e012fff;
-	obj	   = (uintptr_t)root_partition;
-	type	   = MEMDB_TYPE_PARTITION_NOMAP;
-	prev_obj   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
+	type	   = MEMDB_TYPE_TRACE;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
 	prev_type  = MEMDB_TYPE_PARTITION;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1272,12 +1256,12 @@ memdb_test8(void)
 
 	start_addr = 0x4000a00012000;
 	end_addr   = 0x4000a0e012fff;
-	obj	   = (uintptr_t)root_partition;
+	obj	   = (uintptr_t)&dummy_partition_1;
 	type	   = MEMDB_TYPE_PARTITION;
-	prev_obj   = (uintptr_t)root_partition;
-	prev_type  = MEMDB_TYPE_PARTITION_NOMAP;
+	prev_obj   = (uintptr_t)&dummy_partition_1;
+	prev_type  = MEMDB_TYPE_TRACE;
 
-	err = memdb_update(root_partition, start_addr, end_addr, obj, type,
+	err = memdb_update(hyp_partition, start_addr, end_addr, obj, type,
 			   prev_obj, prev_type);
 	assert(err == OK);
 
@@ -1295,10 +1279,9 @@ memdb_test9(void)
 {
 	LOG(DEBUG, INFO, " Start TEST 9:");
 
-	partition_t	       *root_partition = partition_get_root();
-	partition_t	       *hyp_partition  = partition_get_private();
-	paddr_t			start_addr     = 0U;
-	paddr_t			end_addr       = 0U;
+	partition_t	       *hyp_partition = partition_get_private();
+	paddr_t			start_addr    = 0U;
+	paddr_t			end_addr      = 0U;
 	uintptr_t		obj;
 	memdb_type_t		type;
 	error_t			err = OK;
@@ -1320,25 +1303,21 @@ memdb_test9(void)
 	// Check initial present ranges
 	check_ranges_in_memdb(memdb_data);
 
-	// Check how much size is left in allocator
-	allocator_node_t *node	    = root_partition->allocator.heap;
-	size_t		  last_size = 0U;
-
-	while (node != NULL) {
-		last_size = node->size;
-		node	  = node->next;
-	}
-
-	// Allocate dummy region just to consume most of the allocator's memory
-	void  *dummy_region = NULL;
-	size_t dummy_size   = last_size - sizeof(memdb_level_t) * 4;
-	alloc_ret	    = partition_alloc(root_partition, dummy_size,
-					      alignof(memdb_level_t));
+	// Allocate dummy region we can use to replace the allocator's freelist
+#if defined(MODULE_MEM_MEMDB_GPT)
+	size_t dummy_size = sizeof(memdb_level_t) * 4;
+#elif defined(MODULE_MEM_MEMDB_BITMAP)
+	size_t dummy_size = sizeof(memdb_level_table_t) * 4;
+#else
+#error Determine free heap size to cause OOM during the below memdb_insert
+#endif
+	allocator_node_t *dummy_heap = NULL;
+	alloc_ret = partition_alloc(hyp_partition, dummy_size,
+				    alignof(allocator_node_t));
 	if (alloc_ret.e != OK) {
 		panic("memdb_test: allocate dummy region failed");
 	}
-
-	dummy_region = alloc_ret.r;
+	dummy_heap = alloc_ret.r;
 
 	// Cause an out of memory error to see if the rollback is done correctly
 	start_addr = 0x61234567890000;
@@ -1353,18 +1332,27 @@ memdb_test9(void)
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
 	rcu_read_finish();
 
-	obj  = (uintptr_t)root_partition;
+	obj  = (uintptr_t)&dummy_partition_1;
 	type = MEMDB_TYPE_PARTITION;
+
+	// Make sure any outstanding RCU work has completed, so there won't
+	// be any frees into the allocator while we have swapped its heap with
+	// the dummy.
+	rcu_sync();
+	rcu_sync();
+
+	// Swap the real heap with the dummy one
+	spinlock_acquire(&hyp_partition->allocator.lock);
+	allocator_node_t *saved_heap = hyp_partition->allocator.heap;
+	*dummy_heap = (allocator_node_t){ .size = dummy_size, .next = NULL };
+	hyp_partition->allocator.heap = dummy_heap;
+	spinlock_release(&hyp_partition->allocator.lock);
 
 	// Should run out of memory because this range needs to create several
 	// levels (if they have not been created in previous tests) and there is
 	// not much memory left in allocator
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == ERROR_NOMEM);
-
-	// Free dummy region and retry inserting same range. This time it should
-	// succeed
-	partition_free(root_partition, dummy_region, dummy_size);
 
 	// Verify that the address does not exist in the memdb
 	rcu_read_start();
@@ -1372,7 +1360,21 @@ memdb_test9(void)
 	assert((res.e != OK) || (res.r.type == MEMDB_TYPE_NOTYPE));
 	rcu_read_finish();
 
-	err = memdb_insert(root_partition, start_addr, end_addr, obj, type);
+	// Verify that all memory allocated during the attempted insert has
+	// been freed by the time an RCU grace period has expired.
+	rcu_sync();
+	rcu_sync();
+	spinlock_acquire(&hyp_partition->allocator.lock);
+	assert(hyp_partition->allocator.heap == dummy_heap);
+	assert(dummy_heap->size == dummy_size);
+
+	// Swap the heap back and retry inserting the same range. This time it
+	// should succeed.
+	hyp_partition->allocator.heap = saved_heap;
+	spinlock_release(&hyp_partition->allocator.lock);
+	partition_free(hyp_partition, dummy_heap, dummy_size);
+
+	err = memdb_insert(hyp_partition, start_addr, end_addr, obj, type);
 	assert(err == OK);
 }
 
@@ -1442,28 +1444,48 @@ memdb_test10(void)
 	partition_free(hyp_partition, memdb_data, memdb_data_size);
 }
 
+static void
+memdb_test11(void)
+{
+#if defined(MEMDB_BITMAP_OBJECTS)
+	LOG(DEBUG, INFO, " Start TEST 11:");
+
+	memdb_data_t test_data = { 0 };
+
+	paddr_t start_addr = 0x5000a00000000;
+	paddr_t end_addr   = 0x5000a00ffffff;
+
+	static_assert(MEMDB_BITMAP_OBJECTS <= util_array_size(test_data.ranges),
+		      "Test data is too small");
+	for (index_t i = 0U; i < MEMDB_BITMAP_OBJECTS; i++) {
+		test_data.ranges[i].base = start_addr + (0x2000 * i);
+		test_data.ranges[i].size = 0x1000;
+		test_data.ranges[i].obj =
+			((uintptr_t)&dummy_partition_2) + (MEMDB_MIN_SIZE * i);
+		test_data.ranges[i].type = MEMDB_TYPE_TRACE;
+		test_data.ranges_count++;
+	}
+
+	memdb_test_update(&test_data, start_addr, end_addr,
+			  MEMDB_TYPE_PARTITION, (uintptr_t)&dummy_partition_1);
+#else // !defined(MEMDB_BITMAP_OBJECTS)
+	LOG(DEBUG, INFO, " Skip TEST 11 (not using memdb_bitmap)");
+#endif
+}
+
 bool
 memdb_handle_tests_start(void)
 {
-	bool wait_all_cores_end	  = true;
-	bool wait_all_cores_start = true;
+	static _Atomic count_t core_start_count;
+	static _Atomic bool    tests_done;
+	cpu_index_t	       this_cpu = cpulocal_get_index();
 
-	spinlock_acquire_nopreempt(&test_memdb_spinlock);
-	test_memdb_count++;
-	spinlock_release_nopreempt(&test_memdb_spinlock);
-
-	// Wait until all cores have reached this point to start.
-	while (wait_all_cores_start) {
-		spinlock_acquire_nopreempt(&test_memdb_spinlock);
-
-		if (test_memdb_count == (PLATFORM_MAX_CORES)) {
-			wait_all_cores_start = false;
-		}
-
-		spinlock_release_nopreempt(&test_memdb_spinlock);
+	(void)atomic_fetch_add(&core_start_count, 1U);
+	while (atomic_load(&core_start_count) < PLATFORM_MAX_CORES) {
+		scheduler_yield();
 	}
 
-	if (cpulocal_get_index() != 0U) {
+	if (this_cpu != 0U) {
 		goto wait;
 	}
 
@@ -1500,23 +1522,18 @@ memdb_handle_tests_start(void)
 	// Test walk over two ranges with empty space from guard.
 	memdb_test10();
 
-	spinlock_acquire_nopreempt(&test_memdb_spinlock);
-	test_memdb_count++;
-	spinlock_release_nopreempt(&test_memdb_spinlock);
+	// Test conversion of bitmap levels to table levels for memdb_bitmap
+	memdb_test11();
 
 	LOG(DEBUG, INFO, "Memdb tests successfully finished ");
+	atomic_store(&tests_done, true);
 
 wait:
+	(void)0;
 
 	// Make all threads wait for test to end
-	while (wait_all_cores_end) {
-		spinlock_acquire_nopreempt(&test_memdb_spinlock);
-
-		if (test_memdb_count == PLATFORM_MAX_CORES + 1) {
-			wait_all_cores_end = false;
-		}
-
-		spinlock_release_nopreempt(&test_memdb_spinlock);
+	while (!atomic_load(&tests_done)) {
+		scheduler_yield();
 	}
 
 	return false;

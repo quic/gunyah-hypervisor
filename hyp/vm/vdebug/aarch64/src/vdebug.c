@@ -35,20 +35,6 @@ vdebug_handle_boot_cpu_cold_init(void)
 	assert((ID_AA64DFR0_EL1_get_WRPs(&aa64dfr) + 1U) == CPU_DEBUG_WP_COUNT);
 }
 
-error_t
-vdebug_handle_object_create_thread(thread_create_t thread_create)
-{
-	thread_t *thread = thread_create.thread;
-	assert(thread != NULL);
-
-	if (thread_create.kind == THREAD_KIND_VCPU) {
-		// All VCPUs have debug initially disabled
-		thread->vdebug_enabled = false;
-	}
-
-	return OK;
-}
-
 bool
 vdebug_handle_vcpu_activate_thread(thread_t	      *thread,
 				   vcpu_option_flags_t options)
@@ -64,6 +50,7 @@ vdebug_handle_vcpu_activate_thread(thread_t	      *thread,
 	// default and ignore any vcpu config.
 	(void)options;
 	vcpu_option_flags_set_debug_allowed(&thread->vcpu_options, true);
+	vcpu_runtime_flags_set_debug_active(&thread->vcpu_flags, false);
 
 	return true;
 }
@@ -73,31 +60,40 @@ vdebug_handle_thread_save_state(void)
 {
 	thread_t *current = thread_get_self();
 
-	if (current->vdebug_enabled) {
-#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
-		DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
-#else
-		DBGCLAIM_EL1_t dbgclaim = register_DBGCLAIMCLR_EL1_read_ordered(
-			&vdebug_asm_order);
-#endif
+	if (compiler_unexpected(vcpu_runtime_flags_get_debug_active(
+		    &current->vcpu_flags))) {
+		assert(current->kind == THREAD_KIND_VCPU);
+
 		// Context-switch the debug registers only if
 		// - The device security state disallows debugging, or
 		// - The device security state allows debugging and the
 		//   external debugger has not claimed the debug module.
-		if (platform_security_state_debug_disabled() ||
-		    !DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
-			current->vdebug_enabled = debug_save_common(
+		bool need_save = platform_security_state_debug_disabled();
+		if (compiler_unexpected(!need_save)) {
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+			DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+#else
+			DBGCLAIM_EL1_t dbgclaim =
+				register_DBGCLAIMCLR_EL1_read_ordered(
+					&vdebug_asm_order);
+#endif
+			need_save = !DBGCLAIM_EL1_get_debug_ext(&dbgclaim);
+		}
+
+		bool vdebug_enabled = false;
+		if (compiler_expected(need_save)) {
+			vdebug_enabled = debug_save_common(
 				&current->vdebug_state, &vdebug_asm_order);
-		} else {
-			current->vdebug_enabled = false;
 		}
 
 		// If debug is no longer in use, ensure register accesses will
 		// be trapped when we next switch back to this VCPU, so we can
 		// safely avoid restoring the registers.
-		if (!current->vdebug_enabled) {
+		if (!vdebug_enabled) {
 			MDCR_EL2_set_TDA(&current->vcpu_regs_el2.mdcr_el2,
 					 true);
+			vcpu_runtime_flags_set_debug_active(
+				&current->vcpu_flags, false);
 		}
 	}
 }
@@ -107,7 +103,10 @@ vdebug_handle_thread_context_switch_post(thread_t *prev)
 {
 	thread_t *current = thread_get_self();
 
-	if (prev->vdebug_enabled && !current->vdebug_enabled) {
+	if (compiler_unexpected(
+		    vcpu_runtime_flags_get_debug_active(&prev->vcpu_flags) &&
+		    !vcpu_runtime_flags_get_debug_active(
+			    &current->vcpu_flags))) {
 		// Write zeros to MDSCR_EL1.MDE and MDSCR_EL1.SS to disable
 		// breakpoints and single-stepping, in case the previous VCPU
 		// had them enabled.
@@ -121,19 +120,24 @@ vdebug_handle_thread_load_state(void)
 {
 	thread_t *current = thread_get_self();
 
-	if (current->vdebug_enabled) {
-#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
-		DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
-#else
-		DBGCLAIM_EL1_t dbgclaim = register_DBGCLAIMCLR_EL1_read_ordered(
-			&vdebug_asm_order);
-#endif
+	if (compiler_unexpected(vcpu_runtime_flags_get_debug_active(
+		    &current->vcpu_flags))) {
 		// Context-switch the debug registers only if
 		// - The device security state disallows debugging, or
 		// - The device security state allows debugging and the
 		//   external debugger has not claimed the debug module.
-		if (platform_security_state_debug_disabled() ||
-		    !DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
+		bool need_load = platform_security_state_debug_disabled();
+		if (compiler_unexpected(!need_load)) {
+#if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
+			DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+#else
+			DBGCLAIM_EL1_t dbgclaim =
+				register_DBGCLAIMCLR_EL1_read_ordered(
+					&vdebug_asm_order);
+#endif
+			need_load = !DBGCLAIM_EL1_get_debug_ext(&dbgclaim);
+		}
+		if (compiler_expected(need_load)) {
 			debug_load_common(&current->vdebug_state,
 					  &vdebug_asm_order);
 		}
@@ -150,24 +154,27 @@ vdebug_handle_vcpu_debug_trap(void)
 	vcpu_trap_result_t ret;
 	thread_t	  *current = thread_get_self();
 
+	bool external_debug = !platform_security_state_debug_disabled();
+	if (compiler_unexpected(external_debug)) {
 #if defined(PLATFORM_HAS_NO_DBGCLAIM_EL1) && PLATFORM_HAS_NO_DBGCLAIM_EL1
-	DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
+		DBGCLAIM_EL1_t dbgclaim = DBGCLAIM_EL1_default();
 #else
-	DBGCLAIM_EL1_t dbgclaim =
-		register_DBGCLAIMCLR_EL1_read_ordered(&vdebug_asm_order);
+		DBGCLAIM_EL1_t dbgclaim = register_DBGCLAIMCLR_EL1_read_ordered(
+			&vdebug_asm_order);
 #endif
+		external_debug = DBGCLAIM_EL1_get_debug_ext(&dbgclaim);
+	}
 
 	if (!vcpu_option_flags_get_debug_allowed(&current->vcpu_options)) {
 		// This VCPU isn't allowed to access debug. Fault immediately.
 		ret = VCPU_TRAP_RESULT_FAULT;
-	} else if (!platform_security_state_debug_disabled() &&
-		   DBGCLAIM_EL1_get_debug_ext(&dbgclaim)) {
+	} else if (external_debug) {
 		// The device security state allows debugging and the external
 		// debugger has claimed the debug module.
 		ret = VCPU_TRAP_RESULT_EMULATED;
-	} else if (!current->vdebug_enabled) {
+	} else if (!vcpu_runtime_flags_get_debug_active(&current->vcpu_flags)) {
 		// Lazily enable debug register access and restore context.
-		current->vdebug_enabled = true;
+		vcpu_runtime_flags_set_debug_active(&current->vcpu_flags, true);
 		debug_load_common(&current->vdebug_state, &vdebug_asm_order);
 
 		// Disable the register access trap and retry.

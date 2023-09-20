@@ -17,7 +17,7 @@ error_t
 gicv3_irq_check(irq_t irq);
 
 void
-gicv3_irq_enable(irq_t irq);
+gicv3_irq_enable_shared(irq_t irq);
 
 void
 gicv3_irq_enable_local(irq_t irq) REQUIRE_PREEMPT_DISABLED;
@@ -26,7 +26,7 @@ void
 gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu);
 
 void
-gicv3_irq_disable(irq_t irq);
+gicv3_irq_disable_shared(irq_t irq);
 
 void
 gicv3_irq_disable_local(irq_t irq) REQUIRE_PREEMPT_DISABLED;
@@ -41,7 +41,7 @@ void
 gicv3_irq_cancel_nowait(irq_t irq);
 
 irq_trigger_result_t
-gicv3_irq_set_trigger(irq_t irq, irq_trigger_t trigger);
+gicv3_irq_set_trigger_shared(irq_t irq, irq_trigger_t trigger);
 
 irq_trigger_result_t
 gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu);
@@ -76,6 +76,17 @@ gicv3_ipi_one(ipi_reason_t ipi, cpu_index_t cpu);
 
 void
 gicv3_ipi_clear(ipi_reason_t ipi);
+
+// Accessor to gicd for the unit tests configuration.
+#if defined(UNIT_TESTS)
+gicd_t *
+gicv3_get_gicd_pointer(void);
+
+#if GICV3_EXT_IRQS
+irq_trigger_result_t
+gicv3_irq_set_trigger_shared(irq_t irq, irq_trigger_t trigger);
+#endif
+#endif
 
 #if GICV3_HAS_LPI
 

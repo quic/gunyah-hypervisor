@@ -30,13 +30,13 @@ timer_get_current_timer_ticks()
 ticks_t
 timer_convert_ns_to_ticks(nanoseconds_t ns)
 {
-	return platform_convert_ns_to_ticks(ns);
+	return platform_timer_convert_ns_to_ticks(ns);
 }
 
 nanoseconds_t
 timer_convert_ticks_to_ns(ticks_t ticks)
 {
-	return platform_convert_ticks_to_ns(ticks);
+	return platform_timer_convert_ticks_to_ns(ticks);
 }
 
 void

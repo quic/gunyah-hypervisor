@@ -507,7 +507,7 @@ ctu_dir = os.path.join(build_dir, "ctu")
 graph.add_env('CTU_DIR', relpath(ctu_dir))
 graph.add_rule('cc-ctu-ast',
                '$TARGET_CC $CFLAGS $CPPFLAGS $TARGET_CFLAGS $TARGET_CPPFLAGS '
-               '$LOCAL_CFLAGS $LOCAL_CPPFLAGS -DCLANG_CTU_AST '
+               '$LOCAL_CFLAGS $LOCAL_CPPFLAGS '
                '-MD -MF ${out}.d -Wno-unused-command-line-argument '
                '-emit-ast -o${out} ${in}',
                depfile='${out}.d')

@@ -145,7 +145,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 	case ISS_DA_IA_FSC_PERMISSION_2:  // Permission fault, level 2
 	case ISS_DA_IA_FSC_PERMISSION_3:  // Permission fault, level 3
 	case ISS_DA_IA_FSC_ALIGNMENT: {	  // Alignment fault
-#if !defined(NDEBUG)
+#if defined(VERBOSE) && VERBOSE
 		// Injecting an abort from the guest EL1H sync vector will
 		// cause an exception inject loop, so block the vcpu instead.
 		if (SPSR_EL2_A64_get_M(&spsr_el2) == SPSR_64BIT_MODE_EL1H) {
@@ -293,7 +293,7 @@ inject_undef_abort(ESR_EL2_t esr_el2)
 	ESR_EL1_set_EC(&esr_el1, ESR_EC_UNKNOWN);
 
 	thread_t *thread = thread_get_self();
-	TRACE_AND_LOG(DEBUG, DEBUG,
+	TRACE_AND_LOG(INFO, DEBUG,
 		      "Injecting unknown abort to VM {:d}, "
 		      "original ESR_EL2 {:#x}",
 		      thread->addrspace->vmid, ESR_EL2_raw(esr_el2),

@@ -9,17 +9,6 @@
 
 #define asm_event_wait(p) __asm__ volatile("wfe" ::"m"(*p))
 
-#if defined(CLANG_CTU_AST)
-
-// Clang CTU analysis does not support _Generic in ASTs; use the default
-// definition of load-before-wait.
-#include <asm-generic/event.h>
-
-// Ensure this is never compiled to object code
-__asm__(".error");
-
-#else
-
 // clang-format off
 #define asm_event_load_before_wait(p) _Generic(				       \
 	(p),								       \
@@ -74,5 +63,3 @@ asm_event_load64_before_wait(_Atomic uint64_t *p)
 	__asm__("ldaxr %0, %1" : "=r"(ret) : "Q"(*p));
 	return ret;
 }
-
-#endif // !defined(CLANG_CTU_AST)

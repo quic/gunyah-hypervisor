@@ -92,17 +92,31 @@ platform_timer_set_timeout(ticks_t timeout)
 }
 
 ticks_t
-platform_convert_ns_to_ticks(nanoseconds_t ns)
+platform_timer_convert_ns_to_ticks(nanoseconds_t ns)
 {
 	return (ticks_t)((ns * PLATFORM_TIMER_NS_TO_FREQ_MULT) /
 			 PLATFORM_TIMER_FREQ_TO_NS_MULT);
 }
 
 nanoseconds_t
-platform_convert_ticks_to_ns(ticks_t ticks)
+platform_timer_convert_ticks_to_ns(ticks_t ticks)
 {
 	return (nanoseconds_t)((ticks * PLATFORM_TIMER_FREQ_TO_NS_MULT) /
 			       PLATFORM_TIMER_NS_TO_FREQ_MULT);
+}
+
+ticks_t
+platform_timer_convert_ms_to_ticks(milliseconds_t ms)
+{
+	return (ticks_t)((ms * PLATFORM_TIMER_MS_TO_FREQ_MULT) /
+			 PLATFORM_TIMER_FREQ_TO_MS_MULT);
+}
+
+milliseconds_t
+platform_timer_convert_ticks_to_ms(ticks_t ticks)
+{
+	return (milliseconds_t)((ticks * PLATFORM_TIMER_FREQ_TO_MS_MULT) /
+				PLATFORM_TIMER_MS_TO_FREQ_MULT);
 }
 
 void
@@ -157,7 +171,7 @@ void
 platform_timer_ndelay(nanoseconds_t duration)
 {
 	ticks_t cur_ticks      = platform_timer_get_current_ticks();
-	ticks_t duration_ticks = platform_convert_ns_to_ticks(duration);
+	ticks_t duration_ticks = platform_timer_convert_ns_to_ticks(duration);
 	ticks_t target_ticks   = cur_ticks + duration_ticks;
 
 	// NOTE: assume we don't have overflow case since it covers huge range.

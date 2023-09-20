@@ -12,7 +12,7 @@ extend hyp_api_flags0 bitfield {
 define virtio_mmio_notify_reason public bitfield<64> {
 	0	new_buffer	bool = 0;
 	1	reset_rqst	bool = 0;
-	2	interrupt_ack	bool = 0;
+	2	res0_irq_ack	bool(const); // Formerly interrupt_ack
 	3	driver_ok	bool = 0;
 	4	failed		bool = 0;
 	others	unknown = 0;

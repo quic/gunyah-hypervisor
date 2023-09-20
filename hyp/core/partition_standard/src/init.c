@@ -47,8 +47,8 @@ static const paddr_t   phys_last  = (paddr_t)&image_phys_last;
 // Ensure hypervisor is 2MiB page size aligned to use AArch64 2M block mappings
 static_assert((PLATFORM_RW_DATA_SIZE & 0x1fffffU) == 0U,
 	      "PLATFORM_RW_DATA_SIZE must be 2MB aligned");
-static_assert((PLATFORM_HEAP_PRIVATE_SIZE & 0x1fffffU) == 0U,
-	      "PLATFORM_HEAP_PRIVATE_SIZE must be 2MB aligned");
+static_assert((PLATFORM_HEAP_PRIVATE_SIZE & 0xfffU) == 0U,
+	      "PLATFORM_HEAP_PRIVATE_SIZE must be 4KB aligned");
 #endif
 
 void NOINLINE
@@ -120,12 +120,15 @@ partition_add_ram(partition_t *partition, paddr_t base, size_t size)
 {
 	error_t err;
 
+#if defined(MODULE_MEM_MEMDB_GPT)
 	// Add the ram range to the memory database.
+	// FIXME:
 	err = memdb_insert(&hyp_partition, base, base + (size - 1U),
 			   (uintptr_t)partition, MEMDB_TYPE_PARTITION_NOMAP);
 	if (err != OK) {
 		panic("Error inserting ram to memdb");
 	}
+#endif
 
 	// Notify modules about new ram. Memdb type for this range will be
 	// updated to MEMDB_TYPE_PARTITION.

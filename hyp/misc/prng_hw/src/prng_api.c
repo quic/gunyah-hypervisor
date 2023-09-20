@@ -39,7 +39,7 @@ hypercall_prng_get_entropy(count_t num_bytes)
 	count_t read_count = (count_t)(thread->prng_last_read & util_mask(2));
 
 	// Read rate-limit window is 33ms per thread to reduce DoS.
-	if ((now - last_read) < platform_convert_ns_to_ticks(33000000U)) {
+	if ((now - last_read) < platform_timer_convert_ns_to_ticks(33000000U)) {
 		if (read_count == util_mask(2)) {
 			ret.error = ERROR_BUSY;
 			goto out;
