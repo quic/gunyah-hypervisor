@@ -133,7 +133,9 @@
           ],
           "skip-paths-matching": {
             "patterns": [
-              "qcbor/.*\\.[ch]"
+              "qcbor/.*\\.[ch]",
+              "tools/cpptest/gunyahkw.h",
+              "tools/misc/convert-utf-8.sh"
             ]
           },
           "lineCount": 20,
