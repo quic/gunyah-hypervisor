@@ -145,7 +145,7 @@ boot_do_memdb_walk(paddr_t base, size_t size, void *arg)
 {
 	qcbor_enc_ctxt_t *qcbor_enc_ctxt = (qcbor_enc_ctxt_t *)arg;
 
-	if ((size == 0U) && (util_add_overflows(base, size - 1))) {
+	if ((size == 0U) && (util_add_overflows(base, size - 1U))) {
 		return ERROR_ARGUMENT_SIZE;
 	}
 

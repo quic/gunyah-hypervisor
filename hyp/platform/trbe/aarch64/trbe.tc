@@ -15,7 +15,7 @@ define TRBLIMITR_EL1 bitfield<64> {
 	others	unknown = 0;
 };
 
-define tbre_context structure {
+define trbe_context structure {
 	TRBLIMITR_EL1	bitfield TRBLIMITR_EL1;
 	TRBPTR_EL1	uint64;
 	TRBBASER_EL1	uint64;

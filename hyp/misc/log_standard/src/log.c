@@ -34,7 +34,7 @@
 extern char hyp_log_buffer[];
 char	    hyp_log_buffer[LOG_BUFFER_SIZE];
 
-static_assert(LOG_BUFFER_SIZE > LOG_ENTRY_BUFFER_SIZE,
+static_assert((size_t)LOG_BUFFER_SIZE > LOG_ENTRY_BUFFER_SIZE,
 	      "LOG_BUFFER_SIZE too small");
 
 // Global visibility - for debug
@@ -154,20 +154,20 @@ log_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 	if (compiler_expected(buf_remaining >= entry_size)) {
 		(void)memcpy(&hyp_log.log_buffer[prev_idx], entry_buf,
 			     entry_size);
-		CACHE_CLEAN_RANGE(&hyp_log.log_buffer[prev_idx], entry_size);
+		cache_clean_range(&hyp_log.log_buffer[prev_idx], entry_size);
 	} else {
 		// Otherwise copy the first bit of entry to the tail of the
 		// buffer and wrap to the start for the remainder.
 		size_t first_part = buf_remaining;
 		(void)memcpy(&hyp_log.log_buffer[prev_idx], entry_buf,
 			     first_part);
-		CACHE_CLEAN_RANGE(&hyp_log.log_buffer[prev_idx], first_part);
+		cache_clean_range(&hyp_log.log_buffer[prev_idx], first_part);
 
 		size_t second_part = entry_size - first_part;
 
 		(void)memcpy(&hyp_log.log_buffer[0], entry_buf + first_part,
 			     second_part);
-		CACHE_CLEAN_RANGE(&hyp_log.log_buffer[0], second_part);
+		cache_clean_range(&hyp_log.log_buffer[0], second_part);
 	}
 out:
 	// Nothing to do

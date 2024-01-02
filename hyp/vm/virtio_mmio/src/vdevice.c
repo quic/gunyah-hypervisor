@@ -15,6 +15,8 @@
 #include <util.h>
 #include <virq.h>
 
+#include <events/virtio_mmio.h>
+
 #include <asm/nospec_checks.h>
 
 #include "event_handlers.h"
@@ -33,9 +35,10 @@ virtio_mmio_access_allowed(size_t size, size_t offset)
 		ret = true;
 	} else if (size == sizeof(uint8_t)) {
 		// Byte accesses only allowed for config
-		ret = ((offset >= OFS_VIRTIO_MMIO_REGS_CONFIG(0U)) &&
-		       (offset <= OFS_VIRTIO_MMIO_REGS_CONFIG((
-					  VIRTIO_MMIO_REG_CONFIG_BYTES - 1U))));
+		ret = ((offset >= (size_t)OFS_VIRTIO_MMIO_REGS_DEVICE_CONFIG) &&
+		       (offset <=
+			((size_t)((size_t)OFS_VIRTIO_MMIO_REGS_DEVICE_CONFIG +
+				  (VIRTIO_MMIO_REG_CONFIG_BYTES - 1U)))));
 	} else {
 		// Invalid access size
 		ret = false;
@@ -44,25 +47,29 @@ virtio_mmio_access_allowed(size_t size, size_t offset)
 	return ret;
 }
 
-static bool
-virtio_mmio_default_write(const virtio_mmio_t *virtio_mmio, size_t offset,
-			  size_t access_size, uint32_t val)
+vcpu_trap_result_t
+virtio_mmio_default_write(const virtio_mmio_t *virtio_mmio, size_t write_offset,
+			  size_t access_size, register_t val)
 {
-	bool ret = true;
-
-	if ((offset >= OFS_VIRTIO_MMIO_REGS_CONFIG(0U)) &&
-	    (offset <= OFS_VIRTIO_MMIO_REGS_CONFIG(
-			       (VIRTIO_MMIO_REG_CONFIG_BYTES - 1U)))) {
-		index_t n = (index_t)(offset - OFS_VIRTIO_MMIO_REGS_CONFIG(0U));
+	vcpu_trap_result_t ret = VCPU_TRAP_RESULT_FAULT;
+	if ((write_offset >= (size_t)OFS_VIRTIO_MMIO_REGS_DEVICE_CONFIG) &&
+	    (write_offset <=
+	     (size_t)((size_t)OFS_VIRTIO_MMIO_REGS_DEVICE_CONFIG +
+		      VIRTIO_MMIO_REG_CONFIG_BYTES - 1U))) {
+		index_t n =
+			(index_t)(write_offset -
+				  (size_t)OFS_VIRTIO_MMIO_REGS_DEVICE_CONFIG);
 		// Loop through every byte
-		uint32_t shifted_val = val;
+		register_t shifted_val = val;
 		for (index_t i = 0U; i < access_size; i++) {
-			atomic_store_relaxed(&virtio_mmio->regs->config[n + i],
-					     (uint8_t)shifted_val);
+			atomic_store_relaxed(
+				&virtio_mmio->regs->device_config.raw[n + i],
+				(uint8_t)shifted_val);
 			shifted_val >>= 8U;
 		}
+		ret = VCPU_TRAP_RESULT_EMULATED;
 	} else {
-		ret = false;
+		ret = VCPU_TRAP_RESULT_FAULT;
 	}
 
 	return ret;
@@ -221,8 +228,19 @@ virtio_mmio_write_queue_notify(virtio_mmio_t *virtio_mmio, uint32_t val)
 static void
 virtio_mmio_write_interrupt_ack(virtio_mmio_t *virtio_mmio, uint32_t val)
 {
+#if defined(PLATFORM_NO_DEVICE_ATTR_ATOMIC_UPDATE) &&                          \
+	PLATFORM_NO_DEVICE_ATTR_ATOMIC_UPDATE
+	spinlock_acquire(&virtio_mmio->lock);
+	uint32_t interrupt_status =
+		atomic_load_relaxed(&virtio_mmio->regs->interrupt_status);
+	interrupt_status &= ~val;
+	atomic_store_relaxed(&virtio_mmio->regs->interrupt_status,
+			     interrupt_status);
+	spinlock_release(&virtio_mmio->lock);
+#else
 	(void)atomic_fetch_and_explicit(&virtio_mmio->regs->interrupt_status,
 					~val, memory_order_relaxed);
+#endif
 }
 
 static bool
@@ -306,8 +324,10 @@ virtio_mmio_vdevice_write(virtio_mmio_t *virtio_mmio, size_t offset,
 		break;
 
 	default:
-		ret = virtio_mmio_default_write(virtio_mmio, offset,
-						access_size, val);
+		ret = (trigger_virtio_mmio_device_config_write_event(
+			       virtio_mmio->device_type,
+			       (const virtio_mmio_t *)virtio_mmio, offset, val,
+			       access_size) == VCPU_TRAP_RESULT_EMULATED);
 		break;
 	}
 

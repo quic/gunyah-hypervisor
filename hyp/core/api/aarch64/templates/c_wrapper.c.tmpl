@@ -55,7 +55,7 @@
 #for hypcall_num in sorted($hypcall_dict.keys())
     #set $hypcall = $hypcall_dict[$hypcall_num]
     #if len($hypcall.outputs) > 1
-    static_assert(sizeof(${return_type($hypcall)}) <= 8 * sizeof(register_t),
+    static_assert(sizeof(${return_type($hypcall)}) <= 8U * sizeof(register_t),
         "Return structure must fit in 8 machine registers");
 
     #end if

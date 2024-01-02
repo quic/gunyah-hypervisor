@@ -42,11 +42,13 @@ severity_map = {
 }
 
 deviation_map = {
+    # Deviation because the behaviour proscribed by the rule is exactly the
+    # intended behaviour of assert(): it prints the unexpanded expression.
     'MISRAC2012-RULE_20_12-a': [
         (None, re.compile(r"parameter of potential macro 'assert'")),
     ],
     # False positives due to __c11 builtins taking int memory order arguments
-    # instead of enum
+    # instead of enum in the Clang implementation.
     'MISRAC2012-RULE_10_3-b': [
         (None, re.compile(r"number '2'.*'essentially Enum'.*"
                           r"'__c11_atomic_load'.*'essentially signed'")),
@@ -98,6 +100,29 @@ deviation_map = {
     ],
     'MISRAC2012-RULE_16_3-b': [
         (re.compile(r'^build/.*/objects/.*\.c$'), None),
+    ],
+    # False positive due to a builtin sizeof variant that does not evaluate its
+    # argument, so there is no uninitialised use.
+    'MISRAC2012-RULE_9_1-a': [
+        (None, re.compile(r'passed to "__builtin_object_size"')),
+    ],
+    'MISRAC2012-RULE_1_3-b': [
+        (None, re.compile(r'passed to "__builtin_object_size"')),
+    ],
+    # Deviation because casting a pointer to _Atomic to a pointer that can't be
+    # dereferenced at all (const void *) is reasonably safe, and is needed for
+    # certain builtin functions where the compiler knows the real underlying
+    # object type anyway (e.g. __builtin_object_size) or where the object type
+    # does not matter (e.g. __builtin_prefetch).
+    'MISRAC2012-RULE_11_8-a': [
+        (None, re.compile(r"to the 'const void \*' type which removes the "
+                          r"'_Atomic' qualifiers")),
+    ],
+    # Compliance with rule 21.25 would have a significant performance impact.
+    # All existing uses have been thoroughly analysed and tested, so we will
+    # seek a project-wide deviation for this rule.
+    'MISRAC2012-RULE_21_25-a': [
+        (None, None),
     ],
 }
 

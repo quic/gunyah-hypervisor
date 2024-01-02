@@ -115,10 +115,11 @@ rootvm_init_env_data(partition_t *root_partition, uint32_t env_data_size)
 	}
 
 	qcbor_enc_ctxt = (qcbor_enc_ctxt_t *)alloc_ret.r;
-	memset_s(qcbor_enc_ctxt, sizeof(*qcbor_enc_ctxt), 0,
-		 sizeof(*qcbor_enc_ctxt));
 
-	memset_s(&hyp_env, sizeof(hyp_env), 0, sizeof(hyp_env));
+	(void)memset_s(qcbor_enc_ctxt, sizeof(*qcbor_enc_ctxt), 0,
+		       sizeof(*qcbor_enc_ctxt));
+
+	(void)memset_s(&hyp_env, sizeof(hyp_env), 0, sizeof(hyp_env));
 
 	hyp_env.env_data_size = env_data_size;
 	remaining_size	      = env_data_size;
@@ -234,7 +235,7 @@ rootvm_init(void)
 		goto cspace_fail;
 	}
 
-	uint32_t env_data_size = 0x4000;
+	uint32_t env_data_size = QCBOR_ENV_CONFIG_SIZE;
 
 	rootvm_init_env_info info =
 		rootvm_init_env_data(root_partition, env_data_size);

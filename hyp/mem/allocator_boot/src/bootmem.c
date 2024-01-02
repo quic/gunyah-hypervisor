@@ -67,10 +67,10 @@ bootmem_allocate(size_t size, size_t align)
 		loc = util_balign_up(loc, align);
 	}
 
-	size_t free = bootmem_allocator.pool_size -
-		      (loc - (uintptr_t)bootmem_allocator.pool_base);
+	size_t free_boot = bootmem_allocator.pool_size -
+			   (loc - (uintptr_t)bootmem_allocator.pool_base);
 
-	if (size > free) {
+	if (size > free_boot) {
 		return void_ptr_result_error(ERROR_NOMEM);
 	}
 
@@ -86,12 +86,12 @@ bootmem_allocate_remaining(size_t *size)
 	assert(size != NULL);
 
 	assert(bootmem_allocator.alloc_offset <= bootmem_allocator.pool_size);
-	size_t free =
+	size_t free_boot =
 		bootmem_allocator.pool_size - bootmem_allocator.alloc_offset;
-	if (free == 0U) {
+	if (free_boot == 0U) {
 		return void_ptr_result_error(ERROR_NOMEM);
 	}
-	*size = free;
+	*size = free_boot;
 
 	uintptr_t loc = (uintptr_t)bootmem_allocator.pool_base;
 	assert(!util_add_overflows(loc, bootmem_allocator.alloc_offset));

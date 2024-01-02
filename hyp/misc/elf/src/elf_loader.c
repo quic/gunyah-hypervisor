@@ -19,7 +19,7 @@
 #include <trace.h>
 #include <util.h>
 
-static const unsigned char *elf_ident = (unsigned char *)EI_MAG_STR;
+static const unsigned char *elf_ident = (const unsigned char *)EI_MAG_STR;
 
 // Simple unoptimized non-terminated string comparison
 static bool

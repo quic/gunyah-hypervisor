@@ -17,3 +17,17 @@ define virtio_mmio_notify_reason public bitfield<64> {
 	4	failed		bool = 0;
 	others	unknown = 0;
 };
+
+define virtio_option_flags public bitfield<64> {
+	5:0		unknown = 0;
+	6		valid_device_type	bool = 0;
+	63:7		res0			uint64 = 0;
+};
+
+define virtio_config_space union {
+	raw		array(VIRTIO_MMIO_REG_CONFIG_BYTES) uint8(atomic);
+};
+
+define virtio_device_type public enumeration(explicit) {
+	INVALID = 0;
+};

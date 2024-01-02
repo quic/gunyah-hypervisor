@@ -22,16 +22,15 @@
 bool
 smccc_pv_time_features(uint64_t arg1, uint64_t *ret0)
 {
-	smccc_function_id_t  fn_id    = smccc_function_id_cast((uint32_t)arg1);
-	bool		     is_smc64 = smccc_function_id_get_is_smc64(&fn_id);
-	bool		     is_fast  = smccc_function_id_get_is_fast(&fn_id);
-	bool		     res0     = smccc_function_id_get_res0(&fn_id);
-	smccc_function_t     fn	      = smccc_function_id_get_function(&fn_id);
-	smccc_interface_id_t interface_id =
-		smccc_function_id_get_interface_id(&fn_id);
-	uint64_t ret = SMCCC_UNKNOWN_FUNCTION64;
+	smccc_function_id_t fn_id    = smccc_function_id_cast((uint32_t)arg1);
+	bool		    is_smc64 = smccc_function_id_get_is_smc64(&fn_id);
+	bool		    is_fast  = smccc_function_id_get_is_fast(&fn_id);
+	uint32_t	    res0     = smccc_function_id_get_res0(&fn_id);
+	smccc_function_t    fn	     = smccc_function_id_get_function(&fn_id);
+	smccc_owner_id_t    owner_id = smccc_function_id_get_owner_id(&fn_id);
+	uint64_t	    ret	     = SMCCC_UNKNOWN_FUNCTION64;
 
-	if ((interface_id == SMCCC_INTERFACE_ID_STANDARD_HYP) && (res0 == 0U) &&
+	if ((owner_id == SMCCC_OWNER_ID_STANDARD_HYP) && (res0 == 0U) &&
 	    is_fast && is_smc64) {
 		switch ((smccc_standard_hyp_function_t)fn) {
 		case SMCCC_STANDARD_HYP_FUNCTION_PV_TIME_FEATURES:

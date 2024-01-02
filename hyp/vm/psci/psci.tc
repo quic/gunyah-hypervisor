@@ -16,16 +16,13 @@ define PSCI_VCPUS_STATE_PER_VCPU_MASK constant uint8 = 0x7;
 define PSCI_PER_CLUSTER_STATE_BITS_MASK constant uint8 = 0x7;
 define PSCI_VCPUS_STATE_BITS constant type count_t = (PLATFORM_MAX_CORES * PSCI_VCPUS_STATE_PER_VCPU_BITS);
 define PSCI_CLUSTER_STATE_BITS constant type count_t = (PLATFORM_MAX_CLUSTERS * PSCI_PER_CLUSTER_STATE_BITS);
-define PSCI_SYSTEM_STATE_BITS constant type count_t = 8;
-define PSCI_CLUSTER_STATE_SUSPEND_BITS constant type count_t = PLATFORM_MAX_CLUSTERS;
 define PSCI_VCPUS_STATE_MAX_VCPUS constant type count_t = PSCI_VCPUS_STATE_BITS/PSCI_VCPUS_STATE_PER_VCPU_BITS;
 define PSCI_VCPUS_STATE_MAX_INDEX constant type count_t = PLATFORM_MAX_CORES*PSCI_VCPUS_STATE_PER_VCPU_BITS;
 
 define vpm_group_suspend_state bitfield<128> {
 	auto<PSCI_VCPUS_STATE_BITS>	vcpus_state	uint64;
 	auto<PSCI_CLUSTER_STATE_BITS>	cluster_state	uint16;
-	auto<PSCI_SYSTEM_STATE_BITS>	system_state	uint8;
-	auto<PSCI_CLUSTER_STATE_SUSPEND_BITS> is_cluster_suspended uint16;
+	auto	system_suspend		bool;
 	others	unknown=0;
 };
 

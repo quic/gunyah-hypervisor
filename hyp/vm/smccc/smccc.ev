@@ -4,26 +4,26 @@
 
 module smccc
 
-#define _SMCCC_DISPATCH_INTERFACE(type_size, iface, iface_id)			\
-subscribe smccc_dispatch_ ## type_size[SMCCC_INTERFACE_ID_ ## iface_id];	\
-	handler trigger_smccc_call_ ## type_size ## _ ## iface ## _event(	\
+#define _SMCCC_DISPATCH_OWNER(type_size, owner, owner_id)			\
+subscribe smccc_dispatch_ ## type_size[SMCCC_OWNER_ID_ ## owner_id];	\
+	handler trigger_smccc_call_ ## type_size ## _ ## owner ## _event(	\
 		function, is_hvc, arg1, arg2, arg3, arg4, arg5, arg6,		\
 		client_id, ret0, ret1, ret2, ret3);				\
 	exclude_preempt_disabled.
 
-#define SMCCC_DISPATCH_INTERFACE(iface, iface_id) \
-	_SMCCC_DISPATCH_INTERFACE(fast_32, iface, iface_id) \
-	_SMCCC_DISPATCH_INTERFACE(fast_64, iface, iface_id) \
-	_SMCCC_DISPATCH_INTERFACE(yielding_32, iface, iface_id) \
-	_SMCCC_DISPATCH_INTERFACE(yielding_64, iface, iface_id)
+#define SMCCC_DISPATCH_OWNER(owner, owner_id) \
+	_SMCCC_DISPATCH_OWNER(fast_32, owner, owner_id) \
+	_SMCCC_DISPATCH_OWNER(fast_64, owner, owner_id) \
+	_SMCCC_DISPATCH_OWNER(yielding_32, owner, owner_id) \
+	_SMCCC_DISPATCH_OWNER(yielding_64, owner, owner_id)
 
-SMCCC_DISPATCH_INTERFACE(arch, ARCH)
-SMCCC_DISPATCH_INTERFACE(cpu, CPU)
-SMCCC_DISPATCH_INTERFACE(sip, SIP)
-SMCCC_DISPATCH_INTERFACE(oem, OEM)
-SMCCC_DISPATCH_INTERFACE(standard, STANDARD)
-SMCCC_DISPATCH_INTERFACE(standard_hyp, STANDARD_HYP)
-SMCCC_DISPATCH_INTERFACE(vendor_hyp, VENDOR_HYP)
+SMCCC_DISPATCH_OWNER(arch, ARCH)
+SMCCC_DISPATCH_OWNER(cpu, CPU)
+SMCCC_DISPATCH_OWNER(sip, SIP)
+SMCCC_DISPATCH_OWNER(oem, OEM)
+SMCCC_DISPATCH_OWNER(standard, STANDARD)
+SMCCC_DISPATCH_OWNER(standard_hyp, STANDARD_HYP)
+SMCCC_DISPATCH_OWNER(vendor_hyp, VENDOR_HYP)
 
 #include <smccc.ev.h>
 

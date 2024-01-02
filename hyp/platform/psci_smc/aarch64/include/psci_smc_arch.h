@@ -9,7 +9,7 @@ psci_smc_fn_call(psci_function_t fn, register_t arg_0, register_t arg_1,
 	smccc_function_id_t fn_id = smccc_function_id_default();
 	smccc_function_id_set_is_fast(&fn_id, true);
 	smccc_function_id_set_is_smc64(&fn_id, true);
-	smccc_function_id_set_interface_id(&fn_id, SMCCC_INTERFACE_ID_STANDARD);
+	smccc_function_id_set_owner_id(&fn_id, SMCCC_OWNER_ID_STANDARD);
 	smccc_function_id_set_function(&fn_id, (smccc_function_t)fn);
 
 	uint64_t hyp_args[6] = { arg_0, arg_1, arg_2, 0, 0, 0 };
@@ -27,7 +27,7 @@ psci_smc_fn_call32(psci_function_t fn, uint32_t arg_0, uint32_t arg_1,
 	smccc_function_id_t fn_id = smccc_function_id_default();
 	smccc_function_id_set_is_fast(&fn_id, true);
 	smccc_function_id_set_is_smc64(&fn_id, false);
-	smccc_function_id_set_interface_id(&fn_id, SMCCC_INTERFACE_ID_STANDARD);
+	smccc_function_id_set_owner_id(&fn_id, SMCCC_OWNER_ID_STANDARD);
 	smccc_function_id_set_function(&fn_id, (smccc_function_t)fn);
 
 	uint64_t hyp_args[6] = { arg_0, arg_1, arg_2, 0, 0, 0 };
@@ -45,7 +45,7 @@ psci_smc_fn_call_reg(psci_function_t fn, register_t arg_0, register_t arg_1,
 	smccc_function_id_t fn_id = smccc_function_id_default();
 	smccc_function_id_set_is_fast(&fn_id, true);
 	smccc_function_id_set_is_smc64(&fn_id, true);
-	smccc_function_id_set_interface_id(&fn_id, SMCCC_INTERFACE_ID_STANDARD);
+	smccc_function_id_set_owner_id(&fn_id, SMCCC_OWNER_ID_STANDARD);
 	smccc_function_id_set_function(&fn_id, (smccc_function_t)fn);
 
 	uint64_t hyp_args[6] = { arg_0, arg_1, arg_2, 0, 0, 0 };

@@ -19,3 +19,7 @@ idle_is_current(void) REQUIRE_PREEMPT_DISABLED;
 
 bool
 idle_yield(void) REQUIRE_PREEMPT_DISABLED;
+
+// Handle a wakeup event received during idle.
+idle_state_t
+idle_wakeup(void) REQUIRE_PREEMPT_DISABLED;

@@ -9,6 +9,7 @@
 #include <atomic.h>
 #include <bitmap.h>
 #include <compiler.h>
+#include <globals.h>
 #include <ipi.h>
 #include <irq.h>
 #include <object.h>

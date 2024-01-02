@@ -90,4 +90,16 @@ extend vcpu_run_state enumeration {
 	// VCPU will return it to a regular power-off state.
 	psci_system_reset = 0x100;
 };
+
+extend vcpu_run_wakeup_from_state enumeration {
+	// VCPU made a PSCI_CPU_SUSPEND call. The first state data word is the
+	// PSCI suspend state argument.
+	psci_cpu_suspend = 2;
+
+	// VCPU made a PSCI_SYSTEM_SUSPEND call. The first state data word is
+	// the deepest possible CPU suspend state (which may not be the same as
+	// the system suspend state), for backwards compatibility with host
+	// kernels that do not check this value.
+	psci_system_suspend = 3;
+};
 #endif

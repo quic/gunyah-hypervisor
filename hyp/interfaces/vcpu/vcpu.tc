@@ -45,6 +45,10 @@ define vcpu_option_flags public bitfield<64> {
 };
 
 // Private vcpu flags for modules to consolidate runtime boolean flags.
+//
+// For VCPUs that have not yet been activated, this bitfield is protected by
+// the VCPU's object state lock. Otherwise, it must only be accessed from the
+// VCPU's own context.
 define vcpu_runtime_flags bitfield<32> {
 	others		unknown = 0;
 };

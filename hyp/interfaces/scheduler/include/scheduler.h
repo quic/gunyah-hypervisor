@@ -150,6 +150,14 @@ scheduler_is_blocked(const thread_t *thread, scheduler_block_t block);
 bool
 scheduler_is_runnable(const thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
 
+// Return true if a thread is currently scheduled and running.
+//
+// The caller must either be the specified thread, or hold a reference to the
+// specified thread, or be in an RCU read-side critical section. The caller must
+// also hold the scheduling lock for the thread (see scheduler_lock()).
+bool
+scheduler_is_running(const thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread);
+
 // Wait until a specified thread is not running.
 //
 // The caller must not be holding any spinlocks and must not be an RCU

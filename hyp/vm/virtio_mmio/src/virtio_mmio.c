@@ -22,6 +22,8 @@
 #include <vdevice.h>
 #include <vic.h>
 
+#include <events/virtio_mmio.h>
+
 #include <asm/cache.h>
 #include <asm/cpu.h>
 
@@ -40,7 +42,8 @@ virtio_mmio_handle_object_create_virtio_mmio(virtio_mmio_create_t create)
 
 error_t
 virtio_mmio_configure(virtio_mmio_t *virtio_mmio, memextent_t *memextent,
-		      count_t vqs_num)
+		      count_t vqs_num, virtio_option_flags_t flags,
+		      virtio_device_type_t device_type)
 {
 	error_t ret = OK;
 
@@ -53,6 +56,17 @@ virtio_mmio_configure(virtio_mmio_t *virtio_mmio, memextent_t *memextent,
 	    (vqs_num > VIRTIO_MMIO_MAX_VQS)) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
+	}
+
+	if (virtio_option_flags_get_valid_device_type(&flags)) {
+		if (trigger_virtio_mmio_valid_device_type_event(device_type)) {
+			virtio_mmio->device_type = device_type;
+		} else {
+			ret = ERROR_ARGUMENT_INVALID;
+			goto out;
+		}
+	} else {
+		virtio_mmio->device_type = VIRTIO_DEVICE_TYPE_INVALID;
 	}
 
 	if (virtio_mmio->me != NULL) {
@@ -102,6 +116,12 @@ virtio_mmio_handle_object_activate_virtio_mmio(virtio_mmio_t *virtio_mmio)
 
 	virtio_mmio->banked_queue_regs =
 		(virtio_mmio_banked_queue_registers_t *)alloc_ret.r;
+
+	ret = trigger_virtio_mmio_device_config_activate_event(
+		virtio_mmio->device_type, virtio_mmio);
+	if (ret != OK) {
+		goto out;
+	}
 
 	// Allocate virtio config page
 	size_t size = virtio_mmio->me->size;
@@ -181,6 +201,9 @@ virtio_mmio_handle_object_cleanup_virtio_mmio(virtio_mmio_t *virtio_mmio)
 		virtio_mmio->banked_queue_regs = NULL;
 		virtio_mmio->vqs_num	       = 0U;
 	}
+
+	(void)trigger_virtio_mmio_device_config_cleanup_event(
+		virtio_mmio->device_type, virtio_mmio);
 
 	if (virtio_mmio->me != NULL) {
 		object_put_memextent(virtio_mmio->me);
@@ -268,4 +291,18 @@ virtio_mmio_backend_handle_virq_check_pending(virq_source_t *source)
 
 	return (atomic_load_relaxed(&virtio_mmio->regs->interrupt_status) !=
 		0U);
+}
+
+error_t
+virtio_default_handle_object_activate(virtio_mmio_t *virtio_mmio)
+{
+	(void)virtio_mmio;
+	return OK;
+}
+
+error_t
+virtio_default_handle_object_cleanup(virtio_mmio_t *virtio_mmio)
+{
+	(void)virtio_mmio;
+	return OK;
 }

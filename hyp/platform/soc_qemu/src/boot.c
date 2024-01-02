@@ -195,20 +195,23 @@ soc_qemu_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 
 	memextent_ptr_result_t me_ret;
 	me_ret = memextent_derive(me, PLATFORM_GICD_BASE, 0x10000U,
-				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW);
+				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of gicd memextent");
 	}
 	me_ret = memextent_derive(me, PLATFORM_GICR_BASE,
 				  (PLATFORM_MAX_CORES << GICR_STRIDE_SHIFT),
-				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW);
+				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of gicr memextent");
 	}
 
 	// Derive extent for UART and share it with RM
 	me_ret = memextent_derive(me, PLATFORM_UART_BASE, PLATFORM_UART_SIZE,
-				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW);
+				  MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of uart memextent");
 	}

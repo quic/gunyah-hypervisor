@@ -137,7 +137,8 @@ rootvm_package_load_elf(void *elf, size_t elf_max_size, addrspace_t *addrspace,
 			util_balign_up(phdr->p_memsz, PGTABLE_VM_PAGE_SIZE);
 
 		memextent_ptr_result_t me_ret = memextent_derive(
-			me_rm, offset, size, MEMEXTENT_MEMTYPE_ANY, access);
+			me_rm, offset, size, MEMEXTENT_MEMTYPE_ANY, access,
+			MEMEXTENT_TYPE_BASIC);
 		if (me_ret.e != OK) {
 			panic("Failed creation of derived mem extent");
 		}
@@ -241,13 +242,13 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 	paddr_t load_next = load_base;
 
 	// Create memory extent for the RM with randomized base
-	uint64_t rand;
+	uint64_t random;
 #if !defined(DISABLE_ROOTVM_ASLR)
 	uint64_result_t res = prng_get64();
 	assert(res.e == OK);
-	rand = res.r;
+	random = res.r;
 #else
-	rand = 0x10000000U;
+	random = 0x10000000U;
 #endif
 
 #if 0
@@ -261,7 +262,7 @@ rootvm_package_handle_rootvm_init(partition_t *root_partition,
 	ipa += PGTABLE_VM_PAGE_SIZE; // avoid use of the zero page
 	ipa = util_balign_down(ipa, PGTABLE_VM_PAGE_SIZE);
 #else
-	(void)rand;
+	(void)random;
 	vmaddr_t ipa = PLATFORM_ROOTVM_LMA_BASE;
 #endif
 

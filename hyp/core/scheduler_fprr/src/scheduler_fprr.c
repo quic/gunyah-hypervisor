@@ -48,7 +48,7 @@ static_assert((SCHEDULER_DEFAULT_PRIORITY >= SCHEDULER_MIN_PRIORITY) &&
 static_assert((SCHEDULER_DEFAULT_TIMESLICE <= SCHEDULER_MAX_TIMESLICE) &&
 		      (SCHEDULER_DEFAULT_TIMESLICE >= SCHEDULER_MIN_TIMESLICE),
 	      "Default timeslice is invalid.");
-static_assert(SCHEDULER_BLOCK__MAX < BITMAP_WORD_BITS,
+static_assert((index_t)SCHEDULER_BLOCK__MAX < BITMAP_WORD_BITS,
 	      "Scheduler block flags must fit in a register");
 
 static ticks_t
@@ -1057,6 +1057,12 @@ bool
 scheduler_is_runnable(const thread_t *thread)
 {
 	return can_be_scheduled(thread);
+}
+
+bool
+scheduler_is_running(const thread_t *thread)
+{
+	return sched_state_get_running(&thread->scheduler_state);
 }
 
 thread_t *

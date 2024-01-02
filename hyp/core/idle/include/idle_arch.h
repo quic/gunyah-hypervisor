@@ -21,3 +21,18 @@
 // implementation that enables interrupts must always return true.
 bool
 idle_arch_wait(void) REQUIRE_PREEMPT_DISABLED;
+
+// Execute a wait-for-interrupt with a timeout.
+//
+// This is the same as idle_arch_wait(), except that a timeout can be specified
+// (as an absolute ticks value) as the time at which the CPU will stop waiting.
+// If possible, the implementation should execute a wait for interrupt
+// instruction, and arrange to be woken at expiry of the timeout if no other
+// event has occurred.
+//
+// The wokeup mechanism should not rely on interrupt delivery, and should not
+// execute any non-trivial code; it is assumed that an architectural wakeup
+// mechanism will be used (e.g. AArch64 FEAT_WFxT). If no such mechanism is
+// available, the implementation should check for interrupts without waiting.
+bool
+idle_arch_wait_timeout(ticks_t timeout) REQUIRE_PREEMPT_DISABLED;

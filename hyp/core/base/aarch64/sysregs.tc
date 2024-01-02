@@ -1020,7 +1020,7 @@ extend MDCR_EL2 bitfield {
 };
 #endif
 
-#if defined(ARCH_ARM_FEAT_SPEv1p1)
+#if defined(ARCH_ARM_FEAT_SPE)
 extend MDCR_EL2 bitfield {
 	13:12		E2PB		uint8;
 	14		TPMS		bool;
@@ -1039,7 +1039,7 @@ extend MDCR_EL2 bitfield {
 };
 #endif
 
-#if defined(MODULE_PLATFORM_TBRE)
+#if defined(MODULE_PLATFORM_TRBE)
 extend ID_AA64DFR0_EL1 bitfield {
 	47:44		TraceBuffer	uint8;
 };

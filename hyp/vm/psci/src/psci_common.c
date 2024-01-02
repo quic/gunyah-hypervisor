@@ -797,8 +797,8 @@ psci_features(uint32_t arg1, uint32_t *ret0)
 	smccc_function_t    fn	  = smccc_function_id_get_function(&fn_id);
 
 	if (has_psci &&
-	    (smccc_function_id_get_interface_id(&fn_id) ==
-	     SMCCC_INTERFACE_ID_STANDARD) &&
+	    (smccc_function_id_get_owner_id(&fn_id) ==
+	     SMCCC_OWNER_ID_STANDARD) &&
 	    smccc_function_id_get_is_fast(&fn_id) &&
 	    (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		ret = smccc_function_id_get_is_smc64(&fn_id)
@@ -806,8 +806,8 @@ psci_features(uint32_t arg1, uint32_t *ret0)
 					(psci_function_t)fn)
 			      : trigger_psci_features32_event(
 					(psci_function_t)fn);
-	} else if ((smccc_function_id_get_interface_id(&fn_id) ==
-		    SMCCC_INTERFACE_ID_ARCH) &&
+	} else if ((smccc_function_id_get_owner_id(&fn_id) ==
+		    SMCCC_OWNER_ID_ARCH) &&
 		   smccc_function_id_get_is_fast(&fn_id) &&
 		   !smccc_function_id_get_is_smc64(&fn_id) &&
 		   (smccc_function_id_get_res0(&fn_id) == 0U) &&
@@ -1163,8 +1163,9 @@ psci_handle_vcpu_wakeup(thread_t *vcpu)
 void
 psci_handle_vcpu_wakeup_self(void)
 {
-	assert(!scheduler_is_blocked(thread_get_self(),
-				     SCHEDULER_BLOCK_VCPU_SUSPEND));
+	thread_t *current = thread_get_self();
+	assert(!scheduler_is_blocked(current, SCHEDULER_BLOCK_VCPU_SUSPEND) ||
+	       thread_is_dying(current));
 }
 
 bool
@@ -1188,6 +1189,23 @@ psci_handle_vcpu_run_check(const thread_t *thread, register_t *state_data_0,
 		ret = VCPU_RUN_STATE_EXPECTS_WAKEUP;
 		*state_data_0 =
 			psci_suspend_powerstate_raw(thread->psci_suspend_state);
+		vpm_group_t *vpm_group = thread->psci_group;
+		bool	     system_suspend;
+		if (vpm_group != NULL) {
+			vpm_group_suspend_state_t vm_state =
+				atomic_load_acquire(
+					&vpm_group->psci_vm_suspend_state);
+			system_suspend =
+				vpm_group_suspend_state_get_system_suspend(
+					&vm_state);
+		} else {
+			system_suspend = false;
+		}
+		vcpu_run_wakeup_from_state_t from_state =
+			system_suspend
+				? VCPU_RUN_WAKEUP_FROM_STATE_PSCI_SYSTEM_SUSPEND
+				: VCPU_RUN_WAKEUP_FROM_STATE_PSCI_CPU_SUSPEND;
+		*state_data_1 = (register_t)from_state;
 	} else {
 		ret = VCPU_RUN_STATE_BLOCKED;
 	}
@@ -1296,7 +1314,7 @@ psci_handle_vcpu_stopped(void)
 void
 psci_handle_power_cpu_online(void)
 {
-	psci_set_vpm_active_pcpus_bit(cpulocal_get_index());
+	(void)psci_set_vpm_active_pcpus_bit(cpulocal_get_index());
 }
 
 void

@@ -53,6 +53,10 @@ memextent_validate_attrs(memextent_type_t type, memextent_memtype_t memtype,
 		break;
 	default:
 		ret = false;
+		break;
+	}
+
+	if (!ret) {
 		goto out;
 	}
 
@@ -70,6 +74,10 @@ memextent_validate_attrs(memextent_type_t type, memextent_memtype_t memtype,
 #endif
 	default:
 		ret = false;
+		break;
+	}
+
+	if (!ret) {
 		goto out;
 	}
 
@@ -789,7 +797,8 @@ memextent_check_memtype(memextent_memtype_t  extent_type,
 
 memextent_ptr_result_t
 memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
-		 memextent_memtype_t memtype, pgtable_access_t access)
+		 memextent_memtype_t memtype, pgtable_access_t access,
+		 memextent_type_t type)
 {
 	memextent_create_t     params_me = { .memextent		   = NULL,
 					     .memextent_device_mem = false };
@@ -804,6 +813,7 @@ memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
 	memextent_attrs_t attrs = memextent_attrs_default();
 	memextent_attrs_set_access(&attrs, access);
 	memextent_attrs_set_memtype(&attrs, memtype);
+	memextent_attrs_set_type(&attrs, type);
 
 	spinlock_acquire(&me->header.lock);
 
@@ -857,7 +867,7 @@ memextent_attach(partition_t *owner, memextent_t *me, uintptr_t hyp_va,
 	assert(owner != NULL);
 	assert(me != NULL);
 
-	error_t ret;
+	error_t ret = OK;
 
 	if (owner != me->header.partition) {
 		ret = ERROR_DENIED;
@@ -888,6 +898,9 @@ memextent_attach(partition_t *owner, memextent_t *me, uintptr_t hyp_va,
 		break;
 	default:
 		ret = ERROR_ARGUMENT_INVALID;
+		break;
+	}
+	if (ret == ERROR_ARGUMENT_INVALID) {
 		goto out;
 	}
 

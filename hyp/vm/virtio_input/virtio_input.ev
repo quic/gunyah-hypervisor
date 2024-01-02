@@ -1,0 +1,17 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module virtio_input
+
+subscribe virtio_mmio_valid_device_type[VIRTIO_DEVICE_TYPE_INPUT]
+	constant true
+
+subscribe virtio_mmio_device_config_write[VIRTIO_DEVICE_TYPE_INPUT]
+	handler virtio_input_config_write(virtio_mmio, offset, value, access_size)
+
+subscribe virtio_mmio_device_config_activate[VIRTIO_DEVICE_TYPE_INPUT]
+	handler virtio_input_handle_object_activate(virtio_mmio)
+
+subscribe virtio_mmio_device_config_cleanup[VIRTIO_DEVICE_TYPE_INPUT]
+	handler virtio_input_handle_object_cleanup(virtio_mmio)

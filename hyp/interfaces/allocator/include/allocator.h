@@ -14,7 +14,7 @@ allocator_init(allocator_t *allocator);
 
 void_ptr_result_t
 allocator_allocate_object(allocator_t *allocator, size_t size,
-			  size_t alignment);
+			  size_t min_alignment);
 
 error_t
 allocator_deallocate_object(allocator_t *allocator, void *object, size_t size);

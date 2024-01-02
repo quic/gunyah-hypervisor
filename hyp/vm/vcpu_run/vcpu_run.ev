@@ -46,11 +46,11 @@ handled_event vcpu_run_check
 
 module vcpu_run
 
-subscribe object_activate_thread(thread)
-
 subscribe object_deactivate_thread(thread)
 
 subscribe task_queue_execute[TASK_QUEUE_CLASS_VCPU_RUN_WAKEUP_VIRQ](entry)
+
+subscribe vcpu_activate_thread
 
 subscribe vcpu_wakeup
 	handler vcpu_run_trigger_virq

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-module vtbre
+module vtrbe
 
 subscribe boot_cpu_cold_init()
 
@@ -12,7 +12,7 @@ subscribe object_create_thread
 	priority -10
 
 subscribe vcpu_trap_sysreg_read
-	handler vtbre_handle_vcpu_trap_sysreg
+	handler vtrbe_handle_vcpu_trap_sysreg
 
 subscribe vcpu_trap_sysreg_write
-	handler vtbre_handle_vcpu_trap_sysreg
+	handler vtrbe_handle_vcpu_trap_sysreg

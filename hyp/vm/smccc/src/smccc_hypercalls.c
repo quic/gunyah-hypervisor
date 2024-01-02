@@ -16,11 +16,10 @@ smccc_handle_hypercall_wrapper(smccc_function_id_t smc_id, bool is_hvc)
 {
 	bool handled;
 
-	smccc_function_t     smc_func = smccc_function_id_get_function(&smc_id);
-	smccc_interface_id_t smc_iface =
-		smccc_function_id_get_interface_id(&smc_id);
+	smccc_function_t smc_func  = smccc_function_id_get_function(&smc_id);
+	smccc_owner_id_t smc_owner = smccc_function_id_get_owner_id(&smc_id);
 
-	if (smc_iface != SMCCC_INTERFACE_ID_VENDOR_HYP) {
+	if (smc_owner != SMCCC_OWNER_ID_VENDOR_HYP) {
 		handled = false;
 		goto out;
 	}

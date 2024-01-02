@@ -48,8 +48,7 @@ smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 
 		if (smccc_function_id_get_is_fast(&function_id)) {
 			handled = trigger_smccc_dispatch_fast_64_event(
-				smccc_function_id_get_interface_id(
-					&function_id),
+				smccc_function_id_get_owner_id(&function_id),
 				smccc_function_id_get_function(&function_id),
 				is_hvc, (uint64_t)current->vcpu_regs_gpr.x[1],
 				(uint64_t)current->vcpu_regs_gpr.x[2],
@@ -62,8 +61,7 @@ smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 				&ret0, &ret1, &ret2, &ret3);
 		} else {
 			handled = trigger_smccc_dispatch_yielding_64_event(
-				smccc_function_id_get_interface_id(
-					&function_id),
+				smccc_function_id_get_owner_id(&function_id),
 				smccc_function_id_get_function(&function_id),
 				is_hvc, (uint64_t)current->vcpu_regs_gpr.x[1],
 				(uint64_t)current->vcpu_regs_gpr.x[2],
@@ -90,8 +88,7 @@ smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 
 		if (smccc_function_id_get_is_fast(&function_id)) {
 			handled = trigger_smccc_dispatch_fast_32_event(
-				smccc_function_id_get_interface_id(
-					&function_id),
+				smccc_function_id_get_owner_id(&function_id),
 				smccc_function_id_get_function(&function_id),
 				is_hvc, (uint32_t)current->vcpu_regs_gpr.x[1],
 				(uint32_t)current->vcpu_regs_gpr.x[2],
@@ -104,8 +101,7 @@ smccc_handle_call(bool is_hvc) EXCLUDE_PREEMPT_DISABLED
 				&ret0, &ret1, &ret2, &ret3);
 		} else {
 			handled = trigger_smccc_dispatch_yielding_32_event(
-				smccc_function_id_get_interface_id(
-					&function_id),
+				smccc_function_id_get_owner_id(&function_id),
 				smccc_function_id_get_function(&function_id),
 				is_hvc, (uint32_t)current->vcpu_regs_gpr.x[1],
 				(uint32_t)current->vcpu_regs_gpr.x[2],

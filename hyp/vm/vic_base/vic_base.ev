@@ -39,4 +39,8 @@ subscribe virq_set_mode[VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE]
 
 subscribe rcu_update[RCU_UPDATE_CLASS_VIC_BASE_FREE_FORWARD_PRIVATE]
 	handler vic_handle_free_forward_private(entry)
+
+subscribe vcpu_started(warm_reset)
+
+subscribe vcpu_stopped()
 #endif

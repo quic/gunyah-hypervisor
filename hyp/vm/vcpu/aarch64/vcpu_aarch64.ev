@@ -97,9 +97,9 @@ subscribe scheduler_quiescent()
 subscribe thread_context_switch_post()
 #endif
 
-#if defined(MODULE_VM_VCPU_RUN)
+#if defined(INTERFACE_VCPU_RUN)
 subscribe vcpu_run_check
-	handler vcpu_arch_handle_vcpu_run_check(vcpu)
+	handler vcpu_arch_handle_vcpu_run_check(vcpu, state_data_0, state_data_1)
 #endif
 
 // VCPU lifecycle and power management

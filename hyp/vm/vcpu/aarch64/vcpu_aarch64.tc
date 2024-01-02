@@ -86,3 +86,10 @@ extend vcpu_runtime_flags bitfield {
 	auto	vcpu_can_idle		bool = 0;
 };
 #endif
+
+#if defined(INTERFACE_VCPU_RUN)
+extend vcpu_run_wakeup_from_state enumeration {
+	// VCPU is halted by a trapped WFI instruction.
+	wfi = 1;
+};
+#endif

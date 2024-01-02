@@ -205,9 +205,10 @@ platform_timer_lp_handle_rootvm_init(cspace_t *cspace, hyp_env_data_t *hyp_env)
 
 	memextent_t *parent = m.r;
 
-	memextent_ptr_result_t me_ret = memextent_derive(
-		parent, PLATFORM_HYP_ARCH_TIMER_LP_BASE, (size_t)1U << 12,
-		MEMEXTENT_MEMTYPE_DEVICE, PGTABLE_ACCESS_RW);
+	memextent_ptr_result_t me_ret =
+		memextent_derive(parent, PLATFORM_HYP_ARCH_TIMER_LP_BASE,
+				 (size_t)1U << 12, MEMEXTENT_MEMTYPE_DEVICE,
+				 PGTABLE_ACCESS_RW, MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of low power timer memextent");
 	}

@@ -16,7 +16,7 @@ soc_qemu_handle_power_system_off(void)
 
 	smccc_function_id_t fn_id = smccc_function_id_default();
 
-	smccc_function_id_set_interface_id(&fn_id, SMCCC_INTERFACE_ID_STANDARD);
+	smccc_function_id_set_owner_id(&fn_id, SMCCC_OWNER_ID_STANDARD);
 	smccc_function_id_set_function(&fn_id, PSCI_FUNCTION_SYSTEM_OFF);
 	smccc_function_id_set_is_smc64(&fn_id, false);
 	smccc_function_id_set_is_fast(&fn_id, true);

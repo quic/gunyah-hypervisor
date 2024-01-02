@@ -28,8 +28,9 @@
 
 #include "event_handlers.h"
 
-error_t
-vcpu_run_handle_object_activate_thread(thread_t *thread)
+bool
+vcpu_run_handle_vcpu_activate_thread(thread_t		*thread,
+				     vcpu_option_flags_t options)
 {
 	assert(thread != NULL);
 
@@ -40,7 +41,17 @@ vcpu_run_handle_object_activate_thread(thread_t *thread)
 		thread->vcpu_run_last_state = VCPU_RUN_STATE_READY;
 	}
 
-	return OK;
+	if (vcpu_option_flags_get_vcpu_run_scheduled(&options)) {
+		vcpu_option_flags_set_vcpu_run_scheduled(&thread->vcpu_options,
+							 true);
+		scheduler_lock(thread);
+		scheduler_block(thread, SCHEDULER_BLOCK_VCPU_RUN);
+		scheduler_unlock(thread);
+
+		thread->vcpu_run_enabled = true;
+	}
+
+	return true;
 }
 
 bool
@@ -107,6 +118,7 @@ hypercall_vcpu_run(cap_id_t vcpu_cap_id, register_t resume_data_0,
 		ret.error = ERROR_BUSY;
 		goto unlock;
 	}
+	assert(vcpu_run_is_enabled(vcpu));
 
 	ret.error = trigger_vcpu_run_resume_event(vcpu->vcpu_run_last_state,
 						  vcpu, resume_data_0,
@@ -197,16 +209,25 @@ out_err:
 error_t
 vcpu_run_handle_vcpu_bind_virq(thread_t *vcpu, vic_t *vic, virq_t virq)
 {
+	error_t err;
+
 	scheduler_lock(vcpu);
 
-	error_t err = vic_bind_shared(&vcpu->vcpu_run_wakeup_virq, vic, virq,
-				      VIRQ_TRIGGER_VCPU_RUN_WAKEUP);
-	if (err == OK) {
+	if (scheduler_is_running(vcpu)) {
+		err = ERROR_BUSY;
+		goto out_unlock;
+	}
+
+	err = vic_bind_shared(&vcpu->vcpu_run_wakeup_virq, vic, virq,
+			      VIRQ_TRIGGER_VCPU_RUN_WAKEUP);
+
+	if ((err == OK) && !vcpu_run_is_enabled(vcpu)) {
 		scheduler_block(vcpu, SCHEDULER_BLOCK_VCPU_RUN);
 		vcpu->vcpu_run_enabled = true;
 		trigger_vcpu_run_enabled_event(vcpu);
 	}
 
+out_unlock:
 	scheduler_unlock(vcpu);
 
 	return err;
@@ -215,16 +236,6 @@ vcpu_run_handle_vcpu_bind_virq(thread_t *vcpu, vic_t *vic, virq_t virq)
 error_t
 vcpu_run_handle_vcpu_unbind_virq(thread_t *vcpu)
 {
-	scheduler_lock(vcpu);
-	if (vcpu->vcpu_run_enabled) {
-		trigger_vcpu_run_disabled_event(vcpu);
-		vcpu->vcpu_run_enabled = false;
-		if (scheduler_unblock(vcpu, SCHEDULER_BLOCK_VCPU_RUN)) {
-			scheduler_trigger();
-		}
-	}
-	scheduler_unlock(vcpu);
-
 	vic_unbind_sync(&vcpu->vcpu_run_wakeup_virq);
 
 	return OK;

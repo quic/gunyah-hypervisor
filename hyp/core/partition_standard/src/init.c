@@ -45,9 +45,9 @@ static const paddr_t   phys_last  = (paddr_t)&image_phys_last;
 
 #if defined(ARCH_ARM) && ARCH_IS_64BIT
 // Ensure hypervisor is 2MiB page size aligned to use AArch64 2M block mappings
-static_assert((PLATFORM_RW_DATA_SIZE & 0x1fffffU) == 0U,
+static_assert(((size_t)PLATFORM_RW_DATA_SIZE & 0x1fffffU) == 0U,
 	      "PLATFORM_RW_DATA_SIZE must be 2MB aligned");
-static_assert((PLATFORM_HEAP_PRIVATE_SIZE & 0xfffU) == 0U,
+static_assert(((size_t)PLATFORM_HEAP_PRIVATE_SIZE & 0xfffU) == 0U,
 	      "PLATFORM_HEAP_PRIVATE_SIZE must be 4KB aligned");
 #endif
 

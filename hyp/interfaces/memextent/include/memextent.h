@@ -150,7 +150,8 @@ memextent_check_memtype(memextent_memtype_t  extent_type,
 // This function does not create a capability to the new memextent.
 memextent_ptr_result_t
 memextent_derive(memextent_t *parent, paddr_t offset, size_t size,
-		 memextent_memtype_t memtype, pgtable_access_t access);
+		 memextent_memtype_t memtype, pgtable_access_t access,
+		 memextent_type_t type);
 
 // Temporarily retain all of the memextent's mappings.
 //

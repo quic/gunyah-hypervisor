@@ -208,7 +208,7 @@ arch_vcpu_el2_registers_init(vcpu_el2_registers_t *el2_regs)
 	MDCR_EL2_set_TPM(&el2_regs->mdcr_el2, true);
 	MDCR_EL2_set_TPMCR(&el2_regs->mdcr_el2, true);
 #endif
-#if defined(ARCH_ARM_FEAT_SPEv1p1)
+#if defined(ARCH_ARM_FEAT_SPE)
 	// Enable SPE traps by default
 	MDCR_EL2_set_TPMS(&el2_regs->mdcr_el2, true);
 #endif
@@ -366,7 +366,14 @@ vcpu_poweron(thread_t *vcpu, vmaddr_result_t entry_point,
 	assert(vcpu->kind == THREAD_KIND_VCPU);
 	assert(scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF));
 
-	err = trigger_vcpu_poweron_event(vcpu);
+	if (thread_is_dying(vcpu) || thread_has_exited(vcpu)) {
+		err = ERROR_FAILURE;
+	}
+
+	if (err == OK) {
+		err = trigger_vcpu_poweron_event(vcpu);
+	}
+
 	if (err == OK) {
 		vcpu_reset_execution_context(vcpu);
 		if (entry_point.e == OK) {

@@ -257,7 +257,8 @@ tests_memextent_test1(paddr_t phys_base)
 
 	memextent_ptr_result_t me_ret;
 
-	me_ret = memextent_derive(me2, offset, size3, memtype, access);
+	me_ret = memextent_derive(me2, offset, size3, memtype, access,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of derived mem extent");
 	}
@@ -268,7 +269,8 @@ tests_memextent_test1(paddr_t phys_base)
 	size_t	size4	 = 4096 * 2;
 	paddr_t vm_base3 = vm_base2 + offset2;
 
-	me_ret = memextent_derive(me2, offset2, size4, memtype, access);
+	me_ret = memextent_derive(me2, offset2, size4, memtype, access,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of derived mem extent");
 	}
@@ -299,7 +301,8 @@ tests_memextent_test1(paddr_t phys_base)
 #endif
 
 	// Derive memory extent from the entire derived extent.
-	me_ret = memextent_derive(me_d, offset, size3, memtype, access);
+	me_ret = memextent_derive(me_d, offset, size3, memtype, access,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of derived mem extent");
 	}
@@ -307,7 +310,8 @@ tests_memextent_test1(paddr_t phys_base)
 	memextent_t *me_dd = me_ret.r;
 
 	// Derive memory extent from first page of derived extent.
-	me_ret = memextent_derive(me_d2, offset, size3, memtype, access);
+	me_ret = memextent_derive(me_d2, offset, size3, memtype, access,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of derived mem extent");
 	}
@@ -470,7 +474,8 @@ tests_memextent_test2(paddr_t phys_base)
 
 	memextent_ptr_result_t me_ret;
 
-	me_ret = memextent_derive(me, offset, size3, memtype, access);
+	me_ret = memextent_derive(me, offset, size3, memtype, access,
+				  MEMEXTENT_TYPE_BASIC);
 	if (me_ret.e != OK) {
 		panic("Failed creation of derived mem extent");
 	}

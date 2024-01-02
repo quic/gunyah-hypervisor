@@ -12,6 +12,9 @@ env_vars = {
     'PATH': os.environ['PATH'],
 }
 
+if 'QCOM_LLVM' in os.environ:
+    env_vars['QCOM_LLVM'] = os.environ['QCOM_LLVM']
+
 if 'LLVM' in os.environ:
     env_vars['LLVM'] = os.environ['LLVM']
 

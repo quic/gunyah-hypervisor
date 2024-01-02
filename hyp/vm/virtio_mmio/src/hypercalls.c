@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include <hyptypes.h>
+#include <string.h>
 
 #include <hypcall_def.h>
 #include <hyprights.h>
@@ -12,6 +13,7 @@
 #include <cspace.h>
 #include <cspace_lookup.h>
 #include <object.h>
+#include <partition.h>
 #include <spinlock.h>
 #include <util.h>
 #include <virq.h>
@@ -22,7 +24,9 @@
 
 error_t
 hypercall_virtio_mmio_configure(cap_id_t virtio_mmio_cap,
-				cap_id_t memextent_cap, count_t vqs_num)
+				cap_id_t memextent_cap, count_t vqs_num,
+				virtio_option_flags_t flags,
+				virtio_device_type_t  device_type)
 {
 	error_t	      err;
 	cspace_t     *cspace = cspace_get_self();
@@ -55,7 +59,8 @@ hypercall_virtio_mmio_configure(cap_id_t virtio_mmio_cap,
 
 	if (atomic_load_relaxed(&virtio_mmio->header.state) ==
 	    OBJECT_STATE_INIT) {
-		err = virtio_mmio_configure(virtio_mmio, memextent, vqs_num);
+		err = virtio_mmio_configure(virtio_mmio, memextent, vqs_num,
+					    flags, device_type);
 	} else {
 		err = ERROR_OBJECT_STATE;
 	}
@@ -145,10 +150,20 @@ hypercall_virtio_mmio_backend_assert_virq(cap_id_t virtio_mmio_cap,
 	if (virtio_mmio_status_reg_get_device_needs_reset(&status)) {
 		err = ERROR_DENIED;
 	} else {
+#if defined(PLATFORM_NO_DEVICE_ATTR_ATOMIC_UPDATE) &&                          \
+	PLATFORM_NO_DEVICE_ATTR_ATOMIC_UPDATE
+		spinlock_acquire(&virtio_mmio->lock);
+		uint32_t new_irq_status = atomic_load_relaxed(
+			&virtio_mmio->regs->interrupt_status);
+		new_irq_status |= interrupt_status;
+		atomic_store_relaxed(&virtio_mmio->regs->interrupt_status,
+				     new_irq_status);
+		spinlock_release(&virtio_mmio->lock);
+#else
 		(void)atomic_fetch_or_explicit(
 			&virtio_mmio->regs->interrupt_status, interrupt_status,
 			memory_order_relaxed);
-
+#endif
 		atomic_thread_fence(memory_order_release);
 		// Assert frontend's IRQ
 		(void)virq_assert(&virtio_mmio->backend_source, false);
@@ -345,15 +360,15 @@ hypercall_virtio_mmio_backend_get_queue_info(cap_id_t virtio_mmio_cap,
 
 	ret.queue_desc = queue_regs->desc_high;
 	ret.queue_desc = ret.queue_desc << 32;
-	ret.queue_desc |= queue_regs->desc_low;
+	ret.queue_desc |= (register_t)queue_regs->desc_low;
 
 	ret.queue_drv = queue_regs->drv_high;
 	ret.queue_drv = ret.queue_drv << 32;
-	ret.queue_drv |= queue_regs->drv_low;
+	ret.queue_drv |= (register_t)queue_regs->drv_low;
 
 	ret.queue_dev = queue_regs->dev_high;
 	ret.queue_dev = ret.queue_dev << 32;
-	ret.queue_dev |= queue_regs->dev_low;
+	ret.queue_dev |= (register_t)queue_regs->dev_low;
 
 	ret.error = OK;
 

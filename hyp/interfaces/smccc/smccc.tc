@@ -12,7 +12,7 @@
 // the sve_not_live hint bit in the function ID).
 define SMCCC_VERSION public constant uint32 = 0x10003;
 
-define smccc_interface_id public enumeration(explicit) {
+define smccc_owner_id public enumeration(explicit) {
 	ARCH = 0;
 	CPU = 1;
 	SIP = 2;
@@ -28,7 +28,7 @@ define smccc_function_id public bitfield<32> {
 	15:0	function type smccc_function_t;
 	16	sve_live_state_hint bool;	// from SMCCC v1.3+
 	23:17	res0 uint32(const);
-	29:24	interface_id enumeration smccc_interface_id;
+	29:24	owner_id enumeration smccc_owner_id;
 	30	is_smc64 bool;
 	31	is_fast bool;
 };

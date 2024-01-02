@@ -294,6 +294,9 @@ out:
 	return err;
 }
 
+static bool
+vic_do_unbind(virq_source_t *source, bool during_deactivate);
+
 void
 vgic_handle_object_deactivate_vic(vic_t *vic)
 {
@@ -311,7 +314,16 @@ vgic_handle_object_deactivate_vic(vic_t *vic)
 			continue;
 		}
 
-		vic_unbind(virq_source);
+		if (vic_do_unbind(virq_source, true)) {
+			// During deactivate we know that the VCPUs have all
+			// exited so there can't be any IRQs left listed (as
+			// asserted above). It therefore is not necessary to
+			// wait until the end of an RCU grace period to clear
+			// vgic_is_bound, as we normally would; we can go ahead
+			// and clear it here.
+			atomic_store_release(&virq_source->vgic_is_bound,
+					     false);
+		}
 	}
 	rcu_read_finish();
 
@@ -403,7 +415,7 @@ vgic_handle_object_create_thread(thread_create_t thread_create)
 		// guests with GICR_WAKER awareness (like Linux), but allows
 		// interrupt delivery to work correctly for guests that assume
 		// they have a non-secure view of the GIC (like UEFI).
-		atomic_init(&vcpu->vgic_sleep, false);
+		atomic_init(&vcpu->vgic_sleep, VGIC_SLEEP_STATE_AWAKE);
 
 		vcpu->vgic_ich_hcr = ICH_HCR_EL2_default();
 
@@ -820,6 +832,12 @@ vgic_handle_rootvm_create_hwirq(partition_t	 *root_partition,
 			i = GIC_SPI_EXT_BASE;
 		}
 #endif
+	}
+
+	// Check if the insertion failed because of buffer overflow, on error
+	// the config QCBOR_ENV_CONFIG_SIZE needs to be increased
+	if (QCBOREncode_GetErrorState(qcbor_enc_ctxt) != QCBOR_SUCCESS) {
+		panic("QCBOR data buffer too small");
 	}
 	QCBOREncode_CloseArray(qcbor_enc_ctxt);
 }
@@ -2460,7 +2478,7 @@ vic_bind_private(virq_source_t *source, vic_t *vic, thread_t *vcpu, virq_t virq,
 	if (atomic_fetch_or_explicit(&source->vgic_is_bound, true,
 				     memory_order_acquire)) {
 		ret = ERROR_VIRQ_BOUND;
-		goto out_release;
+		goto out;
 	}
 	assert(atomic_load_relaxed(&source->vic) == NULL);
 
@@ -2489,7 +2507,6 @@ vic_bind_private(virq_source_t *source, vic_t *vic, thread_t *vcpu, virq_t virq,
 out_locked:
 	spinlock_release(&vic->gicd_lock);
 
-out_release:
 	if (ret != OK) {
 		atomic_store_release(&source->vgic_is_bound, false);
 	}
@@ -2547,8 +2564,7 @@ vic_bind_private_index(virq_source_t *source, vic_t *vic, index_t index,
 
 error_t
 vic_bind_private_forward_private(virq_source_t *source, vic_t *vic,
-				 thread_t *vcpu, virq_t virq, irq_t pirq,
-				 cpu_index_t pcpu)
+				 thread_t *vcpu, virq_t virq)
 {
 	error_t ret;
 
@@ -2563,10 +2579,15 @@ vic_bind_private_forward_private(virq_source_t *source, vic_t *vic,
 
 	ret = vic_bind_private_vcpu(source, vcpu, virq,
 				    VIRQ_TRIGGER_VIC_BASE_FORWARD_PRIVATE);
-	if (ret != OK) {
-		goto out;
-	}
+out:
+	return ret;
+}
 
+void
+vic_sync_private_forward_private(virq_source_t *source, vic_t *vic,
+				 thread_t *vcpu, virq_t virq, irq_t pirq,
+				 cpu_index_t pcpu)
+{
 	// Take the GICD lock to ensure that the vGIC's IRQ config does
 	// not change while we are copying it to the hardware GIC
 	spinlock_acquire(&vic->gicd_lock);
@@ -2604,15 +2625,12 @@ vic_bind_private_forward_private(virq_source_t *source, vic_t *vic,
 	}
 
 	spinlock_release(&vic->gicd_lock);
-
-out:
-	return ret;
 }
 
-static error_t
-vic_do_unbind(virq_source_t *source)
+static bool
+vic_do_unbind(virq_source_t *source, bool during_deactivate)
 {
-	error_t err = ERROR_VIRQ_NOT_BOUND;
+	bool complete = false;
 
 	rcu_read_start();
 
@@ -2642,10 +2660,16 @@ vic_do_unbind(virq_source_t *source)
 		vgic_find_dstate(vic, vcpu, source->virq);
 	if (!vgic_undeliver(vic, vcpu, dstate, source->virq, clear_dstate,
 			    false)) {
-		// The VIRQ is still listed somewhere. For HW sources this can
-		// delay both re-registration of the VIRQ and delivery of the
-		// HW IRQ (after it is re-registered elsewhere), so start a
-		// sync to ensure that delisting happens soon.
+		// The VIRQ is still listed somewhere.
+		//
+		// This should never happen during a deactivate, because there
+		// are no VCPUs left to list it in.
+		assert(!during_deactivate);
+
+		// For HW sources this can delay both re-registration of the
+		// VIRQ and delivery of the HW IRQ (after it is re-registered
+		// elsewhere), so start a sync to ensure that delisting happens
+		// soon.
 		vgic_sync_all(vic, false);
 	}
 
@@ -2665,22 +2689,22 @@ vic_do_unbind(virq_source_t *source)
 		goto out;
 	}
 
-	err = OK;
+	complete = true;
 out:
 	rcu_read_finish();
-	return err;
+	return complete;
 }
 
 void
 vic_unbind(virq_source_t *source)
 {
-	(void)vic_do_unbind(source);
+	(void)vic_do_unbind(source, false);
 }
 
 void
 vic_unbind_sync(virq_source_t *source)
 {
-	if (vic_do_unbind(source) == OK) {
+	if (vic_do_unbind(source, false)) {
 		// Ensure that any remote operations affecting the source object
 		// and the unbound VIRQ have completed.
 		rcu_sync();

@@ -2,6 +2,30 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+interface virtio_mmio
+
+selector_event virtio_mmio_valid_device_type
+	selector type_:		virtio_device_type_t
+	return: bool = false
+
+selector_event virtio_mmio_device_config_write
+	selector type_:		virtio_device_type_t
+	param virtio_mmio:	const virtio_mmio_t *
+	param offset:		size_t
+	param value:		register_t
+	param access_size:	size_t
+	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+selector_event virtio_mmio_device_config_activate
+	selector type_:		virtio_device_type_t
+	param virtio_mmio:	virtio_mmio_t *
+	return: error_t = OK
+
+selector_event virtio_mmio_device_config_cleanup
+	selector type_:		virtio_device_type_t
+	param virtio_mmio:	virtio_mmio_t *
+	return: error_t = OK
+
 module virtio_mmio
 
 subscribe object_create_virtio_mmio
@@ -20,3 +44,12 @@ subscribe virq_check_pending[VIRQ_TRIGGER_VIRTIO_MMIO_BACKEND]
 	handler virtio_mmio_backend_handle_virq_check_pending(source)
 
 subscribe vdevice_access[VDEVICE_TYPE_VIRTIO_MMIO](vdevice, offset, access_size, value, is_write)
+
+subscribe virtio_mmio_device_config_write[VIRTIO_DEVICE_TYPE_INVALID]
+	handler virtio_mmio_default_write(virtio_mmio, offset, value, access_size)
+
+subscribe virtio_mmio_device_config_activate[VIRTIO_DEVICE_TYPE_INVALID]
+	handler virtio_default_handle_object_activate(virtio_mmio)
+
+subscribe virtio_mmio_device_config_cleanup[VIRTIO_DEVICE_TYPE_INVALID]
+	handler virtio_default_handle_object_cleanup(virtio_mmio)

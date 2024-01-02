@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 void
-tbre_save_context_percpu(cpu_index_t cpu);
+trbe_save_context_percpu(cpu_index_t cpu);
 
 void
-tbre_restore_context_percpu(cpu_index_t cpu);
+trbe_restore_context_percpu(cpu_index_t cpu);

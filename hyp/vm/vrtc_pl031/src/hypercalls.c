@@ -48,6 +48,7 @@ hypercall_vrtc_configure(cap_id_t vrtc_cap, vmaddr_t ipa)
 	}
 	spinlock_release(&vrtc->header.lock);
 
+	object_put_vrtc(vrtc);
 out:
 	return err;
 }
@@ -70,7 +71,7 @@ hypercall_vrtc_set_time_base(cap_id_t vrtc_cap, nanoseconds_t time_base,
 	if (vrtc->time_base != 0U) {
 		// The time base has already been set once
 		err = ERROR_BUSY;
-		goto out;
+		goto out_put_vrtc;
 	}
 
 	preempt_disable();
@@ -92,6 +93,8 @@ hypercall_vrtc_set_time_base(cap_id_t vrtc_cap, nanoseconds_t time_base,
 
 out_preempt:
 	preempt_enable();
+out_put_vrtc:
+	object_put_vrtc(vrtc);
 out:
 	return err;
 }

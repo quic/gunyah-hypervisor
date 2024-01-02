@@ -30,10 +30,12 @@ define virtio_mmio_status_reg bitfield<32> {
 };
 
 extend virtio_mmio object {
+	flags				bitfield virtio_option_flags;
 	me			pointer object memextent;
 	backend_source		structure virq_source(contained);
 	frontend_source		structure virq_source(contained);
 	frontend_device		structure vdevice(contained);
+	device_type			enumeration virtio_device_type;
 	regs			pointer structure virtio_mmio_regs;
 	size			size;
 	vqs_num			type count_t;
@@ -84,7 +86,7 @@ define virtio_mmio_regs structure(aligned(PGTABLE_HYP_PAGE_SIZE)) {
 	queue_dev_low @ 0x0a0		uint32(atomic);
 	queue_dev_high @ 0x0a4		uint32(atomic);
 	config_gen @ 0x0fc		uint32(atomic);
-	config @ 0x100			array(VIRTIO_MMIO_REG_CONFIG_BYTES) uint8(atomic);
+	device_config @ 0x100		union virtio_config_space;
 };
 
 extend virq_trigger enumeration {

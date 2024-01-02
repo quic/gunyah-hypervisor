@@ -20,17 +20,20 @@
 error_t
 vcpu_power_handle_vcpu_poweron(thread_t *vcpu)
 {
-	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
-	bool	    should_vote = cpulocal_index_valid(cpu);
+	assert((vcpu != NULL) && !vcpu->vcpu_power_should_vote);
+	vcpu->vcpu_power_should_vote = true;
+
+	cpu_index_t cpu	     = scheduler_get_affinity(vcpu);
+	bool	    can_vote = cpulocal_index_valid(cpu);
 
 #if defined(INTERFACE_VCPU_RUN)
 	if (vcpu_run_is_enabled(vcpu)) {
-		should_vote = false;
+		can_vote = false;
 	}
 #endif
 
 	error_t ret;
-	if (should_vote) {
+	if (can_vote) {
 		ret = power_vote_cpu_on(cpu);
 	} else {
 		ret = OK;
@@ -42,16 +45,18 @@ vcpu_power_handle_vcpu_poweron(thread_t *vcpu)
 error_t
 vcpu_power_handle_vcpu_poweroff(thread_t *vcpu)
 {
-	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
-	bool	    should_vote = cpulocal_index_valid(cpu);
+	assert((vcpu != NULL) && vcpu->vcpu_power_should_vote);
+	vcpu->vcpu_power_should_vote = false;
 
+	cpu_index_t cpu	     = scheduler_get_affinity(vcpu);
+	bool	    can_vote = cpulocal_index_valid(cpu);
 #if defined(INTERFACE_VCPU_RUN)
 	if (vcpu_run_is_enabled(vcpu)) {
-		should_vote = false;
+		can_vote = false;
 	}
 #endif
 
-	if (should_vote) {
+	if (can_vote) {
 		power_vote_cpu_off(cpu);
 	}
 
@@ -66,22 +71,20 @@ vcpu_power_handle_vcpu_stopped(void)
 
 	scheduler_lock_nopreempt(vcpu);
 
-	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
-	bool	    should_vote = cpulocal_index_valid(cpu);
+	if (vcpu->vcpu_power_should_vote) {
+		vcpu->vcpu_power_should_vote = false;
 
+		cpu_index_t cpu	     = scheduler_get_affinity(vcpu);
+		bool	    can_vote = cpulocal_index_valid(cpu);
 #if defined(INTERFACE_VCPU_RUN)
-	if (vcpu_run_is_enabled(vcpu)) {
-		should_vote = false;
-	}
+		if (vcpu_run_is_enabled(vcpu)) {
+			can_vote = false;
+		}
 #endif
 
-	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF)) {
-		// If the VCPU is already powered off, it does not hold a vote.
-		should_vote = false;
-	}
-
-	if (should_vote) {
-		power_vote_cpu_off(cpu);
+		if (can_vote) {
+			power_vote_cpu_off(cpu);
+		}
 	}
 
 	scheduler_unlock_nopreempt(vcpu);
@@ -89,48 +92,12 @@ vcpu_power_handle_vcpu_stopped(void)
 
 #if defined(INTERFACE_VCPU_RUN)
 void
-vcpu_power_handle_vcpu_run_disabled(thread_t *vcpu)
-{
-	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
-	bool	    should_vote = cpulocal_index_valid(cpu);
-
-	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF)) {
-		should_vote = false;
-	}
-
-	error_t err;
-	if (should_vote) {
-		err = power_vote_cpu_on(cpu);
-	} else {
-		err = OK;
-	}
-
-	if (err != OK) {
-		// Note: vcpu_run is still enabled when this event is triggered,
-		// so the affinity change handler won't cast a duplicate vote.
-		err = scheduler_set_affinity(vcpu, CPU_INDEX_INVALID);
-
-		// If there's already an affinity change in progress for the
-		// VCPU it is not possible to retry at this point.
-		if (err == ERROR_RETRY) {
-			// scheduler_lock(vcpu) already held here
-			scheduler_block(vcpu, SCHEDULER_BLOCK_VCPU_FAULT);
-			vcpu_halted();
-		}
-	}
-}
-
-void
 vcpu_power_handle_vcpu_run_enabled(thread_t *vcpu)
 {
-	cpu_index_t cpu		= scheduler_get_affinity(vcpu);
-	bool	    should_vote = cpulocal_index_valid(cpu);
+	cpu_index_t cpu	     = scheduler_get_affinity(vcpu);
+	bool	    can_vote = cpulocal_index_valid(cpu);
 
-	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF)) {
-		should_vote = false;
-	}
-
-	if (should_vote) {
+	if (can_vote && vcpu->vcpu_power_should_vote) {
 		power_vote_cpu_off(cpu);
 	}
 }
@@ -154,7 +121,7 @@ vcpu_power_handle_scheduler_set_affinity_prepare(thread_t   *vcpu,
 	}
 #endif
 
-	if (!scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_OFF)) {
+	if (vcpu->vcpu_power_should_vote) {
 		if (cpulocal_index_valid(next_cpu)) {
 			ret = power_vote_cpu_on(next_cpu);
 		}

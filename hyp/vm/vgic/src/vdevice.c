@@ -37,96 +37,10 @@
 #define IIDR_VARIANT   0U
 #define IIDR_REVISION  0U
 
-static register_t
-vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
+static void
+vgic_update_irqbits_flag(vic_t *vic, const thread_t *vcpu, size_t base_offset,
+			 count_t range_base, count_t range_size, uint32_t *bits)
 {
-	assert(vic != NULL);
-	assert(vcpu != NULL);
-	assert(offset >= base_offset);
-	assert(offset <= base_offset + (31 * sizeof(uint32_t)));
-
-	register_t bits = 0U;
-	count_t	   range_base =
-		(count_t)((offset - base_offset) / sizeof(uint32_t)) * 32U;
-	count_t range_size =
-		util_min(32U, GIC_SPECIAL_INTIDS_BASE - range_base);
-
-	_Atomic vgic_delivery_state_t *dstates =
-		vgic_find_dstate(vic, vcpu, range_base);
-	if (dstates == NULL) {
-		goto out;
-	}
-	assert(compiler_sizeof_object(dstates) >=
-	       range_size * sizeof(*dstates));
-
-	bool listed = false;
-
-	for (count_t i = 0; i < range_size; i++) {
-		vgic_delivery_state_t this_dstate =
-			atomic_load_relaxed(&dstates[i]);
-		bool bit;
-
-		// Note: the GICR base offsets are the same as the GICD offsets,
-		// so we don't need to duplicate them here.
-		switch (base_offset) {
-		case OFS_GICD_IGROUPR(0U):
-			bit = vgic_delivery_state_get_group1(&this_dstate);
-			break;
-		case OFS_GICD_ISENABLER(0U):
-		case OFS_GICD_ICENABLER(0U):
-			bit = vgic_delivery_state_get_enabled(&this_dstate);
-			break;
-		case OFS_GICD_ISPENDR(0U):
-		case OFS_GICD_ICPENDR(0U):
-			bit = vgic_delivery_state_is_pending(&this_dstate);
-			if (vgic_delivery_state_get_listed(&this_dstate)) {
-				listed = true;
-			}
-			break;
-		case OFS_GICD_ISACTIVER(0U):
-		case OFS_GICD_ICACTIVER(0U):
-			bit = vgic_delivery_state_get_active(&this_dstate);
-			if (vgic_delivery_state_get_listed(&this_dstate)) {
-				listed = true;
-			}
-			break;
-		default:
-			panic("vgic_read_irqbits: Bad base_offset");
-		}
-
-		if (bit) {
-			bits |= util_bit(i);
-		}
-	}
-
-#if GICV3_HAS_VLPI_V4_1 && defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE
-	if ((range_base == GIC_SGI_BASE) &&
-	    ((base_offset == offsetof(gicd_t, ispendr)) ||
-	     (base_offset == offsetof(gicd_t, icpendr)))) {
-		// Query the hardware for the vSGI pending state
-		uint32_result_t bits_r = gicv3_vpe_vsgi_query(vcpu);
-		if (bits_r.e == OK) {
-			bits |= bits_r.r;
-		}
-	}
-#endif // GICV3_HAS_VLPI_V4_1 && GICV3_ENABLE_VPE
-
-	if (compiler_expected(!listed)) {
-		// We didn't try to read the pending or active state of a VIRQ
-		// that is in list register, so the value we've read is
-		// accurate.
-		goto out;
-	}
-
-	// Read back from the current VCPU's physical LRs.
-	preempt_disable();
-	for (count_t lr = 0U; lr < CPU_GICH_LR_COUNT; lr++) {
-		vgic_read_lr_state(lr);
-	}
-	preempt_enable();
-
-	// Try to update the flags for listed vIRQs, based on the state of
-	// every VCPU's list registers.
 	for (index_t i = 0; i < vic->gicr_count; i++) {
 		rcu_read_start();
 		thread_t *check_vcpu = atomic_load_consume(&vic->gicr_vcpus[i]);
@@ -173,9 +87,9 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 				if ((state == ICH_LR_EL2_STATE_PENDING) ||
 				    (state ==
 				     ICH_LR_EL2_STATE_PENDING_ACTIVE)) {
-					bits |= bit;
+					(*bits) |= bit;
 				} else {
-					bits &= ~bit;
+					(*bits) &= ~bit;
 				}
 				break;
 			case OFS_GICD_ISACTIVER(0U):
@@ -183,9 +97,9 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 				if ((state == ICH_LR_EL2_STATE_ACTIVE) ||
 				    (state ==
 				     ICH_LR_EL2_STATE_PENDING_ACTIVE)) {
-					bits |= bit;
+					(*bits) |= bit;
 				} else {
-					bits &= ~bit;
+					(*bits) &= ~bit;
 				}
 				break;
 			default:
@@ -198,7 +112,112 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 	next_vcpu:
 		rcu_read_finish();
 	}
+}
 
+static uint32_t
+vgic_read_gicd_irqbits(count_t			      range_size,
+		       _Atomic vgic_delivery_state_t *dstates,
+		       size_t base_offset, bool *listed)
+{
+	uint32_t bits = 0U;
+	for (count_t i = 0; i < range_size; i++) {
+		vgic_delivery_state_t this_dstate =
+			atomic_load_relaxed(&dstates[i]);
+		bool bit;
+
+		// Note: the GICR base offsets are the same as the GICD offsets,
+		// so we don't need to duplicate them here.
+		switch (base_offset) {
+		case OFS_GICD_IGROUPR(0U):
+			bit = vgic_delivery_state_get_group1(&this_dstate);
+			break;
+		case OFS_GICD_ISENABLER(0U):
+		case OFS_GICD_ICENABLER(0U):
+			bit = vgic_delivery_state_get_enabled(&this_dstate);
+			break;
+		case OFS_GICD_ISPENDR(0U):
+		case OFS_GICD_ICPENDR(0U):
+			bit = vgic_delivery_state_is_pending(&this_dstate);
+			if (vgic_delivery_state_get_listed(&this_dstate)) {
+				*listed = true;
+			}
+			break;
+		case OFS_GICD_ISACTIVER(0U):
+		case OFS_GICD_ICACTIVER(0U):
+			bit = vgic_delivery_state_get_active(&this_dstate);
+			if (vgic_delivery_state_get_listed(&this_dstate)) {
+				*listed = true;
+			}
+			break;
+		default:
+			panic("vgic_read_irqbits: Bad base_offset");
+		}
+
+		if (bit) {
+			bits |= (uint32_t)util_bit(i);
+		}
+	}
+
+	return bits;
+}
+
+static uint32_t
+vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
+{
+	assert(vic != NULL);
+	assert(vcpu != NULL);
+	assert(offset >= base_offset);
+	assert(offset <= base_offset + (31 * sizeof(uint32_t)));
+
+	uint32_t bits = 0U;
+	count_t	 range_base =
+		(count_t)((offset - base_offset) / sizeof(uint32_t)) * 32U;
+	count_t range_size =
+		util_min(32U, GIC_SPECIAL_INTIDS_BASE - range_base);
+
+	_Atomic vgic_delivery_state_t *dstates =
+		vgic_find_dstate(vic, vcpu, range_base);
+	if (dstates == NULL) {
+		goto out;
+	}
+	assert(compiler_sizeof_object(dstates) >=
+	       range_size * sizeof(*dstates));
+
+	bool listed = false;
+
+	bits = vgic_read_gicd_irqbits(range_size, dstates, base_offset,
+				      &listed);
+
+#if GICV3_HAS_VLPI_V4_1 && defined(GICV3_ENABLE_VPE) && GICV3_ENABLE_VPE
+	if ((range_base == GIC_SGI_BASE) &&
+	    ((base_offset == offsetof(gicd_t, ispendr)) ||
+	     (base_offset == offsetof(gicd_t, icpendr)))) {
+		// Query the hardware for the vSGI pending state
+		uint32_result_t bits_r = gicv3_vpe_vsgi_query(vcpu);
+		if (bits_r.e == OK) {
+			bits |= bits_r.r;
+		}
+	}
+#endif // GICV3_HAS_VLPI_V4_1 && GICV3_ENABLE_VPE
+
+	if (compiler_expected(!listed)) {
+		// We didn't try to read the pending or active state of a VIRQ
+		// that is in list register, so the value we've read is
+		// accurate.
+		goto out;
+	}
+
+	// Read back from the current VCPU's physical LRs.
+	preempt_disable();
+	for (count_t lr = 0U; lr < CPU_GICH_LR_COUNT; lr++) {
+		vgic_read_lr_state(lr);
+	}
+	preempt_enable();
+
+	// Try to update the flags for listed vIRQs, based on the state of
+	// every VCPU's list registers.
+	vgic_update_irqbits_flag(vic, vcpu, base_offset, range_base, range_size,
+				 &bits);
 out:
 	return bits;
 }
@@ -270,6 +289,8 @@ gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
 	bool	  ret	 = true;
 	thread_t *thread = thread_get_self();
 
+	uint32_t read_val = 0U;
+
 	assert(vic != NULL);
 
 	if ((offset == offsetof(gicd_t, setspi_nsr)) ||
@@ -282,13 +303,14 @@ gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
 		GICD_STATUSR_init(&statusr);
 		GICD_STATUSR_set_RWOD(&statusr, true);
 		vgic_gicd_set_statusr(vic, statusr, true);
-		*val = 0U;
+		read_val = 0U;
 
 	} else if (offset == offsetof(gicd_t, ctlr)) {
-		*val = GICD_CTLR_DS_raw(atomic_load_relaxed(&vic->gicd_ctlr));
+		read_val =
+			GICD_CTLR_DS_raw(atomic_load_relaxed(&vic->gicd_ctlr));
 
 	} else if (offset == offsetof(gicd_t, statusr)) {
-		*val = GICD_STATUSR_raw(vic->gicd_statusr);
+		read_val = GICD_STATUSR_raw(vic->gicd_statusr);
 
 	} else if (offset == offsetof(gicd_t, typer)) {
 		GICD_TYPER_t typer = GICD_TYPER_default();
@@ -310,7 +332,7 @@ gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
 #endif
 		GICD_TYPER_set_A3V(&typer, true);
 		GICD_TYPER_set_No1N(&typer, VGIC_HAS_1N == 0);
-		*val = GICD_TYPER_raw(typer);
+		read_val = GICD_TYPER_raw(typer);
 
 	} else if (offset == offsetof(gicd_t, iidr)) {
 		GICD_IIDR_t iidr = GICD_IIDR_default();
@@ -318,67 +340,67 @@ gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
 		GICD_IIDR_set_ProductID(&iidr, IIDR_PRODUCTID);
 		GICD_IIDR_set_Variant(&iidr, IIDR_VARIANT);
 		GICD_IIDR_set_Revision(&iidr, IIDR_REVISION);
-		*val = GICD_IIDR_raw(iidr);
+		read_val = GICD_IIDR_raw(iidr);
 
 	} else if (offset == offsetof(gicd_t, typer2)) {
 		GICD_TYPER2_t typer2 = GICD_TYPER2_default();
 #if GICV3_HAS_VLPI_V4_1
 		GICD_TYPER2_set_nASSGIcap(&typer2, vgic_has_lpis(vic));
 #endif
-		*val = GICD_TYPER2_raw(typer2);
+		read_val = GICD_TYPER2_raw(typer2);
 
 	} else if (offset == (size_t)OFS_GICD_PIDR2) {
-		*val = VGIC_PIDR2;
+		read_val = VGIC_PIDR2;
 
 	} else if ((offset >= OFS_GICD_IGROUPR(0U)) &&
 		   (offset <= OFS_GICD_IGROUPR(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_IGROUPR(0),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread, OFS_GICD_IGROUPR(0),
+					     offset);
 
 	} else if ((offset >= OFS_GICD_ISENABLER(0U)) &&
 		   (offset <= OFS_GICD_ISENABLER(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ISENABLER(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread,
+					     OFS_GICD_ISENABLER(0U), offset);
 
 	} else if ((offset >= OFS_GICD_ICENABLER(0U)) &&
 		   (offset <= OFS_GICD_ICENABLER(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ICENABLER(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread,
+					     OFS_GICD_ICENABLER(0U), offset);
 
 	} else if ((offset >= OFS_GICD_ISPENDR(0U)) &&
 		   (offset <= OFS_GICD_ISPENDR(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ISPENDR(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread, OFS_GICD_ISPENDR(0U),
+					     offset);
 
 	} else if ((offset >= OFS_GICD_ICPENDR(0U)) &&
 		   (offset <= OFS_GICD_ICPENDR(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ICPENDR(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread, OFS_GICD_ICPENDR(0U),
+					     offset);
 
 	} else if ((offset >= OFS_GICD_ISACTIVER(0U)) &&
 		   (offset <= OFS_GICD_ISACTIVER(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ISACTIVER(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread,
+					     OFS_GICD_ISACTIVER(0U), offset);
 
 	} else if ((offset >= OFS_GICD_ICACTIVER(0U)) &&
 		   (offset <= OFS_GICD_ICACTIVER(31U))) {
-		*val = vgic_read_irqbits(vic, thread, OFS_GICD_ICACTIVER(0U),
-					 offset);
+		read_val = vgic_read_irqbits(vic, thread,
+					     OFS_GICD_ICACTIVER(0U), offset);
 
 	} else if (util_offset_in_range(offset, gicd_t, ipriorityr)) {
-		*val = vgic_read_priority(vic, thread,
-					  offset - offsetof(gicd_t, ipriorityr),
-					  access_size);
+		read_val = (uint32_t)vgic_read_priority(
+			vic, thread, offset - offsetof(gicd_t, ipriorityr),
+			access_size);
 
 	} else if (util_offset_in_range(offset, gicd_t, icfgr)) {
-		*val = vgic_read_config(vic, thread,
-					offset - offsetof(gicd_t, icfgr));
+		read_val = (uint32_t)vgic_read_config(
+			vic, thread, offset - offsetof(gicd_t, icfgr));
 
 	} else if (util_offset_in_range(offset, gicd_t, itargetsr) ||
 		   util_offset_in_range(offset, gicd_t, igrpmodr) ||
 		   util_offset_in_range(offset, gicd_t, nsacr)) {
 		// RAZ ranges
-		*val = 0U;
+		read_val = 0U;
 
 	} else {
 		// Unknown register
@@ -386,8 +408,10 @@ gicd_vdevice_read(vic_t *vic, size_t offset, register_t *val,
 		GICD_STATUSR_init(&statusr);
 		GICD_STATUSR_set_RRD(&statusr, true);
 		vgic_gicd_set_statusr(vic, statusr, true);
-		*val = 0U;
+		read_val = 0U;
 	}
+
+	*val = read_val;
 
 	return ret;
 }
@@ -805,7 +829,8 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		GICR_WAKER_t gicr_waker = GICR_WAKER_default();
 		GICR_WAKER_set_ProcessorSleep(
 			&gicr_waker,
-			atomic_load_relaxed(&gicr_vcpu->vgic_sleep));
+			atomic_load_relaxed(&gicr_vcpu->vgic_sleep) !=
+				VGIC_SLEEP_STATE_AWAKE);
 		GICR_WAKER_set_ChildrenAsleep(
 			&gicr_waker, vgic_gicr_rd_check_sleep(gicr_vcpu));
 
@@ -849,9 +874,9 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 		   (offset == offsetof(gicr_t, sgi.icpendr0)) ||
 		   (offset == offsetof(gicr_t, sgi.isactiver0)) ||
 		   (offset == offsetof(gicr_t, sgi.icactiver0))) {
-		*val = vgic_read_irqbits(vic, gicr_vcpu,
-					 offset - offsetof(gicr_t, sgi),
-					 offset - offsetof(gicr_t, sgi));
+		*val = (uint32_t)vgic_read_irqbits(
+			vic, gicr_vcpu, offset - offsetof(gicr_t, sgi),
+			offset - offsetof(gicr_t, sgi));
 
 	} else if ((offset == offsetof(gicr_t, sgi.igrpmodr0)) ||
 		   (offset == offsetof(gicr_t, sgi.nsacr))) {
@@ -878,6 +903,113 @@ gicr_vdevice_read(vic_t *vic, thread_t *gicr_vcpu, index_t gicr_num,
 
 	return ret;
 }
+
+static void
+gicr_vdevice_icfgr_write(vic_t *vic, thread_t *gicr_vcpu, register_t val)
+{
+	// 32-bit register, 32-bit access only
+	for (index_t i = 0U; i < GIC_PPI_NUM; i++) {
+		vgic_gicr_sgi_set_ppi_config(vic, gicr_vcpu, i + GIC_PPI_BASE,
+					     (val & util_bit((i * 2U) + 1U)) !=
+						     0U);
+	}
+}
+
+static void
+gicr_vdevice_ipriorityr_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
+			      register_t val, size_t access_size)
+{
+	// 32-bit registers, byte or 32-bit accessible
+	index_t n = (index_t)(offset - OFS_GICR_SGI_IPRIORITYR(0U));
+	// Loop through every byte
+	uint32_t shifted_val = (uint32_t)val;
+	for (index_t i = 0U; i < access_size; i++) {
+		vgic_gicr_sgi_set_sgi_ppi_priority(vic, gicr_vcpu, n + i,
+						   (uint8_t)shifted_val);
+		shifted_val >>= 8U;
+	}
+}
+
+static void
+gicr_vdevice_activer0_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
+			    register_t val)
+{
+	// 32-bit registers, 32-bit access only
+	uint32_t bits = (uint32_t)val;
+	while (bits != 0U) {
+		index_t i = compiler_ctz(bits);
+		bits &= ~((index_t)util_bit(i));
+
+		vgic_gicr_sgi_change_sgi_ppi_active(
+			vic, gicr_vcpu, i,
+			(offset == offsetof(gicr_t, sgi.isactiver0)));
+	}
+}
+
+static void
+gicr_vdevice_pendr0_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
+			  register_t val)
+{
+	// 32-bit registers, 32-bit access only
+	uint32_t bits = (uint32_t)val;
+	while (bits != 0U) {
+		index_t i = compiler_ctz(bits);
+		bits &= ~((index_t)util_bit(i));
+
+		vgic_gicr_sgi_change_sgi_ppi_pending(
+			vic, gicr_vcpu, i,
+			(offset == offsetof(gicr_t, sgi.ispendr0)));
+	}
+}
+
+static void
+gicr_vdevice_enabler0_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
+			    register_t val)
+{
+	// 32-bit registers, 32-bit access only
+	uint32_t bits = (uint32_t)val;
+	while (bits != 0U) {
+		index_t i = compiler_ctz(bits);
+		bits &= ~((index_t)util_bit(i));
+
+		vgic_gicr_sgi_change_sgi_ppi_enable(
+			vic, gicr_vcpu, i,
+			(offset == offsetof(gicr_t, sgi.isenabler0)));
+	}
+}
+
+static void
+gicr_vdevice_igroupr0_write(vic_t *vic, thread_t *gicr_vcpu, register_t val)
+{
+	// 32-bit register, 32-bit access only
+	for (index_t i = 0U; i < 32U; i++) {
+		vgic_gicr_sgi_set_sgi_ppi_group(vic, gicr_vcpu, i,
+						(val & util_bit(i)) != 0U);
+	}
+}
+
+#if VGIC_HAS_LPI
+static void
+gicr_vdevice_invallr_write(vic_t *vic, thread_t *gicr_vcpu, register_t val)
+{
+	GICR_INVALLR_t invallr = GICR_INVALLR_cast(val);
+	// WI if the virtual bit is set
+	if (!GICR_INVALLR_get_V(&invallr)) {
+		vgic_gicr_rd_invall(vic, gicr_vcpu);
+	}
+}
+
+static void
+gicr_vdevice_invlpir_write(vic_t *vic, thread_t *gicr_vcpu, register_t val)
+{
+	GICR_INVLPIR_t invlpir = GICR_INVLPIR_cast(val);
+	// WI if the virtual bit is set
+	if (!GICR_INVLPIR_get_V(&invlpir)) {
+		vgic_gicr_rd_invlpi(vic, gicr_vcpu,
+				    GICR_INVLPIR_get_pINTID(&invlpir));
+	}
+}
+#endif
 
 static bool
 gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
@@ -907,21 +1039,10 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 		vgic_gicr_rd_set_statusr(gicr_vcpu, statusr, false);
 
 	} else if (offset == offsetof(gicr_t, rd.waker)) {
-		bool new_sleep = GICR_WAKER_get_ProcessorSleep(
-			&GICR_WAKER_cast((uint32_t)val));
-#if VGIC_HAS_1N
-		bool old_sleep = atomic_exchange_explicit(
-			&gicr_vcpu->vgic_sleep, new_sleep,
-			memory_order_relaxed);
-		if (old_sleep && !new_sleep) {
-			// Leaving sleep, so clear any pending 1-of-N wakeup.
-			scheduler_lock(gicr_vcpu);
-			gicr_vcpu->vgic_wakeup_1n = false;
-			scheduler_unlock(gicr_vcpu);
-		}
-#else
-		atomic_store_relaxed(&gicr_vcpu->vgic_sleep, new_sleep);
-#endif
+		vgic_gicr_rd_set_sleep(
+			vic, gicr_vcpu,
+			GICR_WAKER_get_ProcessorSleep(
+				&GICR_WAKER_cast((uint32_t)val)));
 
 	} else if ((offset == offsetof(gicr_t, rd.setlpir)) ||
 		   (offset == offsetof(gicr_t, rd.clrlpir))) {
@@ -940,91 +1061,40 @@ gicr_vdevice_write(vic_t *vic, thread_t *gicr_vcpu, size_t offset,
 					  GICR_PENDBASER_cast(val));
 
 	} else if (offset == offsetof(gicr_t, rd.invlpir)) {
-		GICR_INVLPIR_t invlpir = GICR_INVLPIR_cast(val);
-		// WI if the virtual bit is set
-		if (!GICR_INVLPIR_get_V(&invlpir)) {
-			vgic_gicr_rd_invlpi(vic, gicr_vcpu,
-					    GICR_INVLPIR_get_pINTID(&invlpir));
-		}
+		gicr_vdevice_invlpir_write(vic, gicr_vcpu, val);
 
 	} else if (offset == offsetof(gicr_t, rd.invallr)) {
-		GICR_INVALLR_t invallr = GICR_INVALLR_cast(val);
-		// WI if the virtual bit is set
-		if (!GICR_INVALLR_get_V(&invallr)) {
-			vgic_gicr_rd_invall(vic, gicr_vcpu);
-		}
+		gicr_vdevice_invallr_write(vic, gicr_vcpu, val);
+
 #endif // VGIC_HAS_LPI
 
 	} else if (offset == offsetof(gicr_t, sgi.igroupr0)) {
-		// 32-bit register, 32-bit access only
-		for (index_t i = 0U; i < 32U; i++) {
-			vgic_gicr_sgi_set_sgi_ppi_group(
-				vic, gicr_vcpu, i, (val & util_bit(i)) != 0U);
-		}
+		gicr_vdevice_igroupr0_write(vic, gicr_vcpu, val);
 
 	} else if ((offset == offsetof(gicr_t, sgi.isenabler0)) ||
 		   (offset == offsetof(gicr_t, sgi.icenabler0))) {
-		// 32-bit registers, 32-bit access only
-		uint32_t bits = (uint32_t)val;
-		while (bits != 0U) {
-			index_t i = compiler_ctz(bits);
-			bits &= ~((index_t)util_bit(i));
-
-			vgic_gicr_sgi_change_sgi_ppi_enable(
-				vic, gicr_vcpu, i,
-				(offset == offsetof(gicr_t, sgi.isenabler0)));
-		}
+		gicr_vdevice_enabler0_write(vic, gicr_vcpu, offset, val);
 
 	} else if ((offset == offsetof(gicr_t, sgi.ispendr0)) ||
 		   (offset == offsetof(gicr_t, sgi.icpendr0))) {
-		// 32-bit registers, 32-bit access only
-		uint32_t bits = (uint32_t)val;
-		while (bits != 0U) {
-			index_t i = compiler_ctz(bits);
-			bits &= ~((index_t)util_bit(i));
-
-			vgic_gicr_sgi_change_sgi_ppi_pending(
-				vic, gicr_vcpu, i,
-				(offset == offsetof(gicr_t, sgi.ispendr0)));
-		}
+		gicr_vdevice_pendr0_write(vic, gicr_vcpu, offset, val);
 
 	} else if ((offset == offsetof(gicr_t, sgi.isactiver0)) ||
 		   (offset == offsetof(gicr_t, sgi.icactiver0))) {
-		// 32-bit registers, 32-bit access only
-		uint32_t bits = (uint32_t)val;
-		while (bits != 0U) {
-			index_t i = compiler_ctz(bits);
-			bits &= ~((index_t)util_bit(i));
-
-			vgic_gicr_sgi_change_sgi_ppi_active(
-				vic, gicr_vcpu, i,
-				(offset == offsetof(gicr_t, sgi.isactiver0)));
-		}
+		gicr_vdevice_activer0_write(vic, gicr_vcpu, offset, val);
 
 	} else if ((offset >= OFS_GICR_SGI_IPRIORITYR(0U)) &&
 		   (offset <=
 		    OFS_GICR_SGI_IPRIORITYR(GIC_PPI_BASE + GIC_PPI_NUM - 1))) {
-		// 32-bit registers, byte or 32-bit accessible
-		index_t n = (index_t)(offset - OFS_GICR_SGI_IPRIORITYR(0U));
-		// Loop through every byte
-		uint32_t shifted_val = (uint32_t)val;
-		for (index_t i = 0U; i < access_size; i++) {
-			vgic_gicr_sgi_set_sgi_ppi_priority(
-				vic, gicr_vcpu, n + i, (uint8_t)shifted_val);
-			shifted_val >>= 8U;
-		}
+		gicr_vdevice_ipriorityr_write(vic, gicr_vcpu, offset, val,
+					      access_size);
 
 	} else if (offset == OFS_GICR_SGI_ICFGR(0U)) {
 		// All interrupts in this register are SGIs, which are always
 		// edge-triggered, so it is entirely WI
 
 	} else if (offset == OFS_GICR_SGI_ICFGR(1U)) {
-		// 32-bit register, 32-bit access only
-		for (index_t i = 0U; i < GIC_PPI_NUM; i++) {
-			vgic_gicr_sgi_set_ppi_config(
-				vic, gicr_vcpu, i + GIC_PPI_BASE,
-				(val & util_bit((i * 2U) + 1U)) != 0U);
-		}
+		gicr_vdevice_icfgr_write(vic, gicr_vcpu, val);
 
 	} else if (offset == offsetof(gicr_t, sgi.igrpmodr0)) {
 		// WI

@@ -273,6 +273,32 @@ scheduler_is_runnable(const thread_t *thread)
 			    SCHEDULER_NUM_BLOCK_BITS);
 }
 
+bool
+scheduler_is_running(const thread_t *thread)
+{
+	bool	    ret;
+	cpu_index_t cpu = thread->scheduler_affinity;
+
+	if (!cpulocal_index_valid(cpu)) {
+		ret = false;
+		goto out;
+	}
+
+	thread_t *active_thread =
+		atomic_load_consume(&CPULOCAL_BY_INDEX(active_thread, cpu));
+	bool active_runnable = scheduler_is_runnable(active_thread);
+
+	// Its either the active_thread or idle thread.
+	if (thread == active_thread) {
+		ret = active_runnable;
+	} else {
+		ret = !active_runnable;
+		assert(thread == idle_thread_for(cpu));
+	}
+out:
+	return ret;
+}
+
 thread_t *
 scheduler_get_primary_vcpu(cpu_index_t cpu)
 {

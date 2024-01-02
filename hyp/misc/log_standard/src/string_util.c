@@ -36,7 +36,7 @@ typedef struct token {
 	count_t stage;
 } token_t;
 
-typedef enum align {
+typedef enum align_e {
 	// The same as left, use white space
 	ALIGN_DEFAULT = 0,
 	ALIGN_LEFT,
@@ -562,7 +562,7 @@ check_align(const char *fmt, fmt_info_t *info)
 	}
 
 	// Check for a padding character using look-ahead
-	if (next && (strnidx(stopper, len, *next) < len)) {
+	if ((next != NULL) && (strnidx(stopper, len, *next) < len)) {
 		if (info->fill_char == '\0') {
 			info->fill_char = *fmt;
 			ret		= RET_TOKEN_NEXT_CHAR;

@@ -11,6 +11,8 @@
 #include <cpulocal.h>
 #include <hyp_aspace.h>
 #include <idle.h>
+#include <ipi.h>
+#include <irq.h>
 #include <object.h>
 #include <panic.h>
 #include <partition.h>
@@ -18,6 +20,7 @@
 #include <preempt.h>
 #include <scheduler.h>
 #include <thread.h>
+#include <timer_queue.h>
 #include <trace.h>
 #include <util.h>
 
@@ -260,4 +263,47 @@ idle_yield(void)
 	}
 
 	return must_schedule;
+}
+
+idle_state_t
+idle_wakeup(void)
+{
+	idle_state_t ret;
+
+	// Check for an immediately pending wakeup interrupt that triggers a
+	// local reschedule. Note that misrouted or spurious IRQs that don't
+	// cause local reschedules won't be counted here; we'll keep waiting.
+	if (irq_interrupt_dispatch()) {
+		ret = IDLE_STATE_RESCHEDULE;
+		goto out;
+	}
+
+	// Check for a pending reschedule not directly caused by an interrupt.
+	if (ipi_handle_relaxed()) {
+		ret = IDLE_STATE_RESCHEDULE;
+		goto out;
+	}
+
+#if (!defined(PLATFORM_IDLE_WAKEUP_NOWAIT) || !PLATFORM_IDLE_WAKEUP_NOWAIT) && \
+	(PLATFORM_IDLE_WAKEUP_TIMEOUT_NS > 0)
+	// Wait a while for a reschedule event to be triggered. As above,
+	// misrouted or spurious IRQs don't count.
+	ticks_t start_ticks = timer_get_current_timer_ticks();
+	ticks_t wait_ticks  = timer_convert_ns_to_ticks(
+		 (nanoseconds_t)PLATFORM_IDLE_WAKEUP_TIMEOUT_NS);
+	ticks_t end_ticks = start_ticks + wait_ticks;
+	do {
+		if (idle_arch_wait_timeout(end_ticks)) {
+			ret = IDLE_STATE_RESCHEDULE;
+			goto out;
+		}
+	} while (timer_get_current_timer_ticks() <= end_ticks);
+#endif // !PLATFORM_IDLE_WAKEUP_NOWAIT
+
+	// Still no reschedule. Give up and restart the idle handlers.
+	TRACE(INFO, INFO, "spurious wakeup, entering idle");
+	ret = IDLE_STATE_WAKEUP;
+
+out:
+	return ret;
 }

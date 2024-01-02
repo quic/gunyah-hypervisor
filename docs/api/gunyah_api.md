@@ -2649,27 +2649,45 @@ Also see: [Capability Errors](#capability-errors)
 
 ## Virtual IO MMIO Management
 
-### Configure a Virtual IO MMIO
+### Configure a Virtual IO Interface Object
 
-Configure a Virtual IO MMIO whose state is OBJECT_STATE_INIT. The Virtual IO MMIO device needs to get a reference to memextent that covers its range.
+Configure a Virtual IO Interface Object whose state is OBJECT_STATE_INIT.
+
+Every Virtual IO device must be attached to a Memory Extent Object that contains its common registers and assumed to be mapped with write permissions into the backend VM's address space. The caller must also bind the backend IRQs to the backend VM's Virtual Interrupt Controller.
+
+The number of queues presented by the device must be set at configuration time, so the hypervisor can allocate memory for tracking the queue states.
+
+The Memory Extent must be 4KiB in size. Its layout matches the register layout specified for MMIO devices in section 4.2.2 of the Virtual I/O Device (VIRTIO) 1.1 specification, followed by optional device-specific configuration starting at offset 0x100. The caller must map it with read-only permissions into the frontend VM's address space, and bind the device's frontend IRQs to the frontend VM's Virtual Interrupt Controller.
+
+If the device type valid flag is set, then the specified device type must be one that is known to the hypervisor, and any appropriate type-specific hypercalls must be made before the device is permitted to exit its reset state. Otherwise, the device type argument is ignored.
 
 |    **Hypercall**:       |      `virtio_mmio_configure`         |
 |-------------------------|--------------------------------------|
 |     Call number:        |     `hvc 0x6049`                     |
 |     Inputs:             |     X0: VirtioMMIO CapID             |
 |                         |     X1: Memextent CapID              |
-|                         |     X3: VQsNum                       |
-|                         |     X3: Reserved — Must be Zero      |
+|                         |     X2: VQsNum Integer               |
+|                         |     X3: VirtioOptionFlags            |
+|                         |     X4: DeviceType Integer           |
+|                         |     X5: DeviceConfigSize Integer     |
 |     Outputs:            |     X0: Error Result                 |
 
+**Types:**
+
+*VirtioOptionFlags:*
+
+| Bit Numbers |  Mask                 | Description                             |
+|-------------|-----------------------|-----------------------------------------|
+| 6           | `0x40`                | Device type argument is valid           |
+| 63:7,5:0    | `0xFFFFFFFF.FFFFFFBF` | Reserved — Must be Zero                 |
 
 **Errors:**
 
-OK – the operation was successful, and the result is valid.
+OK – the operation was successful.
 
 ERROR_OBJECT_STATE – if the Virtual IO MMIO object is not in OBJECT_STATE_INIT state.
 
-ERROR_ARGUMENT_INVALID – a value passed in an argument was invalid. This could be due to a VQsNum out of range or if the specified memextent is not contiguous.
+ERROR_ARGUMENT_INVALID – a value passed in an argument was invalid. This could be due to VQsNum being larger than the maximum, or the specified Memory Extent object being of an unsupported type.
 
 Also see: [Capability Errors](#capability-errors)
 
@@ -2936,6 +2954,84 @@ This calls sets status register.
 |                         |     X1: Status                          |
 |                         |     X2: Reserved — Must be Zero         |
 |     Outputs:            |     X0: Error Result                    |
+
+**Errors:**
+
+OK – The operation was successful, and the result is valid.
+
+ERROR_ARGUMENT_INVALID – A value passed in an argument was invalid.
+
+Also see: [Capability Errors](#capability-errors)
+
+## Virtio Input Config Hypercalls
+
+### Virtio Input Configure
+
+Allocate storage for the large data items and set the values of the small data items (`dev_ids` and `propbits`, which each fit in a single machine register). For the two types that support `subsel`, this call will specify the number of distinct valid `subsel` values (which may be sparse).
+
+The `NumEVTypes` value must be between 0 and 32 inclusive. The `NumAbsAxes` value must be between 0 and 64 inclusive. If these limits are exceeded, the call will return `ERROR_ARGUMENT_SIZE`.
+
+
+
+|    **Hypercall**:       |      `virtio_input_configure`        |
+|-------------------------|--------------------------------------|
+|     Call number:        |     `hvc 0x605e`                      |
+|     Inputs:             |     X0: Virtio CapID                 |
+|                         |     X1: DevIDs                       |
+|                         |     X2: PropBits                     |
+|                         |     X3: NumEVTypes                   |
+|                         |     X4: NumAbsAxes                   |
+|                         |     X5: Reserved — Must be Zero      |
+|     Outputs:            |     X0: Error Result                 |
+
+**Types**:
+
+_DevIDs_:
+
+| Bits | Mask | Description |
+|-|---|-----|
+| 15:0 | `0xFFFF` | BusType |
+| 31:16 | `0xFFFF0000` | Vendor |
+| 47:32 | `0xFFFF.00000000` | Product |
+| 63:48 | `0xFFFF0000.00000000` | Version |
+
+**Errors:**
+
+OK – The operation was successful, and the result is valid.
+
+ERROR_ARGUMENT_INVALID – A value passed in an argument was invalid.
+
+Also see: [Capability Errors](#capability-errors)
+
+### Virtio Input Set Data
+
+Copy data into the hypervisor's storage for one of the large data items, given its `sel` and `subsel` values, size, and the virtual address of a buffer in the caller's stage 1 address space. The data must not already have been configured for the given `sel` and `subsel` values.
+
+|    **Hypercall**:       |      `virtio_input_set_data`         |
+|-------------------------|--------------------------------------|
+|     Call number:        |     `hvc 0x605f`                      |
+|     Inputs:             |     X0: Virtio CapID                 |
+|                         |     X1: Sel                          |
+|                         |     X2: SubSel                       |
+|                         |     X3: Size                         |
+|                         |     X4: Data VMAddr                  |
+|                         |     X5: Reserved — Must be Zero      |
+|     Outputs:            |     X0: Error Result                 |
+
+The specified `VMAddr` must point to a buffer of the specified size that is mapped in the caller's stage 1 and stage 2 address spaces.
+
+The `Sel`, `SubSel` and `Size` arguments must fall within one of the following ranges:
+
+| Sel  | SubSel | Size  |
+|------|--------|-------|
+| 1    | 0      | 0–128 |
+| 2    | 0      | 0–128 |
+| 0x11 | 0–31   | 0–128 |
+| 0x12 | 0–63   | 20    |
+
+All other combinations are invalid. The call will return `ERROR_ARGUMENT_INVALID` if `Sel` or `SubSel` is invalid or out of range, and `ERROR_ARGUMENT_SIZE` if `Size` is out of range for the specified combination of `Sel` and `SubSel`.
+
+Also, the call must not be repeated with `Sel` set to 0x11 or 0x12 and `Size` set to a nonzero value for more distinct values of `SubSel` than were specified with the `NumEVTypes` and `NumAbsAxes` arguments, respectively, of the most recent `virtio_input_configure` call. The call will return `ERROR_NORESOURCES` if these limits are exceeded.
 
 **Errors:**
 

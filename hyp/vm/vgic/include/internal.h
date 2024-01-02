@@ -178,6 +178,9 @@ vgic_gicr_rd_get_control(vic_t *vic, thread_t *gicr_vcpu);
 void
 vgic_gicr_rd_set_statusr(thread_t *gicr_vcpu, GICR_STATUSR_t statusr, bool set);
 
+void
+vgic_gicr_rd_set_sleep(vic_t *vic, thread_t *gicr_vcpu, bool sleep);
+
 bool
 vgic_gicr_rd_check_sleep(thread_t *gicr_vcpu);
 

@@ -443,9 +443,12 @@ out:
 }
 
 void_ptr_result_t
-allocator_allocate_object(allocator_t *allocator, size_t size, size_t alignment)
+allocator_allocate_object(allocator_t *allocator, size_t size,
+			  size_t min_alignment)
 {
 	void_ptr_result_t ret;
+
+	size_t alignment = util_max(min_alignment, alignof(size_t));
 
 	spinlock_acquire(&allocator->lock);
 

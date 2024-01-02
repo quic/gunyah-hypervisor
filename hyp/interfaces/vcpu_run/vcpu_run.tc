@@ -2,6 +2,12 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#if defined(HYPERCALLS)
+extend hyp_api_flags0 bitfield {
+	delete	vcpu_run;
+	11	vcpu_run bool = 1;
+};
+#endif
 define vcpu_run_state public enumeration(explicit) {
 	// VCPU is ready to run on the next vcpu_run hypercall.
 	ready = 0;
@@ -9,10 +15,13 @@ define vcpu_run_state public enumeration(explicit) {
 	// VCPU is sleeping until an interrupt arrives. The wakeup IRQ will be
 	// asserted when that occurs.
 	//
-	// If the platform implements PSCI and the VCPU has called
-	// PSCI_CPU_SUSPEND, the first state data word will be the requested
-	// suspend state. Otherwise, it will be 0 (e.g. if the VCPU is
-	// executing a WFI instruction).
+	// The first state data word contains a platform-specific description
+	// of the sleep state. For example, for AArch64 VMs with PSCI enabled,
+	// this contains the PSCI suspend state.
+	//
+	// The second state data word contains a vcpu_run_wakeup_from_state
+	// enumeration, which is a platform-specific description of the reason
+	// the VCPU is expecting a wakeup.
 	expects_wakeup = 1;
 
 	// VCPU is powered off and cannot execute until another VCPU triggers
@@ -33,4 +42,10 @@ define vcpu_run_poweroff_flags public bitfield<32> {
 	// True if the VCPU has permanently exited and cannot be powered on.
 	0		exited		bool;
 	others		unknown = 0;
+};
+
+define vcpu_run_wakeup_from_state public enumeration(explicit) {
+	// For backwards compatibility with hypervisors that didn't specify
+	// the cause of the sleep. Should not be used.
+	unspecified = 0;
 };

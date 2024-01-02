@@ -177,7 +177,7 @@ psci_smc_psci_features(psci_function_t fn, bool smc64)
 	smccc_function_id_t fn_id = smccc_function_id_default();
 	smccc_function_id_set_is_fast(&fn_id, true);
 	smccc_function_id_set_is_smc64(&fn_id, smc64);
-	smccc_function_id_set_interface_id(&fn_id, SMCCC_INTERFACE_ID_STANDARD);
+	smccc_function_id_set_owner_id(&fn_id, SMCCC_OWNER_ID_STANDARD);
 	smccc_function_id_set_function(&fn_id, (smccc_function_t)fn);
 
 	sint32_result_t ret;

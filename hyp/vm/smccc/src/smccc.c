@@ -23,8 +23,7 @@ smccc_arch_features(uint32_t arg1, uint32_t *ret0)
 	smccc_function_t    fn	     = smccc_function_id_get_function(&fn_id);
 	uint32_t	    ret;
 
-	if ((smccc_function_id_get_interface_id(&fn_id) ==
-	     SMCCC_INTERFACE_ID_ARCH) &&
+	if ((smccc_function_id_get_owner_id(&fn_id) == SMCCC_OWNER_ID_ARCH) &&
 	    smccc_function_id_get_is_fast(&fn_id) &&
 	    (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		if (is_smc64) {
@@ -34,8 +33,8 @@ smccc_arch_features(uint32_t arg1, uint32_t *ret0)
 			ret = trigger_smccc_arch_features_fast32_event(
 				(smccc_arch_function_t)fn);
 		}
-	} else if ((smccc_function_id_get_interface_id(&fn_id) ==
-		    SMCCC_INTERFACE_ID_STANDARD_HYP) &&
+	} else if ((smccc_function_id_get_owner_id(&fn_id) ==
+		    SMCCC_OWNER_ID_STANDARD_HYP) &&
 		   smccc_function_id_get_is_fast(&fn_id) &&
 		   (smccc_function_id_get_res0(&fn_id) == 0U)) {
 		if (is_smc64) {

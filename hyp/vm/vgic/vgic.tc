@@ -381,6 +381,14 @@ define vgic_lr_owner_lock structure(lockable) {
 	lock		structure spinlock;
 };
 
+define vgic_sleep_state enumeration {
+	awake = 0;
+	asleep;
+#if VGIC_HAS_1N
+	wakeup_1n;
+#endif
+};
+
 // Virtual GICR state is embedded in the associated thread context.
 extend thread object module vgic {
 	// Reference-counted pointer to the vic that owns this GICR. This
@@ -497,7 +505,7 @@ extend thread object module vgic {
 	// Current GICR_WAKER.ProcessorSleep state.
 	//
 	// The effects of setting this flag are:
-	// - selecting the VCPU for a 1-of-N wakeup
+	// - enabling selection of the VCPU for a 1-of-N wakeup
 	// - short-circuiting delivery checks to wake up without listing
 	// - polling group enables on GICR_WAKER.ChildrenAsleep reads
 	// - not polling VPE scheduling on GICR_WAKER.ChildrenAsleep reads
@@ -511,23 +519,11 @@ extend thread object module vgic {
 	// Therefore it is within spec for this flag to have no direct effect
 	// on interrupt delivery. The advantage of doing this is that interrupt
 	// delivery will work in VMs that assume they don't have control of
-	// GICR_WAKER, like UEFI.
+	// GICR_WAKER, like UEFI, as long as they don't rely on 1-of-N wakeup.
 	//
-	// This flag does not need any lock protection, but it does need to be
-	// atomic as it is read remotely by the 1-of-N wakeup algorithm.
-	sleep		bool(atomic);
-
-#if VGIC_HAS_1N
-	// Current 1-of-N wakeup request state.
-	//
-	// This flag is set to true if the VCPU is chosen by the 1-of-N wakeup
-	// algorithm while it is not blocked in the EL2 scheduler, and is
-	// cleared when GICR_WAKER.ProcessorSleep is changed from 1 to 0. If
-	// it is set, the VCPU cannot enter a low-power state.
-	//
-	// This flag is protected by the scheduler lock.
-	wakeup_1n	bool;
-#endif
+	// When 1-of-N support is enabled, this flag has a third state that
+	// indicates that it is asleep, but has been chosen for 1-of-N wakeup.
+	sleep		enumeration vgic_sleep_state(atomic);
 
 	// Cache of VIRQ numbers that may need to be checked when searching
 	// for a pending IRQ to deliver.

@@ -17,6 +17,10 @@ vic_attach_vcpu(vic_t *vic, thread_t *vcpu, index_t index);
 // bind PPI
 error_t
 vic_bind_private_forward_private(virq_source_t *source, vic_t *vic,
+				 thread_t *vcpu, virq_t virq);
+
+void
+vic_sync_private_forward_private(virq_source_t *source, vic_t *vic,
 				 thread_t *vcpu, virq_t virq, irq_t pirq,
 				 cpu_index_t pcpu);
 

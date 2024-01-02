@@ -144,7 +144,7 @@ vete_handle_vcpu_trap_sysreg(ESR_EL2_ISS_MSR_MRS_t iss)
 	if (((ESR_EL2_ISS_MSR_MRS_get_Op0(&iss) != 2U) ||
 	     (ESR_EL2_ISS_MSR_MRS_get_Op1(&iss) != 1U)) &&
 	    (ESR_EL2_ISS_MSR_MRS_raw(iss) != ISS_TRFCR_EL1)) {
-		// Not a TBRE register access.
+		// Not a TRBE register access.
 		ret = VCPU_TRAP_RESULT_UNHANDLED;
 	} else if (!vcpu_option_flags_get_trace_allowed(
 			   &current->vcpu_options)) {

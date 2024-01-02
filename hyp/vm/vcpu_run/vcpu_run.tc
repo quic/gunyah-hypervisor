@@ -13,8 +13,13 @@ extend thread object module vcpu_run {
 	// protected the same way.
 	last_state		enumeration vcpu_run_state;
 
-	// Protected by the scheduler lock.
-	enabled			bool;
+	// Deprecated, will be moved to vcpu options when dynamic enablement of
+	// vcpu_run is removed.
+	enabled			bool;	// Protected by the scheduler lock.
+};
+
+extend vcpu_option_flags bitfield {
+	9	vcpu_run_scheduled	bool = 0;
 };
 
 extend virq_trigger enumeration {

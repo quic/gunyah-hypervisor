@@ -400,9 +400,12 @@ graph.add_env('BUILD_DIR', os.path.realpath(build_dir))
 try:
     llvm_root = graph.get_env('LLVM')
 except KeyError:
-    logger.error(
-        "Please set $LLVM to the root of the prebuilt LLVM")
-    sys.exit(1)
+    try:
+        llvm_root = graph.get_env('QCOM_LLVM')
+    except KeyError:
+        logger.error(
+            "Please set $QCOM_LLVM or $LLVM to the root of the prebuilt LLVM")
+        sys.exit(1)
 
 # Use a QC prebuilt LLVM
 graph.add_env('CLANG', os.path.join(llvm_root, 'bin', 'clang'))

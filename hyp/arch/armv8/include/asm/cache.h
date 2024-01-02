@@ -56,8 +56,36 @@
 		CACHE_OP_OBJECT(*x_, op);                                      \
 	} while (0)
 
+#define CACHE_DEFINE_ARRAY_OP(type, elements, name, op)                        \
+	static inline void cache_##name(type(*x)[elements])                    \
+	{                                                                      \
+		CACHE_OP_OBJECT(*x, op);                                       \
+	}
+
+#define CACHE_DEFINE_CLEAN_ARRAY(type, elements, name)                         \
+	CACHE_DEFINE_ARRAY_OP(type, elements, clean_##name, CVAC)
+#define CACHE_DEFINE_INVALIDATE_ARRAY(type, elements, name)                    \
+	CACHE_DEFINE_ARRAY_OP(type, elements, invalidate_##name, IVAC)
+#define CACHE_DEFINE_CLEAN_INVALIDATE_ARRAY(type, elements, name)              \
+	CACHE_DEFINE_ARRAY_OP(type, elements, clean_invalidate_##name, CIVAC)
+
+#define CACHE_DEFINE_OP(type, name, op)                                        \
+	static inline void cache_##name(type *x)                               \
+	{                                                                      \
+		CACHE_OP_OBJECT(*x, op);                                       \
+	}
+
+#define CACHE_DEFINE_CLEAN(type, name) CACHE_DEFINE_OP(type, clean_##name, CVAC)
+#define CACHE_DEFINE_INVALIDATE(type, name)                                    \
+	CACHE_DEFINE_OP(type, invalidate_##name, IVAC)
+#define CACHE_DEFINE_CLEAN_INVALIDATE(type, name)                              \
+	CACHE_DEFINE_OP(type, clean_invalidate_##name, CIVAC)
+
 #define CACHE_CLEAN_FIXED_RANGE(x, size) CACHE_OP_FIXED_RANGE(x, size, CVAC)
 #define CACHE_INVALIDATE_FIXED_RANGE(x, size)                                  \
 	CACHE_OP_FIXED_RANGE(x, size, IVAC)
 #define CACHE_CLEAN_INVALIDATE_FIXED_RANGE(x, size)                            \
 	CACHE_OP_FIXED_RANGE(x, size, CIVAC)
+
+void
+cache_clean_range(const void *data, size_t size);

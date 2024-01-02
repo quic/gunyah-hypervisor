@@ -23,8 +23,9 @@ extend vic object {
 	forward_private_list structure list;
 };
 
-extend thread object {
+extend thread object module vic_base {
 	forward_private_active bool;
+	forward_private_in_sync bool;
 };
 
 extend rcu_update_class enumeration {

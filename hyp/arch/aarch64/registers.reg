@@ -613,7 +613,7 @@ TRCCLAIMCLR <uint64> Orw
 TRCCLAIMSET <uint64> Orw
 #endif
 
-#if defined(MODULE_PLATFORM_TBRE)
+#if defined(MODULE_PLATFORM_TRBE)
 TRBLIMITR_EL1 Orw
 TRBPTR_EL1 <uint64> Orw
 TRBBASER_EL1 <uint64> Orw

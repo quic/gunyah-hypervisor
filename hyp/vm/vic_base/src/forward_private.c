@@ -22,6 +22,7 @@
 #include <rcu.h>
 #include <scheduler.h>
 #include <spinlock.h>
+#include <thread.h>
 #include <trace.h>
 #include <util.h>
 #include <vic.h>
@@ -30,7 +31,6 @@
 #include <events/virq.h>
 
 #include "event_handlers.h"
-#include "gicv3.h"
 #include "panic.h"
 #include "vic_base.h"
 
@@ -43,13 +43,14 @@ private_irq_info_from_virq_source(virq_source_t *source)
 	return vic_private_irq_info_container_of_source(source);
 }
 
+// Called with the forward-private lock held.
 static error_t
 vic_bind_private_hwirq_helper(vic_forward_private_t *fp, thread_t *vcpu)
 {
 	error_t	    err;
 	cpu_index_t cpu;
 
-	assert(vcpu->forward_private_active);
+	assert(vcpu->vic_base_forward_private_active);
 
 	if (!vcpu_option_flags_get_pinned(&vcpu->vcpu_options)) {
 		err = ERROR_DENIED;
@@ -65,12 +66,19 @@ vic_bind_private_hwirq_helper(vic_forward_private_t *fp, thread_t *vcpu)
 	vic_private_irq_info_t *irq_info = &fp->irq_info[cpu];
 
 	err = vic_bind_private_forward_private(&irq_info->source, fp->vic, vcpu,
-					       fp->virq, irq_info->irq, cpu);
+					       fp->virq);
+
+	if ((err == OK) && vcpu->vic_base_forward_private_in_sync) {
+		vic_sync_private_forward_private(&irq_info->source, fp->vic,
+						 vcpu, fp->virq, irq_info->irq,
+						 cpu);
+	}
 
 out:
 	return err;
 }
 
+// Called with the forward-private lock held.
 static void
 vic_unbind_private_hwirq_helper(hwirq_t *hwirq)
 {
@@ -96,6 +104,43 @@ vic_unbind_private_hwirq_helper(hwirq_t *hwirq)
 		rcu_enqueue(&fp->rcu_entry,
 			    RCU_UPDATE_CLASS_VIC_BASE_FREE_FORWARD_PRIVATE);
 	}
+}
+
+// Called with the forward-private lock held.
+static void
+vic_sync_private_hwirq_helper(vic_forward_private_t *fp, thread_t *vcpu)
+{
+	assert(vcpu->vic_base_forward_private_active);
+	assert(vcpu_option_flags_get_pinned(&vcpu->vcpu_options));
+
+	scheduler_lock(vcpu);
+	cpu_index_t cpu = vcpu->scheduler_affinity;
+	scheduler_unlock(vcpu);
+
+	assert(cpulocal_index_valid(cpu));
+
+	vic_private_irq_info_t *irq_info = &fp->irq_info[cpu];
+
+	vic_sync_private_forward_private(&irq_info->source, fp->vic, vcpu,
+					 fp->virq, irq_info->irq, cpu);
+}
+
+// Called with the forward-private lock held.
+static void
+vic_disable_private_hwirq_helper(vic_forward_private_t *fp, thread_t *vcpu)
+{
+	assert(vcpu->vic_base_forward_private_active);
+	assert(vcpu_option_flags_get_pinned(&vcpu->vcpu_options));
+
+	scheduler_lock(vcpu);
+	cpu_index_t cpu = vcpu->scheduler_affinity;
+	scheduler_unlock(vcpu);
+
+	assert(cpulocal_index_valid(cpu));
+
+	vic_private_irq_info_t *irq_info = &fp->irq_info[cpu];
+
+	platform_irq_disable_percpu(irq_info->irq, cpu);
 }
 
 error_t
@@ -152,7 +197,7 @@ vic_bind_hwirq_forward_private(vic_t *vic, hwirq_t *hwirq, virq_t virq)
 		rcu_read_start();
 
 		thread_t *vcpu = atomic_load_consume(&vic->gicr_vcpus[i]);
-		if ((vcpu != NULL) && vcpu->forward_private_active) {
+		if ((vcpu != NULL) && vcpu->vic_base_forward_private_active) {
 			err = vic_bind_private_hwirq_helper(fp, vcpu);
 			if (err != OK) {
 				rcu_read_finish();
@@ -185,12 +230,13 @@ bool
 vic_handle_vcpu_activate_thread_forward_private(thread_t *thread)
 {
 	bool   ret = true;
-	vic_t *vic = thread->vgic_vic;
+	vic_t *vic = vic_get_vic(thread);
 
 	if (vic != NULL) {
 		spinlock_acquire(&vic->forward_private_lock);
 
-		thread->forward_private_active = true;
+		thread->vic_base_forward_private_active	 = true;
+		thread->vic_base_forward_private_in_sync = false;
 
 		vic_forward_private_t *fp;
 
@@ -294,6 +340,7 @@ vic_handle_virq_check_pending_forward_private(virq_source_t *source,
 	vic_private_irq_info_t *irq_info =
 		private_irq_info_from_virq_source(source);
 
+	// FIXME:
 	if (!reasserted &&
 	    atomic_fetch_and_explicit(&irq_info->hw_active, false,
 				      memory_order_relaxed)) {
@@ -317,6 +364,12 @@ vic_handle_virq_set_enabled_forward_private(virq_source_t *source, bool enabled)
 	assert(source->is_private);
 	assert(platform_irq_is_percpu(irq_info->irq));
 
+	// Note that we don't check the forward-private flag here, because we
+	// can't safely take the lock; the vgic module calls this handler with
+	// the GICD lock held, and the sync handler above calls a vgic function
+	// that acquires the GICD lock with the forward-private lock held.
+	// The same applies to the other VIRQ configuration handlers.
+	// FIXME:
 	if (enabled) {
 		platform_irq_enable_percpu(irq_info->irq, irq_info->cpu);
 	} else {
@@ -336,7 +389,8 @@ vic_handle_virq_set_mode_forward_private(virq_source_t *source,
 	assert(source->is_private);
 	assert(platform_irq_is_percpu(irq_info->irq));
 
-	return gicv3_irq_set_trigger_percpu(irq_info->irq, mode, irq_info->cpu);
+	// FIXME:
+	return platform_irq_set_mode_percpu(irq_info->irq, mode, irq_info->cpu);
 }
 
 rcu_update_status_t
@@ -357,5 +411,61 @@ vic_handle_free_forward_private(rcu_entry_t *entry)
 	object_put_vic(vic);
 
 	return ret;
+}
+
+void
+vic_base_handle_vcpu_started(bool warm_reset)
+{
+	thread_t *vcpu = thread_get_self();
+	vic_t	 *vic  = vic_get_vic(vcpu);
+
+	if (warm_reset || (vic == NULL) ||
+	    !vcpu_option_flags_get_pinned(&vcpu->vcpu_options)) {
+		// Nothing to do
+		goto out;
+	}
+
+	spinlock_acquire(&vic->forward_private_lock);
+
+	assert(!vcpu->vic_base_forward_private_in_sync);
+
+	vic_forward_private_t *fp;
+	list_foreach_container (fp, &vic->forward_private_list,
+				vic_forward_private, list_node) {
+		vic_sync_private_hwirq_helper(fp, vcpu);
+	}
+	vcpu->vic_base_forward_private_in_sync = true;
+
+	spinlock_release(&vic->forward_private_lock);
+
+out:
+	return;
+}
+
+void
+vic_base_handle_vcpu_stopped(void)
+{
+	thread_t *vcpu = thread_get_self();
+	vic_t	 *vic  = vic_get_vic(vcpu);
+
+	if ((vic == NULL) ||
+	    !vcpu_option_flags_get_pinned(&vcpu->vcpu_options)) {
+		// Nothing to do
+		goto out;
+	}
+
+	spinlock_acquire(&vic->forward_private_lock);
+	if (vcpu->vic_base_forward_private_in_sync) {
+		vic_forward_private_t *fp;
+		list_foreach_container (fp, &vic->forward_private_list,
+					vic_forward_private, list_node) {
+			vic_disable_private_hwirq_helper(fp, vcpu);
+		}
+		vcpu->vic_base_forward_private_in_sync = false;
+	}
+	spinlock_release(&vic->forward_private_lock);
+
+out:
+	return;
 }
 #endif

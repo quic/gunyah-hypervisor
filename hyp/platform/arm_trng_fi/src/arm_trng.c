@@ -112,12 +112,12 @@ arm_trng_fi_handle_call(void)
 	thread_t	   *current = thread_get_self();
 	smccc_function_id_t function_id =
 		smccc_function_id_cast((uint32_t)current->vcpu_regs_gpr.x[0]);
-	smccc_interface_id_t interface =
-		smccc_function_id_get_interface_id(&function_id);
+	smccc_owner_id_t owner_id =
+		smccc_function_id_get_owner_id(&function_id);
 	smccc_function_t function =
 		smccc_function_id_get_function(&function_id);
 
-	if (compiler_expected((interface != SMCCC_INTERFACE_ID_STANDARD) ||
+	if (compiler_expected((owner_id != SMCCC_OWNER_ID_STANDARD) ||
 			      (!smccc_function_id_get_is_fast(&function_id)))) {
 		goto out;
 	}
@@ -186,8 +186,8 @@ arm_trng_fi_handle_call(void)
 
 			smccc_function_id_t fid = smccc_function_id_cast(
 				(uint32_t)current->vcpu_regs_gpr.x[1]);
-			if ((smccc_function_id_get_interface_id(&fid) !=
-			     SMCCC_INTERFACE_ID_STANDARD) ||
+			if ((smccc_function_id_get_owner_id(&fid) !=
+			     SMCCC_OWNER_ID_STANDARD) ||
 			    !smccc_function_id_get_is_fast(&fid) ||
 			    (smccc_function_id_get_res0(&fid) != 0U)) {
 				break;

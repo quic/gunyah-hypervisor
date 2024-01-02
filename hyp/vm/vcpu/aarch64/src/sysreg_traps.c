@@ -727,6 +727,480 @@ read_virtual_id_register(ESR_EL2_ISS_MSR_MRS_t iss, uint8_t reg_num)
 }
 #endif
 
+static vcpu_trap_result_t
+default_sys_read(const ESR_EL2_ISS_MSR_MRS_t *iss, register_t *reg_val_ptr)
+{
+	vcpu_trap_result_t ret	   = VCPU_TRAP_RESULT_EMULATED;
+	register_t	   reg_val = 0ULL;
+
+	uint8_t opc0, opc1, crn, crm;
+
+	opc0 = ESR_EL2_ISS_MSR_MRS_get_Op0(iss);
+	opc1 = ESR_EL2_ISS_MSR_MRS_get_Op1(iss);
+	crn  = ESR_EL2_ISS_MSR_MRS_get_CRn(iss);
+	crm  = ESR_EL2_ISS_MSR_MRS_get_CRm(iss);
+
+	if ((opc0 == 3U) && (opc1 == 0U) && (crn == 0U) && (crm >= 1U) &&
+	    (crm <= 7U)) {
+		// It is IMPLEMENTATION DEFINED whether HCR_EL2.TID3
+		// traps MRS accesses to the registers in this range
+		// (that have not been handled above). If we ever get
+		// here print a debug message so we can investigate.
+		TRACE_AND_LOG(DEBUG, DEBUG,
+			      "Emulated RAZ for ID register: ISS {:#x}",
+			      ESR_EL2_ISS_MSR_MRS_raw(*iss));
+		reg_val = 0U;
+	} else {
+		ret = VCPU_TRAP_RESULT_UNHANDLED;
+	}
+
+	*reg_val_ptr = reg_val;
+	return ret;
+}
+
+static register_t
+sys_aa64mmfr3_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64MMFR3_EL1_t mmfr3    = ID_AA64MMFR3_EL1_default();
+	ID_AA64MMFR3_EL1_t hw_mmfr3 = register_ID_AA64MMFR3_EL1_read();
+	ID_AA64MMFR3_EL1_copy_Spec_FPACC(&mmfr3, &hw_mmfr3);
+	reg_val = ID_AA64MMFR3_EL1_raw(mmfr3);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64mmfr2_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64MMFR2_EL1_t mmfr2 = register_ID_AA64MMFR2_EL1_read();
+
+	mmfr2 = ID_AA64MMFR2_EL1_clean(mmfr2);
+
+	reg_val = ID_AA64MMFR2_EL1_raw(mmfr2);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64mmfr1_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64MMFR1_EL1_t mmfr1 = register_ID_AA64MMFR1_EL1_read();
+
+	mmfr1 = ID_AA64MMFR1_EL1_clean(mmfr1);
+
+#if defined(ARCH_ARM_FEAT_PAN3)
+	assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 3U);
+	ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 3U);
+#elif defined(ARCH_ARM_FEAT_PAN2) // now known as FEAT_PAN2
+	assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 2U);
+	ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 2U);
+#elif defined(ARCH_ARM_FEAT_PAN)
+	assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 1U);
+	ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 1U);
+#else
+	ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 0U);
+#endif
+	reg_val = ID_AA64MMFR1_EL1_raw(mmfr1);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64mmfr0_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64MMFR0_EL1_t mmfr0 = register_ID_AA64MMFR0_EL1_read();
+
+	mmfr0 = ID_AA64MMFR0_EL1_clean(mmfr0);
+
+	reg_val = ID_AA64MMFR0_EL1_raw(mmfr0);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64isar2_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64ISAR2_EL1_t isar2 = register_ID_AA64ISAR2_EL1_read();
+
+	isar2 = ID_AA64ISAR2_EL1_clean(isar2);
+
+#if !defined(ARCH_ARM_FEAT_PAuth)
+	// When PAUTH using QARMA3 is disabled, hide it from the VM
+	ID_AA64ISAR2_EL1_set_APA3(&isar2, 0U);
+	ID_AA64ISAR2_EL1_set_GPA3(&isar2, 0U);
+	ID_AA64ISAR2_EL1_set_PAC_frac(&isar2, 0U);
+#endif
+#if defined(ARCH_ARM_FEAT_WFxT)
+	// Remove once FEAT_WFxT is implemented
+	// FIXME:
+	ID_AA64ISAR2_EL1_set_WFxT(&isar2, 0U);
+#endif
+	reg_val = ID_AA64ISAR2_EL1_raw(isar2);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64isar1_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64ISAR1_EL1_t isar1 = register_ID_AA64ISAR1_EL1_read();
+
+	isar1 = ID_AA64ISAR1_EL1_clean(isar1);
+#if !defined(ARCH_ARM_FEAT_BF16)
+	ID_AA64ISAR1_EL1_set_BF16(&isar1, 0U);
+#endif
+#if !defined(ARCH_ARM_FEAT_PAuth)
+	// When no PAUTH is enabled, hide it from the VM
+	ID_AA64ISAR1_EL1_set_APA(&isar1, 0U);
+	ID_AA64ISAR1_EL1_set_API(&isar1, 0U);
+	ID_AA64ISAR1_EL1_set_GPA(&isar1, 0U);
+	ID_AA64ISAR1_EL1_set_GPI(&isar1, 0U);
+#endif
+	reg_val = ID_AA64ISAR1_EL1_raw(isar1);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64isar0_read(void)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64ISAR0_EL1_t isar0 = register_ID_AA64ISAR0_EL1_read();
+
+	isar0 = ID_AA64ISAR0_EL1_clean(isar0);
+
+	reg_val = ID_AA64ISAR0_EL1_raw(isar0);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64dfr0_read(const thread_t *thread)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64DFR0_EL1_t dfr0	  = ID_AA64DFR0_EL1_default();
+	ID_AA64DFR0_EL1_t hw_dfr0 = register_ID_AA64DFR0_EL1_read();
+
+	// The debug, trace, PMU and SPE modules must correctly support
+	// the values reported by the hardware. All we do here is to
+	// zero out fields for missing modules.
+
+#if defined(MODULE_VM_VDEBUG)
+	// Note that ARMv8-A does not allow 0 (not implemented) in this
+	// field. So without this module is not really supported.
+	ID_AA64DFR0_EL1_copy_DebugVer(&dfr0, &hw_dfr0);
+
+	ID_AA64DFR0_EL1_copy_BRPs(&dfr0, &hw_dfr0);
+	ID_AA64DFR0_EL1_copy_WRPs(&dfr0, &hw_dfr0);
+	ID_AA64DFR0_EL1_copy_CTX_CMPs(&dfr0, &hw_dfr0);
+	ID_AA64DFR0_EL1_copy_DoubleLock(&dfr0, &hw_dfr0);
+#endif
+#if defined(MODULE_VM_ARM_VM_PMU)
+	ID_AA64DFR0_EL1_copy_PMUVer(&dfr0, &hw_dfr0);
+#endif
+#if defined(INTERFACE_VET)
+	// Set IDs for VMs allowed to trace
+	if (vcpu_option_flags_get_trace_allowed(&thread->vcpu_options)) {
+#if defined(MODULE_VM_VETE)
+		ID_AA64DFR0_EL1_copy_TraceVer(&dfr0, &hw_dfr0);
+		ID_AA64DFR0_EL1_copy_TraceFilt(&dfr0, &hw_dfr0);
+#endif
+#if defined(MODULE_VM_VTRBE)
+		ID_AA64DFR0_EL1_copy_TraceBuffer(&dfr0, &hw_dfr0);
+#endif
+	}
+#else
+	(void)thread;
+#endif
+
+#if defined(MODULE_SPE)
+	ID_AA64DFR0_EL1_copy_PMSVer(&dfr0, &hw_dfr0);
+#endif
+
+	reg_val = ID_AA64DFR0_EL1_raw(dfr0);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64pfr1_read(const thread_t *thread)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64PFR1_EL1_t pfr1 = register_ID_AA64PFR1_EL1_read();
+
+	pfr1 = ID_AA64PFR1_EL1_clean(pfr1);
+#if defined(ARCH_ARM_FEAT_MTE)
+	if (!arm_mte_is_allowed()) {
+		ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
+	}
+#else
+	ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
+#endif
+#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
+	if (!vcpu_option_flags_get_ras_error_handler(&thread->vcpu_options)) {
+		ID_AA64PFR1_EL1_set_RAS_frac(&pfr1, 0);
+	}
+#else
+	(void)thread;
+#endif
+#if defined(ARCH_ARM_HAVE_SCXT) && defined(ARCH_ARM_FEAT_CSV2_1p2)
+	if (!vcpu_option_flags_get_scxt_allowed(&thread->vcpu_options)) {
+		ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 1U);
+	}
+#elif defined(ARCH_ARM_FEAT_CSV2_1p1)
+	ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 1U);
+#else
+	ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 0U);
+	(void)thread;
+#endif
+
+#if defined(ARCH_ARM_FEAT_MPAM)
+	if (!arm_mpam_is_allowed() ||
+	    !vcpu_option_flags_get_mpam_allowed(&thread->vcpu_options)) {
+		// No MPAM
+		ID_AA64PFR1_EL1_set_MPAM_frac(&pfr1, 0);
+	}
+#else
+	// No MPAM
+	ID_AA64PFR1_EL1_set_MPAM_frac(&pfr1, 0);
+	(void)thread;
+#endif
+	// No SME / NMI
+	ID_AA64PFR1_EL1_set_SME(&pfr1, 0);
+	ID_AA64PFR1_EL1_set_NMI(&pfr1, 0);
+
+	reg_val = ID_AA64PFR1_EL1_raw(pfr1);
+
+	return reg_val;
+}
+
+static register_t
+sys_aa64pfr0_read(const thread_t *thread)
+{
+	register_t reg_val = 0ULL;
+
+	ID_AA64PFR0_EL1_t pfr0 = register_ID_AA64PFR0_EL1_read();
+
+	pfr0 = ID_AA64PFR0_EL1_clean(pfr0);
+#if !ARCH_AARCH64_32BIT_EL0
+	// Require EL0 to be 64-bit only, even if core supports 32-bit
+	ID_AA64PFR0_EL1_set_EL0(&pfr0, 1U);
+#endif
+#if !ARCH_AARCH64_32BIT_EL1
+	// Require EL1 to be 64-bit only, even if core supports 32-bit
+	ID_AA64PFR0_EL1_set_EL1(&pfr0, 1U);
+#endif
+	ID_AA64PFR0_EL1_set_EL2(&pfr0, 1U);
+	ID_AA64PFR0_EL1_set_EL3(&pfr0, 1U);
+#if defined(ARCH_ARM_HAVE_SCXT)
+	if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
+		ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
+	}
+#elif defined(ARCH_ARM_FEAT_CSV2)
+	ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
+	(void)thread;
+#else
+	(void)thread;
+#endif
+
+#if defined(ARCH_ARM_FEAT_MPAM)
+	if (!arm_mpam_is_allowed() ||
+	    !vcpu_option_flags_get_mpam_allowed(&thread->vcpu_options)) {
+		// No MPAM
+		ID_AA64PFR0_EL1_set_MPAM(&pfr0, 0);
+	}
+#else
+	// No MPAM
+	ID_AA64PFR0_EL1_set_MPAM(&pfr0, 0);
+	(void)thread;
+#endif
+
+#if defined(ARCH_ARM_FEAT_SVE)
+	// Tell non-SVE allowed guests that there is no SVE
+	if (!vcpu_option_flags_get_sve_allowed(&thread->vcpu_options)) {
+		ID_AA64PFR0_EL1_set_SVE(&pfr0, 0);
+	}
+#else
+	// No SVE
+	ID_AA64PFR0_EL1_set_SVE(&pfr0, 0);
+	(void)thread;
+#endif
+
+#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
+	// Tell non-RAS handler guests there is no RAS
+	if (!vcpu_option_flags_get_ras_error_handler(&thread->vcpu_options)) {
+		ID_AA64PFR0_EL1_set_RAS(&pfr0, 0);
+	}
+#endif
+#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
+	// Tell non-HLOS guests that there is no AMU
+	if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
+		ID_AA64PFR0_EL1_set_AMU(&pfr0, 0);
+	}
+#else
+	(void)thread;
+#endif
+#if !defined(ARCH_ARM_FEAT_SEL2)
+	ID_AA64PFR0_EL1_set_SEL2(&pfr0, 0U);
+#endif
+	ID_AA64PFR0_EL1_set_RME(&pfr0, 0U);
+
+	reg_val = ID_AA64PFR0_EL1_raw(pfr0);
+
+	return reg_val;
+}
+
+static register_t
+sys_mmfr3_read(void)
+{
+	register_t reg_val = 0ULL;
+	sysreg64_read(ID_MMFR3_EL1, reg_val);
+	ID_MMFR3_EL1_t mmfr1 = ID_MMFR3_EL1_cast(reg_val);
+#if defined(ARCH_ARM_FEAT_PAN3)
+	assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 3U);
+	ID_MMFR3_EL1_set_PAN(&mmfr1, 3U);
+#elif defined(ARCH_ARM_FEAT_PAN2) // now known as FEAT_PAN2
+	assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 2U);
+	ID_MMFR3_EL1_set_PAN(&mmfr1, 2U);
+#elif defined(ARCH_ARM_FEAT_PAN)
+	assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 1U);
+	ID_MMFR3_EL1_set_PAN(&mmfr1, 1U);
+#else
+	ID_MMFR3_EL1_set_PAN(&mmfr1, 0U);
+#endif
+	reg_val = ID_MMFR3_EL1_raw(mmfr1);
+
+	return reg_val;
+}
+
+static register_t
+sys_dfr0_read(const thread_t *thread)
+{
+	register_t    reg_val = 0ULL;
+	ID_DFR0_EL1_t dfr0    = register_ID_DFR0_EL1_read();
+
+	// The debug, trace, PMU and SPE modules must correctly support
+	// the values reported by the hardware. All we do here is to
+	// zero out fields for features we don't support.
+
+#if !defined(MODULE_VM_VDEBUG)
+	// Note that ARMv8-A does not allow 0 (not implemented) in the
+	// CopDbg field. So this configuration is not really supported.
+	ID_DFR0_EL1_set_CopDbg(&dfr0, 0U);
+	ID_DFR0_EL1_set_CopSDbg(&dfr0, 0U);
+	ID_DFR0_EL1_set_MMapDbg(&dfr0, 0U);
+	ID_DFR0_EL1_set_MProfDbg(&dfr0, 0U);
+#endif
+
+#if defined(MODULE_VM_VETE)
+	// Only the HLOS VM is allowed to trace
+	if (!vcpu_option_flags_get_trace_allowed(&thread->vcpu_options)) {
+		ID_DFR0_EL1_set_CopTrc(&dfr0, 0U);
+		ID_DFR0_EL1_set_TraceFilt(&dfr0, 0U);
+	}
+#else
+	ID_DFR0_EL1_set_CopTrc(&dfr0, 0U);
+	ID_DFR0_EL1_set_TraceFilt(&dfr0, 0U);
+	(void)thread;
+#endif
+#if defined(MODULE_VM_VETM)
+	// Only the HLOS VM is allowed to trace
+	if (!vcpu_option_flags_get_trace_allowed(&thread->vcpu_options)) {
+		ID_DFR0_EL1_set_MMapTrc(&dfr0, 0U);
+	}
+#else
+	ID_DFR0_EL1_set_MMapTrc(&dfr0, 0U);
+	(void)thread;
+#endif
+#if !defined(MODULE_PLATFORM_ARM_PMU)
+	ID_DFR0_EL1_set_PerfMon(&dfr0, 0U);
+#endif
+
+	reg_val = ID_DFR0_EL1_raw(dfr0);
+
+	return reg_val;
+}
+
+static register_t
+sys_pfr2_read(void)
+{
+	register_t    reg_val = 0ULL;
+	ID_PFR2_EL1_t pfr2    = ID_PFR2_EL1_default();
+#if defined(ARCH_ARM_FEAT_CSV3)
+	ID_PFR2_EL1_set_CSV3(&pfr2, 1U);
+#endif
+#if defined(ARCH_ARM_FEAT_SSBS)
+	ID_PFR2_EL1_set_SSBS(&pfr2, 1U);
+#endif
+	reg_val = ID_PFR2_EL1_raw(pfr2);
+
+	return reg_val;
+}
+
+static register_t
+sys_pfr1_read(void)
+{
+	register_t    reg_val = 0ULL;
+	ID_PFR1_EL1_t pfr1    = register_ID_PFR1_EL1_read();
+
+	reg_val = ID_PFR1_EL1_raw(pfr1);
+	return reg_val;
+}
+
+static register_t
+sys_pfr0_read(const thread_t *thread)
+{
+	register_t reg_val = 0ULL;
+
+	ID_PFR0_EL1_t pfr0 = register_ID_PFR0_EL1_read();
+
+#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
+	// Tell non-RAS handler guests there is no RAS.
+	if (!vcpu_option_flags_get_ras_error_handler(&thread->vcpu_options)) {
+		ID_PFR0_EL1_set_RAS(&pfr0, 0);
+	}
+#else
+	(void)thread;
+#endif
+#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
+	// Tell non-HLOS guests that there is no AMU
+	if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
+		ID_PFR0_EL1_set_AMU(&pfr0, 0);
+	}
+#else
+	(void)thread;
+#endif
+#if defined(ARCH_ARM_HAVE_SCXT)
+	if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
+		ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
+	}
+#elif defined(ARCH_ARM_FEAT_CSV2)
+	ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
+	(void)thread;
+#else
+	(void)thread;
+#endif
+
+	reg_val = ID_PFR0_EL1_raw(pfr0);
+
+	return reg_val;
+}
+
 // For the guests with no AMU access we should trap the AMU registers by setting
 // CPTR_EL2.TAM and clearing ACTLR_EL2.AMEN. However the trapped registers
 // should be handled in the AMU module, and not here.
@@ -758,93 +1232,18 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 
 	switch (ESR_EL2_ISS_MSR_MRS_raw(temp_iss)) {
 	// The registers trapped with HCR_EL2.TID3
-	case ISS_MRS_MSR_ID_PFR0_EL1: {
-		ID_PFR0_EL1_t pfr0 = register_ID_PFR0_EL1_read();
-
-#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
-		// Tell non-RAS handler guests there is no RAS.
-		if (!vcpu_option_flags_get_ras_error_handler(
-			    &thread->vcpu_options)) {
-			ID_PFR0_EL1_set_RAS(&pfr0, 0);
-		}
-#endif
-#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
-		// Tell non-HLOS guests that there is no AMU
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
-			ID_PFR0_EL1_set_AMU(&pfr0, 0);
-		}
-#endif
-#if defined(ARCH_ARM_HAVE_SCXT)
-		if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
-			ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
-		}
-#elif defined(ARCH_ARM_FEAT_CSV2)
-		ID_PFR0_EL1_set_CSV2(&pfr0, 1U);
-#endif
-
-		reg_val = ID_PFR0_EL1_raw(pfr0);
+	case ISS_MRS_MSR_ID_PFR0_EL1:
+		reg_val = sys_pfr0_read(thread);
 		break;
-	}
-	case ISS_MRS_MSR_ID_PFR1_EL1: {
-		ID_PFR1_EL1_t pfr1 = register_ID_PFR1_EL1_read();
-
-		reg_val = ID_PFR1_EL1_raw(pfr1);
+	case ISS_MRS_MSR_ID_PFR1_EL1:
+		reg_val = sys_pfr1_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_PFR2_EL1: {
-		ID_PFR2_EL1_t pfr2 = ID_PFR2_EL1_default();
-#if defined(ARCH_ARM_FEAT_CSV3)
-		ID_PFR2_EL1_set_CSV3(&pfr2, 1U);
-#endif
-#if defined(ARCH_ARM_FEAT_SSBS)
-		ID_PFR2_EL1_set_SSBS(&pfr2, 1U);
-#endif
-		reg_val = ID_PFR2_EL1_raw(pfr2);
+	case ISS_MRS_MSR_ID_PFR2_EL1:
+		reg_val = sys_pfr2_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_DFR0_EL1: {
-		ID_DFR0_EL1_t dfr0 = register_ID_DFR0_EL1_read();
-
-		// The debug, trace, PMU and SPE modules must correctly support
-		// the values reported by the hardware. All we do here is to
-		// zero out fields for features we don't support.
-
-#if !defined(MODULE_VM_VDEBUG)
-		// Note that ARMv8-A does not allow 0 (not implemented) in the
-		// CopDbg field. So this configuration is not really supported.
-		ID_DFR0_EL1_set_CopDbg(&dfr0, 0U);
-		ID_DFR0_EL1_set_CopSDbg(&dfr0, 0U);
-		ID_DFR0_EL1_set_MMapDbg(&dfr0, 0U);
-		ID_DFR0_EL1_set_MProfDbg(&dfr0, 0U);
-#endif
-
-#if defined(MODULE_VM_VETE)
-		// Only the HLOS VM is allowed to trace
-		if (!vcpu_option_flags_get_trace_allowed(
-			    &thread->vcpu_options)) {
-			ID_DFR0_EL1_set_CopTrc(&dfr0, 0U);
-			ID_DFR0_EL1_set_TraceFilt(&dfr0, 0U);
-		}
-#else
-		ID_DFR0_EL1_set_CopTrc(&dfr0, 0U);
-		ID_DFR0_EL1_set_TraceFilt(&dfr0, 0U);
-#endif
-#if defined(MODULE_VM_VETM)
-		// Only the HLOS VM is allowed to trace
-		if (!vcpu_option_flags_get_trace_allowed(
-			    &thread->vcpu_options)) {
-			ID_DFR0_EL1_set_MMapTrc(&dfr0, 0U);
-		}
-#else
-		ID_DFR0_EL1_set_MMapTrc(&dfr0, 0U);
-#endif
-#if !defined(MODULE_PLATFORM_ARM_PMU)
-		ID_DFR0_EL1_set_PerfMon(&dfr0, 0U);
-#endif
-
-		reg_val = ID_DFR0_EL1_raw(dfr0);
+	case ISS_MRS_MSR_ID_DFR0_EL1:
+		reg_val = sys_dfr0_read(thread);
 		break;
-	}
 	case ISS_MRS_MSR_ID_AFR0_EL1:
 		// RES0 - We don't know any AFR0 bits
 		break;
@@ -857,24 +1256,9 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_ID_MMFR2_EL1:
 		sysreg64_read(ID_MMFR2_EL1, reg_val);
 		break;
-	case ISS_MRS_MSR_ID_MMFR3_EL1: {
-		sysreg64_read(ID_MMFR3_EL1, reg_val);
-		ID_MMFR3_EL1_t mmfr1 = ID_MMFR3_EL1_cast(reg_val);
-#if defined(ARCH_ARM_FEAT_PAN3)
-		assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 3U);
-		ID_MMFR3_EL1_set_PAN(&mmfr1, 3U);
-#elif defined(ARCH_ARM_FEAT_PAN2) // now known as FEAT_PAN2
-		assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 2U);
-		ID_MMFR3_EL1_set_PAN(&mmfr1, 2U);
-#elif defined(ARCH_ARM_FEAT_PAN)
-		assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 1U);
-		ID_MMFR3_EL1_set_PAN(&mmfr1, 1U);
-#else
-		ID_MMFR3_EL1_set_PAN(&mmfr1, 0U);
-#endif
-		reg_val = ID_MMFR3_EL1_raw(mmfr1);
+	case ISS_MRS_MSR_ID_MMFR3_EL1:
+		reg_val = sys_mmfr3_read();
 		break;
-	}
 	case ISS_MRS_MSR_ID_MMFR4_EL1:
 		sysreg64_read(ID_MMFR4_EL1, reg_val);
 		break;
@@ -908,117 +1292,12 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_MVFR2_EL1:
 		sysreg64_read(MVFR2_EL1, reg_val);
 		break;
-	case ISS_MRS_MSR_ID_AA64PFR0_EL1: {
-		ID_AA64PFR0_EL1_t pfr0 = register_ID_AA64PFR0_EL1_read();
-
-		pfr0 = ID_AA64PFR0_EL1_clean(pfr0);
-#if !ARCH_AARCH64_32BIT_EL0
-		// Require EL0 to be 64-bit only, even if core supports 32-bit
-		ID_AA64PFR0_EL1_set_EL0(&pfr0, 1U);
-#endif
-#if !ARCH_AARCH64_32BIT_EL1
-		// Require EL1 to be 64-bit only, even if core supports 32-bit
-		ID_AA64PFR0_EL1_set_EL1(&pfr0, 1U);
-#endif
-		ID_AA64PFR0_EL1_set_EL2(&pfr0, 1U);
-		ID_AA64PFR0_EL1_set_EL3(&pfr0, 1U);
-#if defined(ARCH_ARM_HAVE_SCXT)
-		if (!vcpu_runtime_flags_get_scxt_allowed(&thread->vcpu_flags)) {
-			ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
-		}
-#elif defined(ARCH_ARM_FEAT_CSV2)
-		ID_AA64PFR0_EL1_set_CSV2(&pfr0, 1U);
-#endif
-
-#if defined(ARCH_ARM_FEAT_MPAM)
-		if (!arm_mpam_is_allowed() ||
-		    !vcpu_option_flags_get_mpam_allowed(
-			    &thread->vcpu_options)) {
-			// No MPAM
-			ID_AA64PFR0_EL1_set_MPAM(&pfr0, 0);
-		}
-#else
-		// No MPAM
-		ID_AA64PFR0_EL1_set_MPAM(&pfr0, 0);
-#endif
-
-#if defined(ARCH_ARM_FEAT_SVE)
-		// Tell non-SVE allowed guests that there is no SVE
-		if (!vcpu_option_flags_get_sve_allowed(&thread->vcpu_options)) {
-			ID_AA64PFR0_EL1_set_SVE(&pfr0, 0);
-		}
-#else
-		// No SVE
-		ID_AA64PFR0_EL1_set_SVE(&pfr0, 0);
-#endif
-
-#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
-		// Tell non-RAS handler guests there is no RAS
-		if (!vcpu_option_flags_get_ras_error_handler(
-			    &thread->vcpu_options)) {
-			ID_AA64PFR0_EL1_set_RAS(&pfr0, 0);
-		}
-#endif
-#if defined(ARCH_ARM_FEAT_AMUv1) || defined(ARCH_ARM_FEAT_AMUv1p1)
-		// Tell non-HLOS guests that there is no AMU
-		if (!vcpu_option_flags_get_hlos_vm(&thread->vcpu_options)) {
-			ID_AA64PFR0_EL1_set_AMU(&pfr0, 0);
-		}
-#endif
-#if !defined(ARCH_ARM_FEAT_SEL2)
-		ID_AA64PFR0_EL1_set_SEL2(&pfr0, 0U);
-#endif
-		ID_AA64PFR0_EL1_set_RME(&pfr0, 0U);
-
-		reg_val = ID_AA64PFR0_EL1_raw(pfr0);
+	case ISS_MRS_MSR_ID_AA64PFR0_EL1:
+		reg_val = sys_aa64pfr0_read(thread);
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64PFR1_EL1: {
-		ID_AA64PFR1_EL1_t pfr1 = register_ID_AA64PFR1_EL1_read();
-
-		pfr1 = ID_AA64PFR1_EL1_clean(pfr1);
-#if defined(ARCH_ARM_FEAT_MTE)
-		if (!arm_mte_is_allowed()) {
-			ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
-		}
-#else
-		ID_AA64PFR1_EL1_set_MTE(&pfr1, 0);
-#endif
-#if defined(ARCH_ARM_FEAT_RAS) || defined(ARCH_ARM_FEAT_RASv1p1)
-		if (!vcpu_option_flags_get_ras_error_handler(
-			    &thread->vcpu_options)) {
-			ID_AA64PFR1_EL1_set_RAS_frac(&pfr1, 0);
-		}
-#endif
-#if defined(ARCH_ARM_HAVE_SCXT) && defined(ARCH_ARM_FEAT_CSV2_1p2)
-		if (!vcpu_option_flags_get_scxt_allowed(
-			    &thread->vcpu_options)) {
-			ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 1U);
-		}
-#elif defined(ARCH_ARM_FEAT_CSV2_1p1)
-		ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 1U);
-#else
-		ID_AA64PFR1_EL1_set_CSV2_frac(&pfr1, 0U);
-#endif
-
-#if defined(ARCH_ARM_FEAT_MPAM)
-		if (!arm_mpam_is_allowed() ||
-		    !vcpu_option_flags_get_mpam_allowed(
-			    &thread->vcpu_options)) {
-			// No MPAM
-			ID_AA64PFR1_EL1_set_MPAM_frac(&pfr1, 0);
-		}
-#else
-		// No MPAM
-		ID_AA64PFR1_EL1_set_MPAM_frac(&pfr1, 0);
-#endif
-		// No SME / NMI
-		ID_AA64PFR1_EL1_set_SME(&pfr1, 0);
-		ID_AA64PFR1_EL1_set_NMI(&pfr1, 0);
-
-		reg_val = ID_AA64PFR1_EL1_raw(pfr1);
+	case ISS_MRS_MSR_ID_AA64PFR1_EL1:
+		reg_val = sys_aa64pfr1_read(thread);
 		break;
-	}
 	case ISS_MRS_MSR_ID_AA64ZFR0_EL1:
 #if defined(ARCH_ARM_FEAT_SVE)
 		// The SVE module will handle this register
@@ -1030,48 +1309,9 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_ID_AA64SMFR0_EL1:
 		// No Scalable Matrix Extension support for now
 		break;
-	case ISS_MRS_MSR_ID_AA64DFR0_EL1: {
-		ID_AA64DFR0_EL1_t dfr0	  = ID_AA64DFR0_EL1_default();
-		ID_AA64DFR0_EL1_t hw_dfr0 = register_ID_AA64DFR0_EL1_read();
-
-		// The debug, trace, PMU and SPE modules must correctly support
-		// the values reported by the hardware. All we do here is to
-		// zero out fields for missing modules.
-
-#if defined(MODULE_VM_VDEBUG)
-		// Note that ARMv8-A does not allow 0 (not implemented) in this
-		// field. So without this module is not really supported.
-		ID_AA64DFR0_EL1_copy_DebugVer(&dfr0, &hw_dfr0);
-
-		ID_AA64DFR0_EL1_copy_BRPs(&dfr0, &hw_dfr0);
-		ID_AA64DFR0_EL1_copy_WRPs(&dfr0, &hw_dfr0);
-		ID_AA64DFR0_EL1_copy_CTX_CMPs(&dfr0, &hw_dfr0);
-		ID_AA64DFR0_EL1_copy_DoubleLock(&dfr0, &hw_dfr0);
-#endif
-#if defined(MODULE_VM_ARM_VM_PMU)
-		ID_AA64DFR0_EL1_copy_PMUVer(&dfr0, &hw_dfr0);
-#endif
-#if defined(INTERFACE_VET)
-		// Set IDs for VMs allowed to trace
-		if (vcpu_option_flags_get_trace_allowed(
-			    &thread->vcpu_options)) {
-#if defined(MODULE_VM_VETE)
-			ID_AA64DFR0_EL1_copy_TraceVer(&dfr0, &hw_dfr0);
-			ID_AA64DFR0_EL1_copy_TraceFilt(&dfr0, &hw_dfr0);
-#endif
-#if defined(MODULE_VM_VTBRE)
-			ID_AA64DFR0_EL1_copy_TraceBuffer(&dfr0, &hw_dfr0);
-#endif
-		}
-#endif
-
-#if defined(MODULE_SPE)
-		ID_AA64DFR0_EL1_copy_PMSVer(&dfr0, &hw_dfr0);
-#endif
-
-		reg_val = ID_AA64DFR0_EL1_raw(dfr0);
+	case ISS_MRS_MSR_ID_AA64DFR0_EL1:
+		reg_val = sys_aa64dfr0_read(thread);
 		break;
-	}
 	case ISS_MRS_MSR_ID_AA64DFR1_EL1:
 		// RES0 - We don't know any AA64DFR1 bits
 		break;
@@ -1081,125 +1321,38 @@ sysreg_read(ESR_EL2_ISS_MSR_MRS_t iss)
 	case ISS_MRS_MSR_ID_AA64AFR1_EL1:
 		// RES0 - We don't know any AA64AFR1 bits
 		break;
-	case ISS_MRS_MSR_ID_AA64ISAR0_EL1: {
-		ID_AA64ISAR0_EL1_t isar0 = register_ID_AA64ISAR0_EL1_read();
-
-		isar0 = ID_AA64ISAR0_EL1_clean(isar0);
-
-		reg_val = ID_AA64ISAR0_EL1_raw(isar0);
+	case ISS_MRS_MSR_ID_AA64ISAR0_EL1:
+		reg_val = sys_aa64isar0_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64ISAR1_EL1: {
-		ID_AA64ISAR1_EL1_t isar1 = register_ID_AA64ISAR1_EL1_read();
-
-		isar1 = ID_AA64ISAR1_EL1_clean(isar1);
-#if !defined(ARCH_ARM_FEAT_BF16)
-		ID_AA64ISAR1_EL1_set_BF16(&isar1, 0U);
-#endif
-#if !defined(ARCH_ARM_FEAT_PAuth)
-		// When no PAUTH is enabled, hide it from the VM
-		ID_AA64ISAR1_EL1_set_APA(&isar1, 0U);
-		ID_AA64ISAR1_EL1_set_API(&isar1, 0U);
-		ID_AA64ISAR1_EL1_set_GPA(&isar1, 0U);
-		ID_AA64ISAR1_EL1_set_GPI(&isar1, 0U);
-#endif
-		reg_val = ID_AA64ISAR1_EL1_raw(isar1);
+	case ISS_MRS_MSR_ID_AA64ISAR1_EL1:
+		reg_val = sys_aa64isar1_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64ISAR2_EL1: {
-		ID_AA64ISAR2_EL1_t isar2 = register_ID_AA64ISAR2_EL1_read();
-
-		isar2 = ID_AA64ISAR2_EL1_clean(isar2);
-
-#if !defined(ARCH_ARM_FEAT_PAuth)
-		// When PAUTH using QARMA3 is disabled, hide it from the VM
-		ID_AA64ISAR2_EL1_set_APA3(&isar2, 0U);
-		ID_AA64ISAR2_EL1_set_GPA3(&isar2, 0U);
-		ID_AA64ISAR2_EL1_set_PAC_frac(&isar2, 0U);
-#endif
-#if defined(ARCH_ARM_FEAT_WFxT)
-		// Remove once FEAT_WFxT is implemented
-		// FIXME:
-		ID_AA64ISAR2_EL1_set_WFxT(&isar2, 0U);
-#endif
-		reg_val = ID_AA64ISAR2_EL1_raw(isar2);
+	case ISS_MRS_MSR_ID_AA64ISAR2_EL1:
+		reg_val = sys_aa64isar2_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64MMFR0_EL1: {
-		ID_AA64MMFR0_EL1_t mmfr0 = register_ID_AA64MMFR0_EL1_read();
-
-		mmfr0 = ID_AA64MMFR0_EL1_clean(mmfr0);
-
-		reg_val = ID_AA64MMFR0_EL1_raw(mmfr0);
+	case ISS_MRS_MSR_ID_AA64MMFR0_EL1:
+		reg_val = sys_aa64mmfr0_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64MMFR1_EL1: {
-		ID_AA64MMFR1_EL1_t mmfr1 = register_ID_AA64MMFR1_EL1_read();
-
-		mmfr1 = ID_AA64MMFR1_EL1_clean(mmfr1);
-
-#if defined(ARCH_ARM_FEAT_PAN3)
-		assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 3U);
-		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 3U);
-#elif defined(ARCH_ARM_FEAT_PAN2) // now known as FEAT_PAN2
-		assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 2U);
-		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 2U);
-#elif defined(ARCH_ARM_FEAT_PAN)
-		assert(ID_AA64MMFR1_EL1_get_PAN(&mmfr1) >= 1U);
-		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 1U);
-#else
-		ID_AA64MMFR1_EL1_set_PAN(&mmfr1, 0U);
-#endif
-		reg_val = ID_AA64MMFR1_EL1_raw(mmfr1);
+	case ISS_MRS_MSR_ID_AA64MMFR1_EL1:
+		reg_val = sys_aa64mmfr1_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64MMFR2_EL1: {
-		ID_AA64MMFR2_EL1_t mmfr2 = register_ID_AA64MMFR2_EL1_read();
-
-		mmfr2 = ID_AA64MMFR2_EL1_clean(mmfr2);
-
-		reg_val = ID_AA64MMFR2_EL1_raw(mmfr2);
+	case ISS_MRS_MSR_ID_AA64MMFR2_EL1:
+		reg_val = sys_aa64mmfr2_read();
 		break;
-	}
-	case ISS_MRS_MSR_ID_AA64MMFR3_EL1: {
-		ID_AA64MMFR3_EL1_t mmfr3    = ID_AA64MMFR3_EL1_default();
-		ID_AA64MMFR3_EL1_t hw_mmfr3 = register_ID_AA64MMFR3_EL1_read();
-		ID_AA64MMFR3_EL1_copy_Spec_FPACC(&mmfr3, &hw_mmfr3);
-		reg_val = ID_AA64MMFR3_EL1_raw(mmfr3);
+	case ISS_MRS_MSR_ID_AA64MMFR3_EL1:
+		reg_val = sys_aa64mmfr3_read();
 		break;
-	}
 	case ISS_MRS_MSR_ID_AA64MMFR4_EL1:
 		reg_val = 0;
 		break;
 	// The trapped ACTLR_EL1 by default returns 0 for reads.
 	// The particular access should be handled in sysreg_read_cpu.
-	case ISS_MRS_MSR_ACTLR_EL1: {
+	case ISS_MRS_MSR_ACTLR_EL1:
 		reg_val = 0U;
 		break;
-	}
-	default: {
-		uint8_t opc0, opc1, crn, crm;
-
-		opc0 = ESR_EL2_ISS_MSR_MRS_get_Op0(&iss);
-		opc1 = ESR_EL2_ISS_MSR_MRS_get_Op1(&iss);
-		crn  = ESR_EL2_ISS_MSR_MRS_get_CRn(&iss);
-		crm  = ESR_EL2_ISS_MSR_MRS_get_CRm(&iss);
-
-		if ((opc0 == 3U) && (opc1 == 0U) && (crn == 0U) &&
-		    (crm >= 1U) && (crm <= 7U)) {
-			// It is IMPLEMENTATION DEFINED whether HCR_EL2.TID3
-			// traps MRS accesses to the registers in this range
-			// (that have not been handled above). If we ever get
-			// here print a debug message so we can investigate.
-			TRACE_AND_LOG(DEBUG, DEBUG,
-				      "Emulated RAZ for ID register: ISS {:#x}",
-				      ESR_EL2_ISS_MSR_MRS_raw(iss));
-			reg_val = 0U;
-		} else {
-			ret = VCPU_TRAP_RESULT_UNHANDLED;
-		}
+	default:
+		ret = default_sys_read(&iss, &reg_val);
 		break;
-	}
 	}
 
 	// Update the thread's register

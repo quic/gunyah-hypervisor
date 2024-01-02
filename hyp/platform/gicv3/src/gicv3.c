@@ -1213,19 +1213,24 @@ gicv3_irq_enable_shared(irq_t irq)
 		}
 	}
 
+	{
 #if GICV3_EXT_IRQS
-	if (irq_type == GICV3_IRQ_TYPE_SPI) {
+		if (irq_type == GICV3_IRQ_TYPE_SPI) {
+			atomic_store_release(
+				&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
+				GIC_ENABLE_BIT(irq));
+		} else {
+			atomic_store_release(
+				&gicd->isenabler_e[GICD_ENABLE_GET_N(
+					irq - GIC_SPI_EXT_BASE)],
+				GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE));
+		}
+#else
 		atomic_store_release(&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
 				     GIC_ENABLE_BIT(irq));
-	} else {
-		atomic_store_release(&gicd->isenabler_e[GICD_ENABLE_GET_N(
-					     irq - GIC_SPI_EXT_BASE)],
-				     GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE));
-	}
-#else
-	atomic_store_release(&gicd->isenabler[GICD_ENABLE_GET_N(irq)],
-			     GIC_ENABLE_BIT(irq));
 #endif
+	}
+
 	spinlock_release(&spi_route_lock);
 }
 
@@ -1240,17 +1245,22 @@ gicv3_irq_enable_percpu(irq_t irq, cpu_index_t cpu)
 	switch (irq_type) {
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI: {
-		atomic_store_release(&gicr->sgi.isenabler0,
-				     GIC_ENABLE_BIT(irq));
+		{
+			atomic_store_release(&gicr->sgi.isenabler0,
+					     GIC_ENABLE_BIT(irq));
+		}
 		break;
 	}
 
 #if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
-		atomic_store_release(&gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
-					     irq - GIC_PPI_EXT_BASE)],
-				     GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE));
+		{
+			atomic_store_release(
+				&gicr->sgi.isenabler_e[GICD_ENABLE_GET_N(
+					irq - GIC_PPI_EXT_BASE)],
+				GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE));
+		}
 		break;
 	}
 #endif
@@ -1288,17 +1298,23 @@ gicv3_irq_disable_shared(irq_t irq)
 
 	switch (irq_type) {
 	case GICV3_IRQ_TYPE_SPI:
-		atomic_store_relaxed(&gicd->icenabler[GICD_ENABLE_GET_N(irq)],
-				     GIC_ENABLE_BIT(irq));
+		{
+			atomic_store_relaxed(
+				&gicd->icenabler[GICD_ENABLE_GET_N(irq)],
+				GIC_ENABLE_BIT(irq));
+		}
 		(void)gicd_wait_for_write();
 		break;
 
 #if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_SPI_EXT: {
 		// Extended SPI
-		atomic_store_relaxed(&gicd->icenabler_e[GICD_ENABLE_GET_N(
-					     irq - GIC_SPI_EXT_BASE)],
-				     GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE));
+		{
+			atomic_store_relaxed(
+				&gicd->icenabler_e[GICD_ENABLE_GET_N(
+					irq - GIC_SPI_EXT_BASE)],
+				GIC_ENABLE_BIT(irq - GIC_SPI_EXT_BASE));
+		}
 		(void)gicd_wait_for_write();
 		break;
 	}
@@ -1370,16 +1386,21 @@ gicv3_irq_disable_percpu_nowait(irq_t irq, cpu_index_t cpu)
 	switch (irq_type) {
 	case GICV3_IRQ_TYPE_SGI:
 	case GICV3_IRQ_TYPE_PPI: {
-		atomic_store_relaxed(&gicr->sgi.icenabler0,
-				     GIC_ENABLE_BIT(irq));
+		{
+			atomic_store_relaxed(&gicr->sgi.icenabler0,
+					     GIC_ENABLE_BIT(irq));
+		}
 		break;
 	}
 #if GICV3_EXT_IRQS
 	case GICV3_IRQ_TYPE_PPI_EXT: {
 		// Extended PPI
-		atomic_store_relaxed(&gicr->sgi.icenabler_e[GICD_ENABLE_GET_N(
-					     irq - GIC_PPI_EXT_BASE)],
-				     GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE));
+		{
+			atomic_store_relaxed(
+				&gicr->sgi.icenabler_e[GICD_ENABLE_GET_N(
+					irq - GIC_PPI_EXT_BASE)],
+				GIC_ENABLE_BIT(irq - GIC_PPI_EXT_BASE));
+		}
 		break;
 	}
 #endif
@@ -1666,31 +1687,35 @@ gicv3_spi_set_route_internal(irq_t irq, GICD_IROUTER_t route)
 
 	assert_preempt_disabled();
 
-	switch (gicv3_get_irq_type(irq)) {
-	case GICV3_IRQ_TYPE_SPI:
-		atomic_store_relaxed(&gicd->irouter[irq - GIC_SPI_BASE], route);
-		ret = OK;
-		break;
+	{
+		switch (gicv3_get_irq_type(irq)) {
+		case GICV3_IRQ_TYPE_SPI:
+			atomic_store_relaxed(&gicd->irouter[irq - GIC_SPI_BASE],
+					     route);
+			ret = OK;
+			break;
 #if GICV3_EXT_IRQS
-	case GICV3_IRQ_TYPE_SPI_EXT:
-		atomic_store_relaxed(&gicd->irouter_e[irq - GIC_SPI_EXT_BASE],
-				     route);
-		ret = OK;
-		break;
+		case GICV3_IRQ_TYPE_SPI_EXT:
+			atomic_store_relaxed(
+				&gicd->irouter_e[irq - GIC_SPI_EXT_BASE],
+				route);
+			ret = OK;
+			break;
 #endif
-	case GICV3_IRQ_TYPE_SGI:
-	case GICV3_IRQ_TYPE_PPI:
+		case GICV3_IRQ_TYPE_SGI:
+		case GICV3_IRQ_TYPE_PPI:
 #if GICV3_EXT_IRQS
-	case GICV3_IRQ_TYPE_PPI_EXT:
+		case GICV3_IRQ_TYPE_PPI_EXT:
 #endif
 #if GICV3_HAS_LPI
-	case GICV3_IRQ_TYPE_LPI:
+		case GICV3_IRQ_TYPE_LPI:
 #endif
-	case GICV3_IRQ_TYPE_SPECIAL:
-	case GICV3_IRQ_TYPE_RESERVED:
-	default:
-		ret = ERROR_ARGUMENT_INVALID;
-		break;
+		case GICV3_IRQ_TYPE_SPECIAL:
+		case GICV3_IRQ_TYPE_RESERVED:
+		default:
+			ret = ERROR_ARGUMENT_INVALID;
+			break;
+		}
 	}
 
 	return ret;

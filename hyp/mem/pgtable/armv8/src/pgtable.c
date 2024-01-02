@@ -559,6 +559,23 @@ hyp_tlbi_ipa_range(vmaddr_t ipa_start, size_t size, count_t granule_shift,
 #endif
 
 static void
+dsb_st(bool outer_shareable)
+{
+#ifndef HOST_TEST
+#if defined(ARCH_ARM_FEAT_TLBIOS)
+	if (outer_shareable) {
+		__asm__ volatile("dsb oshst" ::: "memory");
+	} else {
+		__asm__ volatile("dsb ishst" ::: "memory");
+	}
+#else
+	(void)outer_shareable;
+	__asm__ volatile("dsb ishst" ::: "memory");
+#endif
+#endif
+}
+
+static void
 dsb(bool outer_shareable)
 {
 #ifndef HOST_TEST
@@ -678,10 +695,6 @@ static void
 set_invalid_entry(vmsa_level_table_t *table, index_t idx);
 
 static void
-set_table_entry(vmsa_level_table_t *table, index_t idx, paddr_t addr,
-		count_t count);
-
-static void
 set_page_entry(vmsa_level_table_t *table, index_t idx, paddr_t addr,
 	       vmsa_upper_attrs_t upper_attrs, vmsa_lower_attrs_t lower_attrs,
 	       bool contiguous, bool fence);
@@ -711,7 +724,8 @@ alloc_level_table(partition_t *partition, size_t size, size_t alignment,
 static void
 set_pgtables(vmaddr_t virtual_address, stack_elem_t stack[PGTABLE_LEVEL_NUM],
 	     index_t first_new_table_level, index_t cur_level,
-	     count_t initial_refcount, index_t start_level);
+	     count_t initial_refcount, index_t start_level,
+	     bool outer_shareable);
 
 static pgtable_modifier_ret_t
 map_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
@@ -723,13 +737,6 @@ map_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 static pgtable_modifier_ret_t
 lookup_modifier(pgtable_t *pgt, vmsa_entry_t cur_entry, index_t level,
 		pgtable_entry_types_t type, void *data);
-
-static void
-check_refcount(pgtable_t *pgt, partition_t *partition, vmaddr_t virtual_address,
-	       size_t size, index_t upper_level,
-	       stack_elem_t stack[PGTABLE_LEVEL_NUM], bool need_dec,
-	       size_t preserved_size, index_t *next_level,
-	       vmaddr_t *next_virtual_address, size_t *next_size);
 
 #if 0
 static bool
@@ -767,7 +774,9 @@ static inline index_t
 get_index(vmaddr_t addr, const pgtable_level_info_t *info, bool is_first_level)
 {
 	index_t index;
-	if (is_first_level) {
+	if (compiler_unexpected(is_first_level &&
+				!is_high_virtual_address(addr))) {
+		// Handle contiguous tables
 		index = (index_t)(addr >> info->lsb);
 	} else {
 		index = (index_t)((addr & segment_mask(info->msb, info->lsb)) >>
@@ -892,7 +901,7 @@ static bool
 addr_check(vmaddr_t virtual_address, size_t bit_count, bool is_high)
 {
 #if ARCH_IS_64BIT
-	static_assert(sizeof(vmaddr_t) == 8, "vmaddr_t expected to be 64bits");
+	static_assert(sizeof(vmaddr_t) == 8U, "vmaddr_t expected to be 64bits");
 
 	uint64_t v     = is_high ? ~virtual_address : virtual_address;
 	size_t	 count = (v == 0U) ? 0U : 64U - (compiler_clz(v) + 1);
@@ -1084,7 +1093,7 @@ map_stg2_attr_to_access(vmsa_upper_attrs_t upper_attrs,
 #if defined(ARCH_ARM_FEAT_XNX)
 	bool uxn	 = vmsa_stg2_upper_attrs_get_UXN(&u);
 	bool pxn_xor_uxn = vmsa_stg2_upper_attrs_get_PXNxorUXN(&u);
-	bool pxn	 = (bool)(pxn_xor_uxn ^ uxn);
+	bool pxn	 = pxn_xor_uxn != uxn;
 	*user_access = uxn ? rw : pgtable_access_combine(rw, PGTABLE_ACCESS_X);
 	*kernel_access = pxn ? rw
 			     : pgtable_access_combine(rw, PGTABLE_ACCESS_X);
@@ -1210,7 +1219,7 @@ map_stg2_access_to_attrs(pgtable_access_t	  kernel_access,
 #if defined(ARCH_ARM_FEAT_XNX)
 	vmsa_stg2_upper_attrs_set_UXN(upper_attrs, !user_exec);
 	vmsa_stg2_upper_attrs_set_PXNxorUXN(upper_attrs,
-					    (bool)(!kernel_exec ^ !user_exec));
+					    kernel_exec != user_exec);
 #else
 	vmsa_stg2_upper_attrs_set_XN(upper_attrs, !kernel_exec || !user_exec);
 #endif
@@ -1257,16 +1266,19 @@ set_invalid_entry(vmsa_level_table_t *table, index_t idx)
 
 static void
 set_table_entry(vmsa_level_table_t *table, index_t idx, paddr_t addr,
-		count_t count)
+		count_t count, bool outer_shareable)
 {
 	vmsa_table_entry_t entry = vmsa_table_entry_default();
 
 	vmsa_table_entry_set_NextLevelTableAddress(&entry, addr);
 	vmsa_table_entry_set_refcount(&entry, count);
 
+	// Ensure prior writes are observable to the TLB walker
+	dsb_st(outer_shareable);
+
 	partition_phys_access_enable(&table[idx]);
 	vmsa_entry_t g = { .table = entry };
-	atomic_store_explicit(&table[idx], g.base, memory_order_release);
+	atomic_store_explicit(&table[idx], g.base, memory_order_relaxed);
 	partition_phys_access_disable(&table[idx]);
 }
 
@@ -1373,7 +1385,8 @@ alloc_level_table(partition_t *partition, size_t size, size_t alignment,
 static void
 set_pgtables(vmaddr_t virtual_address, stack_elem_t stack[PGTABLE_LEVEL_NUM],
 	     index_t first_new_table_level, index_t cur_level,
-	     count_t initial_refcount, index_t start_level)
+	     count_t initial_refcount, index_t start_level,
+	     bool outer_shareable)
 {
 	paddr_t			    lower;
 	vmsa_level_table_t	   *table;
@@ -1406,7 +1419,8 @@ set_pgtables(vmaddr_t virtual_address, stack_elem_t stack[PGTABLE_LEVEL_NUM],
 			set_table_refcount(table, idx, refcount);
 		} else {
 			// Write the table entry.
-			set_table_entry(table, idx, lower, refcount);
+			set_table_entry(table, idx, lower, refcount,
+					outer_shareable);
 
 			// The refcount for the remaining levels should be 1.
 			refcount = 1;
@@ -1547,16 +1561,16 @@ pgtable_maybe_update_access(pgtable_t	*pgt,
 
 #if defined(ARCH_ARM_FEAT_TLBIRANGE)
 	if (margs->stage == PGTABLE_HYP_STAGE_1) {
-		dsb(false);
+		dsb_st(false);
 		hyp_tlbi_va_range(start_virtual_address, updated_size,
 				  pgt->granule_shift);
 	} else {
-		dsb(margs->outer_shareable);
+		dsb_st(margs->outer_shareable);
 		hyp_tlbi_ipa_range(start_virtual_address, updated_size,
 				   pgt->granule_shift, margs->outer_shareable);
 	}
 #else
-	dsb(margs->outer_shareable);
+	dsb_st(margs->outer_shareable);
 
 	for (size_t offset = 0U; offset < updated_size; offset += addr_size) {
 		if (margs->stage == PGTABLE_HYP_STAGE_1) {
@@ -1697,10 +1711,10 @@ pgtable_split_block(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 
 	// Flush the TLB entry
 	if (margs->stage == PGTABLE_HYP_STAGE_1) {
-		dsb(false);
+		dsb_st(false);
 		hyp_tlbi_va(entry_virtual_address);
 	} else {
-		dsb(margs->outer_shareable);
+		dsb_st(margs->outer_shareable);
 		vm_tlbi_ipa(entry_virtual_address, margs->outer_shareable);
 		// The full stage-1 flushing below is really sub-optimal.
 		// FIXME:
@@ -1788,19 +1802,22 @@ pgtable_split_block(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 	}
 
 #if (CPU_PGTABLE_BBM_LEVEL < 2U) && !defined(PLATFORM_PGTABLE_AVOID_BBM)
+	// There is a dsb_st in set_pgtables() which is sufficient for FEAT_ETS2
+#if !defined(ARCH_ARM_FEAT_ETS2) || !ARCH_ARM_FEAT_ETS2
 	// Wait for the TLB flush before inserting the new table entry
 	dsb(margs->outer_shareable);
 #endif
+#endif
 	set_pgtables(entry_virtual_address, stack, new_page_start_level, level,
-		     new_pages, pgt->start_level);
+		     new_pages, pgt->start_level, margs->outer_shareable);
 
 #if (CPU_PGTABLE_BBM_LEVEL >= 2U) || defined(PLATFORM_PGTABLE_AVOID_BBM)
 	// Flush the old entry from the TLB now, to avoid TLB conflicts later.
 	if (margs->stage == PGTABLE_HYP_STAGE_1) {
-		dsb(false);
+		dsb_st(false);
 		hyp_tlbi_va(entry_virtual_address);
 	} else {
-		dsb(margs->outer_shareable);
+		dsb_st(margs->outer_shareable);
 		vm_tlbi_ipa(entry_virtual_address, margs->outer_shareable);
 	}
 #endif
@@ -2023,17 +2040,17 @@ pgtable_maybe_merge_block(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 	vmaddr_t next_level_addr = entry_virtual_address;
 #ifdef ARCH_ARM_FEAT_TLBIRANGE
 	if (margs->stage == PGTABLE_HYP_STAGE_1) {
-		dsb(false);
+		dsb_st(false);
 		hyp_tlbi_va_range(entry_virtual_address,
 				  cur_level_info->addr_size,
 				  pgt->granule_shift);
 	} else {
-		dsb(margs->outer_shareable);
+		dsb_st(margs->outer_shareable);
 		hyp_tlbi_ipa_range(next_level_addr, cur_level_info->addr_size,
 				   pgt->granule_shift, margs->outer_shareable);
 	}
 #else
-	dsb((margs->stage != PGTABLE_HYP_STAGE_1) && margs->outer_shareable);
+	dsb_st((margs->stage != PGTABLE_HYP_STAGE_1) && margs->outer_shareable);
 	for (index_t i = 0; i < next_level_info->entry_cnt; i++) {
 		if (margs->stage == PGTABLE_HYP_STAGE_1) {
 			hyp_tlbi_va(next_level_addr);
@@ -2057,6 +2074,9 @@ pgtable_maybe_merge_block(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 
 	set_block_entry(cur_table, idx, entry_phys, margs->upper_attrs,
 			margs->lower_attrs, false, false, false);
+#else
+	// Wait for the TLB flush before reusing the freed page table memory
+	dsb((margs->stage != PGTABLE_HYP_STAGE_1) && margs->outer_shareable);
 #endif
 
 	// Release the page table memory
@@ -2175,7 +2195,7 @@ map_modifier_insert_new_leaf(const pgtable_t *pgt, vmaddr_t virtual_address,
 
 	// check if need to set all page table levels
 	set_pgtables(virtual_address, stack, new_page_start_level, level, 1U,
-		     pgt->start_level);
+		     pgt->start_level, margs->outer_shareable);
 
 	// update the physical address for next mapping
 	margs->phys += addr_size;
@@ -2360,7 +2380,7 @@ static void
 check_refcount(pgtable_t *pgt, partition_t *partition, vmaddr_t virtual_address,
 	       size_t size, index_t upper_level,
 	       stack_elem_t stack[PGTABLE_LEVEL_NUM], bool need_dec,
-	       size_t preserved_size, index_t *next_level,
+	       const pgtable_unmap_modifier_args_t *margs, index_t *next_level,
 	       vmaddr_t *next_virtual_address, size_t *next_size)
 {
 	const pgtable_level_info_t *cur_level_info = NULL;
@@ -2391,8 +2411,8 @@ check_refcount(pgtable_t *pgt, partition_t *partition, vmaddr_t virtual_address,
 		}
 
 		if (refcount == 0U) {
-			is_preserved = is_preserved_table_entry(preserved_size,
-								cur_level_info);
+			is_preserved = is_preserved_table_entry(
+				margs->preserved_size, cur_level_info);
 
 			if (is_preserved) {
 				break;
@@ -2458,12 +2478,26 @@ check_refcount(pgtable_t *pgt, partition_t *partition, vmaddr_t virtual_address,
 		cur_table = NULL;
 	}
 
-	// free the page table levels at one time, the free will do the fence
+	if (free_idx > 0U) {
+		// We need to ensure that the removed levels are no longer
+		// reachable and all of their walk cache entries are removed
+		// before we reuse the memory for any other purpose.
+		if (margs->stage == PGTABLE_HYP_STAGE_1) {
+			dsb_st(false);
+			hyp_tlbi_va(virtual_address);
+			dsb(false);
+		} else {
+			dsb_st(margs->outer_shareable);
+			vm_tlbi_ipa(virtual_address, margs->outer_shareable);
+			dsb(margs->outer_shareable);
+		}
+	}
+
 	while (free_idx > 0U) {
 		free_idx--;
 
 		if (free_list[free_idx]->need_unmap) {
-			// Only used by unmap, should always need unamp
+			// Only used by unmap, should always need unmap
 			partition_phys_unmap(free_list[free_idx]->table,
 					     free_list[free_idx]->paddr,
 					     util_bit(pgt->granule_shift));
@@ -2551,18 +2585,18 @@ unmap_clear_cont_bit(vmsa_level_table_t *table, vmaddr_t virtual_address,
 		~((util_bit(info->lsb) * info->contiguous_entry_cnt) - 1U);
 #ifdef ARCH_ARM_FEAT_TLBIRANGE
 	if (margs->stage == PGTABLE_HYP_STAGE_1) {
-		dsb(false);
+		dsb_st(false);
 		hyp_tlbi_va_range(vaddr,
 				  info->contiguous_entry_cnt * info->addr_size,
 				  granule_shift);
 	} else {
-		dsb(margs->outer_shareable);
+		dsb_st(margs->outer_shareable);
 		hyp_tlbi_ipa_range(vaddr,
 				   info->contiguous_entry_cnt * info->addr_size,
 				   granule_shift, margs->outer_shareable);
 	}
 #else
-	dsb(margs->outer_shareable);
+	dsb_st(margs->outer_shareable);
 	for (index_t i = 0; i < info->contiguous_entry_cnt; i++) {
 		if (margs->stage == PGTABLE_HYP_STAGE_1) {
 			hyp_tlbi_va(vaddr);
@@ -2740,10 +2774,10 @@ unmap_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 			need_dec = true;
 
 			if (margs->stage == PGTABLE_HYP_STAGE_1) {
-				dsb(false);
+				dsb_st(false);
 				hyp_tlbi_va(virtual_address);
 			} else {
-				dsb(margs->outer_shareable);
+				dsb_st(margs->outer_shareable);
 				vm_tlbi_ipa(virtual_address,
 					    margs->outer_shareable);
 			}
@@ -2754,8 +2788,7 @@ unmap_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 
 	if (level != pgt->start_level) {
 		check_refcount(pgt, margs->partition, virtual_address, size,
-			       level - 1U, stack, need_dec,
-			       margs->preserved_size, next_level,
+			       level - 1U, stack, need_dec, margs, next_level,
 			       next_virtual_address, next_size);
 	}
 
@@ -2808,7 +2841,7 @@ prealloc_modifier(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 		if (margs->new_page_start_level != PGTABLE_INVALID_LEVEL) {
 			set_pgtables(virtual_address, stack,
 				     margs->new_page_start_level, level, 0U,
-				     pgt->start_level);
+				     pgt->start_level, false);
 
 			margs->new_page_start_level = PGTABLE_INVALID_LEVEL;
 		}
@@ -3462,9 +3495,10 @@ pgtable_handle_boot_runtime_warm_init(void)
 	TCR_EL2_E2H1_set_SH0(&tcr_val, TCR_SH_INNER_SHAREABLE);
 	TCR_EL2_E2H1_set_TG0(&tcr_val, TCR_TG0_GRANULE_SIZE_4KB);
 
+	dsb(false);
 	register_TTBR0_EL2_write_barrier(ttbr0_val);
+	asm_context_sync_fence();
 	register_TCR_EL2_E2H1_write_barrier(tcr_val);
-
 	asm_context_sync_fence();
 #endif
 }
@@ -3536,10 +3570,6 @@ pgtable_hyp_lookup(uintptr_t virtual_address, paddr_t *mapped_base,
 		goto out;
 	}
 
-	if (is_high) {
-		virtual_address &= util_mask(pgt->address_bits);
-	}
-
 	pgtable_entry_types_set_block(&entry_types, true);
 	pgtable_entry_types_set_page(&entry_types, true);
 	// just try to lookup a page, but if it's a block, the modifier will
@@ -3604,10 +3634,6 @@ pgtable_hyp_preallocate(partition_t *partition, uintptr_t virtual_address,
 	assert(addr_check(virtual_address, pgt->address_bits, is_high) &&
 	       addr_check(virtual_address + size - 1, pgt->address_bits,
 			  is_high));
-
-	if (is_high) {
-		virtual_address &= util_mask(pgt->address_bits);
-	}
 
 	margs.partition		   = partition;
 	margs.new_page_start_level = PGTABLE_INVALID_LEVEL;
@@ -3685,10 +3711,6 @@ pgtable_do_hyp_map(partition_t *partition, uintptr_t virtual_address,
 			is_high)) {
 		margs.error = ERROR_ADDR_INVALID;
 		goto out;
-	}
-
-	if (is_high) {
-		virtual_address &= util_mask(pgt->address_bits);
 	}
 
 	margs.orig_virtual_address = virtual_address;
@@ -3792,10 +3814,6 @@ pgtable_hyp_unmap(partition_t *partition, uintptr_t virtual_address,
 	assert(util_is_p2aligned(virtual_address, pgt->granule_shift));
 	assert(util_is_p2aligned(size, pgt->granule_shift));
 
-	if (is_high) {
-		virtual_address &= util_mask(pgt->address_bits);
-	}
-
 	margs.partition	     = partition;
 	margs.preserved_size = preserved_prealloc;
 	margs.stage	     = PGTABLE_HYP_STAGE_1;
@@ -3832,6 +3850,12 @@ void
 pgtable_hyp_commit(void) LOCK_IMPL
 {
 	dsb(false);
+	// An ISB is needed if the CPU does not implement FEAT_ETS2. If ETS2
+	// is available, we can skip the ISB, because we never dynamically
+	// create executable mappings in EL2 address space.
+#if !defined(ARCH_ARM_FEAT_ETS2) || !ARCH_ARM_FEAT_ETS2
+	asm_context_sync_fence();
+#endif
 #if !defined(NDEBUG)
 	assert(pgtable_op);
 	pgtable_op = false;
@@ -3904,10 +3928,6 @@ pgtable_hyp_ext(vmaddr_t virtual_address, size_t size,
 	if (!util_is_p2aligned(virtual_address, pgt->granule_shift)) {
 		LOG(DEBUG, INFO, "address not aligned\n");
 		goto out;
-	}
-
-	if (is_high) {
-		virtual_address &= util_mask(pgt->address_bits);
 	}
 
 	(void)translation_table_walk(
@@ -4147,8 +4167,8 @@ pgtable_vm_init(partition_t *partition, pgtable_vm_t *pgtable, vmid_t vmid)
 #error untested granule size
 #endif
 	pgtable->control.address_bits = PLATFORM_VM_ADDRESS_SPACE_BITS;
-	msb			      = PLATFORM_VM_ADDRESS_SPACE_BITS - 1;
-	pgtable->control.vmid	      = vmid;
+	msb		      = (index_t)PLATFORM_VM_ADDRESS_SPACE_BITS - 1U;
+	pgtable->control.vmid = vmid;
 
 	get_start_level_info_ret_t info =
 		get_start_level_info(level_conf, msb, true);
@@ -4168,6 +4188,7 @@ pgtable_vm_init(partition_t *partition, pgtable_vm_t *pgtable, vmid_t vmid)
 #if !defined(HOST_TEST)
 	pgtable_vm_init_regs(pgtable);
 #endif
+	dsb(false);
 
 out:
 	return ret;

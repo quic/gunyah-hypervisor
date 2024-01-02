@@ -4,7 +4,8 @@
 
 error_t
 virtio_mmio_configure(virtio_mmio_t *virtio_mmio, memextent_t *memextent,
-		      count_t vqs_num);
+		      count_t vqs_num, virtio_option_flags_t flags,
+		      virtio_device_type_t device_type);
 
 error_t
 virtio_mmio_backend_bind_virq(virtio_mmio_t *virtio_mmio, vic_t *vic,

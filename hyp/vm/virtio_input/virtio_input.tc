@@ -1,0 +1,72 @@
+// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define VIRTIO_MMIO_INPUT_REG_CONFIG_BYTES constant type count_t = (VIRTIO_MMIO_REG_CONFIG_BYTES - 0x88);
+define VIRTIO_INPUT_MAX_ABS_AXES constant type count_t = 64;
+define VIRTIO_INPUT_MAX_EV_TYPES constant type count_t = 32;
+define VIRTIO_INPUT_MAX_STRING_SIZE constant type count_t = 128;
+define VIRTIO_INPUT_MAX_BITMAP_SIZE constant type count_t = 128;
+define VIRTIO_INPUT_MAX_ABSINFO_SIZE constant type count_t = 20;
+define VIRTIO_INPUT_SUBSEL_INVALID constant type count_t = 255;
+
+extend virtio_config_space union {
+	input_config	structure virtio_input_config;
+};
+
+extend virtio_device_type enumeration {
+	INPUT = 18;
+};
+
+extend virtio_mmio object {
+	input_data	pointer structure virtio_input_data;
+};
+
+define virtio_input_absinfo structure {
+	subsel		uint8;
+	data		array(VIRTIO_INPUT_MAX_ABSINFO_SIZE) uint8;
+};
+
+define virtio_input_ev_bits structure {
+	subsel		uint8;
+	size		uint8;
+	data		array(VIRTIO_INPUT_MAX_BITMAP_SIZE) uint8;
+};
+
+define virtio_input_data structure {
+	name		array(VIRTIO_INPUT_MAX_STRING_SIZE) uint8;
+	name_size	size;
+	serial		array(VIRTIO_INPUT_MAX_STRING_SIZE) uint8;
+	serial_size	size;
+	prop_bits	uint32;
+	devids		uint64;
+	absinfo		pointer structure virtio_input_absinfo;
+	absinfo_count	type count_t;
+	ev_bits		pointer structure virtio_input_ev_bits;
+	ev_bits_count	type count_t;
+};
+
+define virtio_input_config structure {
+	select @ 0x00	uint8(atomic);
+	subsel @ 0x01	uint8(atomic);
+	size @ 0x02	uint8(atomic);
+	u @ 0x08	union virtio_input_banked_regs;
+	config	@ 0x88	array(VIRTIO_MMIO_INPUT_REG_CONFIG_BYTES) uint8(atomic);
+};
+
+define virtio_input_banked_regs union {
+	string		array(VIRTIO_INPUT_MAX_STRING_SIZE) uint8(atomic);
+	bitmap		array(VIRTIO_INPUT_MAX_BITMAP_SIZE) uint8(atomic);
+	abs		array(VIRTIO_INPUT_MAX_ABSINFO_SIZE) uint8(atomic);
+	ids		uint64(atomic);
+};
+
+define virtio_input_config_select enumeration(explicit) {
+	CFG_UNSET	= 0x00;
+	CFG_ID_NAME	= 0x01;
+	CFG_ID_SERIAL	= 0x02;
+	CFG_ID_DEVIDS	= 0x03;
+	CFG_PROP_BITS	= 0x10;
+	CFG_EV_BITS	= 0x11;
+	CFG_ABS_INFO	= 0x12;
+};

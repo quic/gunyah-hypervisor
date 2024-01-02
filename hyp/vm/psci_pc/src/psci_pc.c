@@ -16,7 +16,6 @@
 #include <cspace_lookup.h>
 #include <idle.h>
 #include <ipi.h>
-#include <irq.h>
 #include <list.h>
 #include <log.h>
 #include <object.h>
@@ -357,13 +356,10 @@ psci_pc_handle_idle_yield(bool in_idle_thread)
 		(void)psci_set_vpm_active_pcpus_bit(cpu);
 	}
 
-	if (suspend_result == OK) {
-		// Return from successful suspend. We were presumably woken by
-		// an interrupt; handle it now and reschedule if required.
-		idle_state = irq_interrupt_dispatch() ? IDLE_STATE_RESCHEDULE
-						      : IDLE_STATE_WAKEUP;
-	} else if (suspend_result == ERROR_BUSY) {
-		// An interrupt will arrive soon, continue with idle.
+	if ((suspend_result == OK) || (suspend_result == ERROR_BUSY)) {
+		// Return from successful suspend, or suspend failure due to a
+		// pending wakeup. Poll for wakeup events.
+		idle_state = idle_wakeup();
 	} else if (suspend_result != ERROR_DENIED) {
 		TRACE_AND_LOG(ERROR, WARN, "ERROR: psci suspend error {:d}",
 			      (register_t)suspend_result);

@@ -1,3 +1,10 @@
 // © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
 //
 // SPDX-License-Identifier: BSD-3-Clause
+
+extend thread object module vcpu_power {
+	// True if this VCPU is currently powered on and not stopped; i.e. it
+	// should be voting for power on of any CPU it has static affinity to.
+	// This is protected by the VCPU's scheduler lock.
+	should_vote		bool;
+};

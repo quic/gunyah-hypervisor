@@ -6,7 +6,7 @@ interface smccc
 
 #define SMCCC_DISPATCH(type, size)				\
 selector_event smccc_dispatch_ ## type ## _ ## size;		\
-	selector interface_id: smccc_interface_id_t;		\
+	selector owner_id: smccc_owner_id_t;		\
 	param function: smccc_function_t;			\
 	param is_hvc: bool;					\
 	param arg1: uint ## size ## _t;				\
@@ -26,8 +26,8 @@ SMCCC_DISPATCH(fast, 64)
 SMCCC_DISPATCH(yielding, 32)
 SMCCC_DISPATCH(yielding, 64)
 
-#define _SMCCC_CALL_INTERFACE(type, size, iface)	\
-selector_event smccc_call_ ## type ## _ ## size ## _ ## iface;	\
+#define _SMCCC_CALL_OWNER(type, size, owner)	\
+selector_event smccc_call_ ## type ## _ ## size ## _ ## owner;	\
 	selector function: smccc_function_t;			\
 	param is_hvc: bool;					\
 	param arg1: uint ## size ## _t;				\
@@ -42,19 +42,19 @@ selector_event smccc_call_ ## type ## _ ## size ## _ ## iface;	\
 	param ret2: uint ## size ## _t *;			\
 	param ret3: uint ## size ## _t *.
 
-#define SMCCC_CALL_INTERFACE(iface) \
-	_SMCCC_CALL_INTERFACE(fast, 32, iface) \
-	_SMCCC_CALL_INTERFACE(fast, 64, iface) \
-	_SMCCC_CALL_INTERFACE(yielding, 32, iface) \
-	_SMCCC_CALL_INTERFACE(yielding, 64, iface)
+#define SMCCC_CALL_OWNER(owner) \
+	_SMCCC_CALL_OWNER(fast, 32, owner) \
+	_SMCCC_CALL_OWNER(fast, 64, owner) \
+	_SMCCC_CALL_OWNER(yielding, 32, owner) \
+	_SMCCC_CALL_OWNER(yielding, 64, owner)
 
-SMCCC_CALL_INTERFACE(arch)
-SMCCC_CALL_INTERFACE(cpu)
-SMCCC_CALL_INTERFACE(sip)
-SMCCC_CALL_INTERFACE(oem)
-SMCCC_CALL_INTERFACE(standard)
-SMCCC_CALL_INTERFACE(standard_hyp)
-SMCCC_CALL_INTERFACE(vendor_hyp)
+SMCCC_CALL_OWNER(arch)
+SMCCC_CALL_OWNER(cpu)
+SMCCC_CALL_OWNER(sip)
+SMCCC_CALL_OWNER(oem)
+SMCCC_CALL_OWNER(standard)
+SMCCC_CALL_OWNER(standard_hyp)
+SMCCC_CALL_OWNER(vendor_hyp)
 
 selector_event smccc_arch_features_fast32
 	selector function: smccc_arch_function_t
