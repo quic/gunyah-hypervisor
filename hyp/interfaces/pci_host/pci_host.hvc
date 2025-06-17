@@ -1,0 +1,59 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define pci_host_configure hypercall {
+	call_num	0x7B;
+	pci_host	input type cap_id_t;
+	aspace		input type cap_id_t;
+	cam_me		input type cap_id_t;
+	cam_base	input type vmaddr_t;
+	options		input bitfield pci_host_option_flags;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define pci_host_add_aperture hypercall {
+	call_num	0x7C;
+	pci_host	input type cap_id_t;
+	mem_me		input type cap_id_t;
+	mem_base	input type vmaddr_t;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define pci_host_set_lockdown hypercall {
+	call_num	0x7D;
+	pci_host	input type cap_id_t;
+	lockdown_state	input enumeration pci_host_lockdown_state;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define pci_function_configure hypercall {
+	call_num	0x7F;
+	pci_function	input type cap_id_t;
+	pci_host	input type cap_id_t;
+	responder_id	input bitfield pci_responder_id;
+	options		input bitfield pci_function_option_flags;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define pci_function_add_capability hypercall {
+	call_num	0x86;
+	pci_function	input type cap_id_t;
+	offset		input size;
+	size		input size;
+	flags		input bitfield pci_capability_access_flags;
+	res0		input uregister;
+	error		output enumeration error;
+};
+
+define pci_function_set_passthrough hypercall {
+	call_num	0x87;
+	pci_function	input type cap_id_t;
+	enable		input bool;
+	res0		input uregister;
+	error		output enumeration error;
+};

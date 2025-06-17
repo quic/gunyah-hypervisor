@@ -223,6 +223,27 @@ Generic rights are valid for all object types.
 |-------------------|-------------------|
 | VirtIO IOMMU Bind VPCI | `0x00000001` |
 
+### Virtual PCI
+
+| Right             |  Value            |
+|-------------------|-------------------|
+| Virtual PCI Attach Function | `0x00000001` |
+| Virtual PCI Bind VIRQ | `0x00000002` |
+
+### Physical PCIe Root Complex
+
+| Right             |  Value            |
+|-------------------|-------------------|
+| Physical PCIe RC Create Function | `0x00000001` |
+| Physical PCIe RC Set Lockdown State | `0x00000002` |
+
+### Physical PCIe Function
+
+| Right             |  Value            |
+|-------------------|-------------------|
+| Physical PCIe Function Passthrough | `0x00000001` |
+| Physical PCIe Function Attach | `0x00000002` |
+
 ## Hypervisor Identification
 
 ### Hypervisor API Version and Features
@@ -622,6 +643,52 @@ Allocates a new VirtIO IOMMU object from the Partition and creates a master capa
 |                         |     X2: Reserved   – Must be Zero     |
 |     Outputs:            |     X0: Error Result                  |
 |                         |     X1: VirtIO IOMMU CapID            |
+
+On successful creation, the object's state is `OBJECT_STATE_INIT` and the newly created master Capability ID is returned.
+
+**Errors:**
+
+OK – the operation was successful, and the result is valid.
+
+ERROR_NOMEM – the creation failed due to memory allocation error.
+
+Also see: [Capability Errors](#capability-errors)
+
+### Physical PCIe Root Complex object creation
+
+Allocates a new Physical PCIe Root Complex object from the Partition and creates a master capability in the given CSpace.
+
+|    **Hypercall**:       |      `partition_create_pci_host`      |
+|-------------------------|---------------------------------------|
+|     Call number:        |     `hvc 0x607A`                      |
+|     Inputs:             |     X0: Partition CapID               |
+|                         |     X1: CSpace CapID                  |
+|                         |     X2: Reserved   – Must be Zero     |
+|     Outputs:            |     X0: Error Result                  |
+|                         |     X1: PCI Root Complex CapID        |
+
+On successful creation, the object's state is `OBJECT_STATE_INIT` and the newly created master Capability ID is returned.
+
+**Errors:**
+
+OK – the operation was successful, and the result is valid.
+
+ERROR_NOMEM – the creation failed due to memory allocation error.
+
+Also see: [Capability Errors](#capability-errors)
+
+### Physical PCIe Function object creation
+
+Allocates a new Physical PCIe Function object from the Partition and creates a master capability in the given CSpace.
+
+|    **Hypercall**:       |      `partition_create_pci_function`  |
+|-------------------------|---------------------------------------|
+|     Call number:        |     `hvc 0x607E`                      |
+|     Inputs:             |     X0: Partition CapID               |
+|                         |     X1: CSpace CapID                  |
+|                         |     X2: Reserved   – Must be Zero     |
+|     Outputs:            |     X0: Error Result                  |
+|                         |     X1: PCI Function CapID            |
 
 On successful creation, the object's state is `OBJECT_STATE_INIT` and the newly created master Capability ID is returned.
 
@@ -4058,19 +4125,21 @@ ERROR_ARGUMENT_INVALID – A value passed in an argument was invalid.
 
 Also see: [Capability Errors](#capability-errors)
 
-## Virtual PCI Bus Management
+## Virtual PCIe Root Complex Management
 
-### Configure a Virtual PCI Bus
+The hypervisor implements a Virtual PCIe Root Complex which can host PCIe functions that are either implemented in software by the hypervisor, or passed through from a Physical PCIe Root Complex.
 
-Configure a Virtual PCI Bus whose state is OBJECT_STATE_INIT.
+### Configure a Virtual PCIe Root Complex
 
-A Virtual PCI Bus requires attachments to an Address Space object and a Virtual Interrupt Controller object before it can be activated. It also requires at least two specified address ranges, with two further optional address ranges, all of which are input address ranges for the specified Address Space object.
+Configure a Virtual PCIe Root Complex whose state is OBJECT_STATE_INIT.
+
+A Virtual PCIe Root Complex requires attachments to an Address Space object and a Virtual Interrupt Controller object before it can be activated. It also requires at least two specified address ranges, with two further optional address ranges, all of which are input address ranges for the specified Address Space object.
 
 The mandatory address ranges are for the Configuration Access Mechanism (CAM) aperture (or Enhanced Configuration Access Mechanism, ECAM, for PCIe buses), and the Non-prefetchable Memory aperture. The optional ranges are for the Prefetchable Memory aperture and the I/O aperture.
 
 Prefetchable Memory BARs are permitted to be mapped into the Non-Prefetchable Memory aperture. This allows them to be mapped even if no Prefetchable Memory aperture is defined.
 
-Each of the specified apertures must be kept clear of other mappings by the address space manager. If the apertures overlap with each other, with the apertures of another Virtual PCI Bus, or with mappings in the address space created by other mechanisms, the behaviour of accesses to those address ranges is unpredictable. Furthermore, the VM can cause mappings in the specified Memory and I/O apertures to be created or destroyed at any time, by writing to a device's BARs; for this reason, the specified Address Space CapID is required to have the Address Space Map right.
+Each of the specified apertures must be kept clear of other mappings by the address space manager. If the apertures overlap with each other, with the apertures of another Virtual PCIe Root Complex, or with mappings in the address space created by other mechanisms, the behaviour of accesses to those address ranges is unpredictable. Furthermore, the VM can cause mappings in the specified Memory and I/O apertures to be created or destroyed at any time, by writing to a device's BARs; for this reason, the specified Address Space CapID is required to have the Address Space Map right.
 
 The size of each aperture is specified as a base-two exponent; that is, as the number of low address bits required to index it. For the two optional apertures, a size of 0 means the aperture is absent. For the memory and I/O apertures, the minimum size is the address space's page size (typically 12 bits, for 4KiB pages), and the maximum size is half of the address space (i.e. one bit less than its configured address size).
 
@@ -4080,7 +4149,7 @@ The two memory-typed apertures will be given the same base address in the PCI Me
 
 The I/O aperture always starts at address 0 in the PCI I/O address space.
 
-The option flags argument specifies the attributes of the bus. The only defined option flag is bit 0, which must be set to indicate that the Virtual PCI Bus is a PCIe bus, and therefore that the CAM aperture is used for ECAM. Conventional PCI is currently not implemented.
+The option flags argument specifies the attributes of the bus. The only defined option flag is bit 0, which must be set to indicate that the Virtual PCIe Root Complex is a PCIe bus, and therefore that the CAM aperture is used for ECAM. Conventional PCI is currently not implemented.
 
 |    **Hypercall**:       |      `vpci_configure`                    |
 |-------------------------|------------------------------------------|
@@ -4101,7 +4170,7 @@ The option flags argument specifies the attributes of the bus. The only defined 
 
 |      Bit Numbers     |      Mask                  |      Description                        |
 |----------------------|----------------------------|-----------------------------------------|
-|     0                |     `0x1`                  |     1: PCIe Bus; 0: PCI Bus             |
+|     0                |     `0x1`                  |     1: PCIe Root Complex; 0: PCI Bus    |
 |     63:1             |     `0xFFFFFFFF.FFFFFFFE`  |     Reserved,   Must be Zero            |
 
 *Aperture:*
@@ -4109,14 +4178,14 @@ The option flags argument specifies the attributes of the bus. The only defined 
 | Bit Numbers | Mask                  | Description                                     |
 |-------------|-----------------------|-------------------------------------------------|
 | 5:0         | `0x0000003F`          | Size of the aperture, measured in address bits. |
-| 11:6        | `0x00000FC0`          | Reserved,   Must be Zero                        |
-| 63:12       | `0xFFFFFFFF.FFFFF000` | Base address of the aperture (VMPhysAddr).      |
+| 11:6        | `0x00000FC0`          | Reserved — Must be Zero                         |
+| 63:12       | `0xFFFFFFFF.FFFFF000` | Base address of the aperture (VMAddr)           |
 
 **Errors:**
 
 OK – the operation was successful.
 
-ERROR_OBJECT_STATE – if the Virtual PCI object is not in OBJECT_STATE_INIT state.
+ERROR_OBJECT_STATE – if the Virtual PCIe Root Complex object is not in OBJECT_STATE_INIT state.
 
 ERROR_ADDR_INVALID – One of the specified address ranges was not within the address space's valid address range.
 
@@ -4130,7 +4199,7 @@ Also see: [Capability Errors](#capability-errors)
 
 Attach a Virtual PCI device object to a bus. The device may be any hypervisor object that supports presenting a PCI interface to a VM.
 
-This operation can only be performed prior to activating the Virtual PCI Bus object. Attaching a device to a Virtual PCI Bus that is already active is akin to hot-plugging a physical device, which may be supported in future releases.
+This operation can only be performed prior to activating the Virtual PCIe Root Complex object. Attaching a device to a Virtual PCI Bus that is already active is akin to hot-plugging a physical device, which may be supported in future releases.
 
 The slot index is a value between 0 and 31 inclusive that is not already used by a device on the virtual PCI bus. If an index of -1 is specified, the bus will allocate a slot index automatically; the allocated index will be returned. Note that slot 0 of bus 0 is reserved for the host bridge.
 
@@ -4300,6 +4369,250 @@ ERROR_ADDR_INVALID – an address space is not attached to the virtual IOMMU.
 ERROR_BUSY – the provided streams are currently in use.
 
 ERROR_UNIMPLEMENTED – if functionality not implemented.
+
+Also see: [Capability Errors](#capability-errors)
+
+## Physical PCIe Root Complex Management
+
+A Physical PCIe Root Complex object may be used to instruct the hypervisor to take control of an enumerated physical PCIe Root Complex. The hypervisor will restrict access to the bus by the VM that owns it, so that lending of individual functions to other VMs can be accomplished safely without trusting the owner VM.
+
+### Configure a Physical PCIe Root Complex
+
+This hypercall provides the mandatory basic configuration for a Physical PCIe Root Complex: the address space of the owner VM, a Memory Extent object covering the configuration space MMIO aperture, the base and size of the configuration space aperture, and a set of flags to determine the runtime behaviour of the object.
+
+The specified Memory Extent object must be a basic extent that represents the physical address range of the Enhanced Configuration Access Mechanism (ECAM) MMIO aperture. This extent must be size-aligned with a power-of-two size between 2MB and 256MB as per the PCIe specification. Root Complex implementations that use alternative configuration space access mechanisms are not supported. The extent may already be mapped in the address space at the specified base address. If not, it will be automatically be mapped when the object is activated.
+
+Bit 0 of the option flags ("PCIe Enable") must be set to indicate that the Physical PCIe Root Complex is a PCIe rather than conventional PCI interface. If this bit is set, the configuration aperture is expected to have ECAM layout, with 4KB of address space per function and a dummy host bridge at address 0. Conventional PCI, which has a configuration aperture with CAM layout (256 bytes per function) and a type 1 configuration header in the host bridge, is currently not supported.
+
+Bit 1 of the option flags ("Lockdown Enable") may be set to indicate that the donor VM is untrusted and therefore that the Root Complex must be in Restricted state before function passthrough objects may be derived from it. If this bit is not set, the hypervisor trusts the donor VM to maintain the memory resource assignments of functions that have been assigned as passthrough.
+
+|    **Hypercall**:       |      `pci_host_configure`                |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x607B`                         |
+|     Inputs:             |     X0: PCI Root Complex CapID           |
+|                         |     X1: Address Space CapID              |
+|                         |     X2: CAM Memory Extent CapID          |
+|                         |     X3: CAM Base VMAddr                  |
+|                         |     X4: PCIOptionFlags                   |
+|                         |     X5: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
+
+**Types:**
+
+*PCIOptionFlags:*
+
+|      Bit Numbers     |      Mask                  |      Description                         |
+|----------------------|----------------------------|------------------------------------------|
+|     0                |     `0x1`                  |     1: PCIe Root Complex; 0: PCI Bus     |
+|     1                |     `0x2`                  |     Enable lockdoon (untrusted donor VM) |
+|     63:2             |     `0xFFFFFFFF.FFFFFFFC`  |     Reserved,   Must be Zero             |
+
+**Errors:**
+
+OK – the operation was successful.
+
+ERROR_OBJECT_STATE – if the Physical PCIe Root Complex object is not in OBJECT_STATE_INIT state.
+
+ERROR_ARGUMENT_SIZE – the specified CAM Aperture's size is not in the valid range (21 to 28 address bits).
+
+ERROR_ARGUMENT_ALIGNMENT – the specified CAM Aperture is not size-aligned.
+
+### Configure a Physical PCIe Memory Aperture
+
+This hypercall adds a PCI Memory aperture to a Physical PCIe Root Complex object. This should be called at least once before activating a Root Complex object.
+
+This call is used to inform the hypervisor of the physical address ranges of a PCIe Root Complex's PCI Memory apertures. For each aperture, the caller must specify a basic Memory Extent object that covers the aperture's entire address range. The size and base address of the aperture must be page-aligned. The extent may already be mapped in the owner VM's address space at the specified base address; if not, it will be automatically mapped when the object is activated.
+
+|    **Hypercall**:       |      `pci_host_add_aperture`             |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x607C`                         |
+|     Inputs:             |     X0: PCI Root Complex CapID           |
+|                         |     X1: Memory Extent CapID              |
+|                         |     X2: Memory Base VMAddr               |
+|                         |     X3: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
+
+**Errors:**
+
+OK – the operation was successful.
+
+ERROR_OBJECT_STATE – if the Physical PCIe Root Complex object is not in OBJECT_STATE_INIT state.
+
+### Physical PCIe Lockdown State
+
+This hypercall sets the lockdown state of a Physical PCIe Root Complex that was configured with lockdown support enabled.
+
+There are three possible states:
+
+Permissive
+: The ECAM and Memory apertures are fully accessible to the owner VM. No derived PCIe Function objects exist. This is the initial state.
+
+Scanning
+: The ECAM aperture is fully read-only to the owner VM. Any VCPU that attempts to write to the ECAM aperture will be blocked until this state is exited. Any VCPU access to a Memory aperture may be trapped and briefly blocked in order to serialise it against BAR probes. Derived PCIe Function objects may be created and activated, but passthrough cannot be enabled.
+
+Restricted
+: The ECAM aperture is partially read-only to the owner VM; attempts to write to any register that has not been explicitly marked as read-only may generate emulated bus errors in the VM. Existing derived PCIe Function objects may have passthrough enabled, but new PCIe Function objects cannot be created.
+
+Transitions are permitted from Permissive to Scanning state, from Scanning to Restricted state, and from Scanning or Restricted to Permissive state. Transitions to Permissive state will fail if any PCIe Function object exists that has been derived from this Root Complex; the caller is expected to ensure that all such objects have been destroyed first. Transitions to Restricted state will fail if any PCIe Function object exists that is not in `OBJECT_STATE_ACTIVE` state.
+
+In order to enable function passthrough, the caller is expected to move the Root Complex into Scanning state, map the ECAM into its own address space, scan it to identify the functions that are present and create and activate PCIe Function objects for each of them (including for those that will not be used for passthrough), and finally move the Root Complex into Restricted state.
+
+|    **Hypercall**:       |      `pci_host_set_lockdown`             |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x607D`                         |
+|     Inputs:             |     X0: PCI Root Complex CapID           |
+|                         |     X1: PCILockdownState                 |
+|                         |     X2: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
+
+**Types:**
+
+*PCILockdownState:*
+
+| State Enumerator | Integer Value |
+|-----------------------------------------|---|
+| PCI_HOST_LOCKDOWN_STATE_PERMISSIVE | 0 |
+| PCI_HOST_LOCKDOWN_STATE_SCANNING | 1 |
+| PCI_HOST_LOCKDOWN_STATE_RESTRICTED | 2 |
+
+**Errors:**
+
+OK – the operation was successful.
+
+ERROR_OBJECT_CONFIG — the specified Physical PCIe Root Complex object was not configured with bus lockdown enabled.
+
+ERROR_ARGUMENT_INVALID — the requested state was not valid.
+
+ERROR_DENIED — the requested state transition was not one of the permitted transitions described above.
+
+ERROR_BUSY — a transition into Permissive state from Scanning or Restricted state could not proceed because at least one derived PCIe Function object exists, or a transition into Restricted state from Scanning state could not proceed because at least one derived PCIe Function object has been created but not yet activated.
+
+### Physical PCIe Function Configuration
+
+This hypercall may be called to configure a PCIe Function object to track a specified physical function attached to a specified PCIe Root Complex object.
+
+The specified Root Complex must either have lockdown disabled, or be in Scanning state. If lockdown is enabled, the Root Complex will be forced to remain in Scanning state until the PCIe Function object is activated or destroyed. Once activated, the PCIe Function object will prevent the Root Complex entering Permissive state for as long as the object continues to exist.
+
+The specified Responder ID must not have already been assigned to another PCIe Function object and must have a bus ID that is within the valid range determined by the size of the ECAM aperture.
+
+If the "Enable Passthrough" flag is set, then the function will be configured to permit use as a passthrough device attached to a Virtual PCIe Root Complex. Note that this may allocate additional hypervisor memory, so it should not be set for functions that don't require passthrough support.
+
+If the "Is SR-IOV VF" flag is set, the hypervisor will not scan the device's BARs to generate Memory Extent objects for them. Instead, the caller must derive a Memory Extent object for each VF BAR and provide it using a separate configuration hypercall. That hypercall is currently not implemented, so passthrough of SR-IOV devices is not yet supported.
+
+|    **Hypercall**:       |      `pci_function_configure`            |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x607F`                         |
+|     Inputs:             |     X0: PCI Function CapID               |
+|                         |     X1: PCI Root Complex CapID           |
+|                         |     X2: Address PCIFunctionID            |
+|                         |     X3: Flags PCIFunctionFlags           |
+|                         |     X4: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
+
+**Types:**
+
+*PCIFunctionID:*
+
+| Bit Numbers | Mask                  | Description                      |
+|-------------|-----------------------|----------------------------------|
+| 2:0         | `0x00000007`          | Function number |
+| 3:7         | `0x000000F8`          | Device (slot) number |
+| 15:8        | `0x0000FF00`          | Bus number |
+| 63:16       | `0xFFFFFFFF.FFFF0000` | Reserved — Must be Zero |
+
+*PCIFunctionFlags:*
+
+| Bit Numbers | Mask                  | Description                      |
+|-------------|-----------------------|----------------------------------|
+| 0 | `0x00000001` | Enable Passthrough |
+| 1 | `0x00000002` | Is SR-IOV VF |
+| 63:2 | `0xFFFFFFFF.FFFFFFFC` | Reserved — Must be Zero |
+
+**Errors:**
+
+OK – the operation was successful.
+
+ERROR_BUSY — the specified address is already owned by another PCIe Function object.
+
+### Physical PCIe Function Capability Access Control
+
+This hypercall may be used to configure the parts of a PCIe Function's configuration space that are accessible to VCPUs accessing it either as a passthrough device, or through a Physical PCIe Root Complex in Restricted mode. It can only be called before placing the function into passthrough mode by calling `pci_function_set_passthrough`. If the parent Root Complex has lockdown enabled, it can only be called when that object is in Scanning mode.
+
+The restrictions on the Type 0 or Type 1 configuration header registers depend only on whether the function is a Type 1 (bridge) function, a Type 0 SR-IOV Virtual Function, or a non-VF Type 0 function. Only the capability structures have per-function permissions, hence the name of this hypercall.
+
+The specified offset and size must be within the bounds of either the capability region (0x40–0xFF) or the extended capability region (0x100–0xFFF). The class of capability (conventional or extended) will be inferred from the offset. The hypervisor may not validate the location and type of the capability, though it may check that registered capabilities do not overlap.
+
+If the "Passthrough Visible" flag is set, then the capability will be accessible with read permissions when the function is attached as a passthrough function on a Virtual PCIe Bus. If the "Passthrough Writable" flag is also set, then the capability will be accessible with read and write permissions. Note that the capability's offset may not be the same in the virtual ECAM as it is in the physical ECAM.
+
+If the "Lockdown Visible" flag is set, then the capability will be accessible with read permissions when the function has passthrough disabled and its Physical PCIe Root Complex is in Restricted state. If the "Lockdown Writable" flag is also set, then the capability will be accessible with read and write permissions. Capabilities that are not registered in this way will be replaced with a virtualised Null Extended Capability when they are in Restricted state.
+
+|    **Hypercall**:       |      `pci_function_add_capability`       |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x6086`                         |
+|     Inputs:             |     X0: PCI Function CapID               |
+|                         |     X1: Offset Size                      |
+|                         |     X2: Size                             |
+|                         |     X3: PCIAccessFlags                   |
+|                         |     X4: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
+
+**Types:**
+
+*PCIAccessFlags:*
+
+| Bit Numbers | Mask                  | Description                      |
+|-------------|-----------------------|----------------------------------|
+| 0 | `0x00000001` | Passthrough Visible |
+| 1 | `0x00000002` | Passthrough Writable |
+| 2 | `0x00000004` | Lockdown Visible |
+| 3 | `0x00000008` | Lockdown Writable |
+| 63:4 | `0xFFFFFFFF.FFFFFFF0` | Reserved — Must be Zero |
+
+**Errors:**
+
+OK – the operation was successful.
+
+ERROR_ARGUMENT_INVALID — The specified offset and size were not within the range 0x40–0xFF, nor within the range 0x100–0xFFF.
+
+ERROR_ARGUMENT_ALIGNMENT — The specified offset was not a multiple of 4.
+
+ERROR_OBJECT_CONFIG — The Lockdown Visible flag was set, but the Physical PCIe Function's parent Root Complex object was not configured with lockdown enabled; or the Passthrough Visible flag was set, but the PCIe Function object was not configured with passthrough enabled.
+
+ERROR_OBJECT_STATE — The PCIe Function already has passthrough enabled, or is attached to a Root Complex that has lockdown enabled and is not in Scanning state.
+
+### Physical PCIe Function Passthrough Enable
+
+This hypercall may be used to enable or disable function passthrough for a PCIe Function object that has been configured to support it.
+
+If this call is made with the Enable flag set to true, the hypervisor will unmap the function's BAR ranges from the Physical PCIe Root Complex's associated address space, and stop emulating trapped writes to the function's ECAM range. Afterwards, the caller may bind the function to a Virtual PCIe Root Complex by calling `vpci_attach`.
+
+If the Enable flag is true and the associated Physical PCIe Root Complex has lockdown support enabled, it must be in Restricted state. If the Enable flag is false, the PCIe Function must not currently be bound to a Virtual PCIe slot.
+
+#### Usage
+
+For secure lending of a PCIe Function between mutually distrusting VMs, the management VM is expected to follow this sequence of operations:
+
+1. Call this hypercall to enable passthrough.
+2. Unmap any platform-specific resources associated with the function, such as MSI and IOMMU endpoints, from the donor VM.
+3. Access the function's configuration registers directly to:
+    * Save the state of the BARs (this may be done earlier, during scanning).
+    * Issue a function-level reset, then wait for up to 100ms for the reset to complete.
+    * Restore the BARs to their pre-reset values.
+4. Map the platform-specific resources to the recipient VM.
+5. Call `vpci_attach` to expose the function to the recipient VM.
+
+Note that if a function does not implement the generic Function Level Reset operation specified in the PCIe standard, it is only possible to safely move it between VMs that do not completely trust each other if the management VM has specific knowledge of the device's behaviour and is able to use device-specific mechanisms to place it into a quiescent state.
+
+Securely reclaiming the PCIe function for use in the donor VM, or to move the Root Complex back to permissive state, requires a similar, but reversed, sequence.
+
+
+|    **Hypercall**:       |      `pci_function_set_passthrough`      |
+|-------------------------|------------------------------------------|
+|     Call number:        |     `hvc 0x6087`                         |
+|     Inputs:             |     X0: PCI Function CapID               |
+|                         |     X1: Enable Boolean                   |
+|                         |     X2: Reserved — Must be Zero          |
+|     Outputs:            |     X0: Error Result                     |
 
 Also see: [Capability Errors](#capability-errors)
 

@@ -1,0 +1,36 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+extend cap_rights_pci_host bitfield {
+	0	create_function	bool;
+	1	set_lockdown	bool;
+};
+
+extend cap_rights_pci_function bitfield {
+	0	passthrough	bool;
+	1	attach		bool;
+};
+
+define pci_host_option_flags public bitfield<64> {
+	0	pcie		bool = 1;
+	1	lockdown	bool;
+};
+
+define pci_host_lockdown_state public enumeration(explicit) {
+	permissive = 0;
+	scanning = 1;
+	restricted = 2;
+};
+
+define pci_function_option_flags public bitfield<64> {
+	0	passthrough	bool;
+	1	sr_iov_vf	bool;
+};
+
+define pci_capability_access_flags public bitfield<64> {
+	0	passthrough_visible	bool;
+	1	passthrough_writable	bool;
+	2	lockdown_visible	bool;
+	3	lockdown_writable	bool;
+};
