@@ -65,3 +65,20 @@ util_strnlen(const char *str, rsize_t maxlen);
 // first maxlen bytes, NULL is returned.
 extern char *
 util_strnchr(const char *str, int32_t c, rsize_t maxlen);
+
+// Compare strings.
+//
+// Up to 'n' bytes are compared, where 'n' is the minimum of the lengths of the
+// two strings (including the trailing '\0') and 'maxlen'.
+//
+// Returns 0 if the strings are equal, or a negative value if s1 < s2, or a
+// positive value if s1 > s2.
+extern int
+util_strncmp(const char *s1, const char *s2, size_t maxlen);
+
+// Compare a substring to another string.
+//
+// This is almost the same as util_strncmp, except that the 's1_len'-th byte of
+// s1 is treated as it were '\0'.
+extern int
+util_substrncmp(const char *s1, size_t s1_len, const char *s2, size_t maxlen);

@@ -276,3 +276,54 @@ util_strnchr(const char *str, int32_t c, rsize_t maxlen)
 
 	return (char *)ret;
 }
+
+int
+util_strncmp(const char *s1, const char *s2, size_t maxlen)
+{
+	assert(s1 != NULL);
+	assert(s2 != NULL);
+
+	int ret = 0;
+
+	for (size_t i = 0U; i < maxlen; i++) {
+		char c1 = s1[i];
+		char c2 = s2[i];
+
+		// If c1 == c2 and c1 != '\0', then c2 != '\0'.
+		if ((c1 == '\0') || (c1 != c2)) {
+			ret = (int)(unsigned char)c1 - (int)(unsigned char)c2;
+			goto out;
+		}
+	}
+
+out:
+	return ret;
+}
+
+int
+util_substrncmp(const char *s1, size_t s1_len, const char *s2, size_t maxlen)
+{
+	assert(s1 != NULL);
+	assert(s2 != NULL);
+
+	int ret = 0;
+
+	for (size_t i = 0U; i < maxlen; i++) {
+		char c1;
+		if ((i + 1U) < s1_len) {
+			c1 = s1[i];
+		} else {
+			c1 = '\0';
+		}
+		char c2 = s2[i];
+
+		// If c1 == c2 and c1 != '\0', then c2 != '\0'.
+		if ((c1 == '\0') || (c1 != c2)) {
+			ret = (int)(unsigned char)c1 - (int)(unsigned char)c2;
+			goto out;
+		}
+	}
+
+out:
+	return ret;
+}
