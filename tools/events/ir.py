@@ -7,6 +7,7 @@
 import abc
 import logging
 import collections
+import perfect_hash
 
 
 logger = logging.getLogger(__name__)
@@ -411,6 +412,7 @@ class SelectorEvent(AbstractEvent):
     def __init__(self, children):
         super().__init__(children)
         self.selector = _first_of_type(children, SelectorParam)
+        self._is_perfect_hash = self.selector.type == Type('const char *')
         try:
             self.result = _first_of_type(children, Result)
         except StopIteration:
@@ -472,6 +474,21 @@ class SelectorEvent(AbstractEvent):
 
         self._lock_opts = tuple(lock_opts)
 
+        if self.is_perfect_hash:
+            all_selectors = {}
+            for s in self._subscribers.values():
+                for k in s.selectors:
+                    all_selectors[k] = s
+            self._hash_keyset, self._hash_assoc_map, self._hash_word_table = \
+                perfect_hash.perfect_hash(all_selectors.keys())
+            self._min_length = min(len(k) for k in all_selectors.keys())
+            self._max_length = max(len(k) for k in all_selectors.keys())
+            print(all_selectors)
+            for (h, k) in enumerate(self._hash_word_table):
+                if k is not None:
+                    all_selectors[k].hash = h
+                    print(k, h, id(all_selectors[k]), all_selectors[k].hash)
+
     @property
     def lock_opts(self):
         return self._lock_opts
@@ -479,6 +496,30 @@ class SelectorEvent(AbstractEvent):
     @property
     def return_type(self):
         return self.result.type
+
+    @property
+    def is_perfect_hash(self):
+        return self._is_perfect_hash
+
+    @property
+    def hash_keyset(self):
+        return self._hash_keyset
+
+    @property
+    def hash_assoc_map(self):
+        return self._hash_assoc_map
+
+    @property
+    def hash_word_table(self):
+        return self._hash_word_table
+
+    @property
+    def min_length(self):
+        return self._min_length
+
+    @property
+    def max_length(self):
+        return self._max_length
 
     @property
     def noreturn(self):

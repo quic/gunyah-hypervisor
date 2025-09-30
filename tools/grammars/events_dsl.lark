@@ -101,7 +101,9 @@ COMMA : ","
 _args : LPAREN _arg_list? RPAREN
 _arg_list : _NL_INDENT? _constexpr [COMMA _arg_list]
 ELLIPSIS : "..."
+%import common.ESCAPED_STRING
 selector_const: _type_cast? _constexpr [ELLIPSIS _type_cast? _constexpr]
+    | ESCAPED_STRING
 _selector_list : _NL_INDENT? selector_const ["," _selector_list]
 %import common.SIGNED_INT
 %import common.SIGNED_FLOAT

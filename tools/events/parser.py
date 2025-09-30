@@ -1,4 +1,4 @@
-# © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # 2019 Cog Systems Pty Ltd.
 #
@@ -147,7 +147,12 @@ class TransformToIR(Transformer):
 
     @v_args(meta=True)
     def selector_const(self, children, meta):
-        t = Type(' '.join(str(c) for c in children))
+        if str(children[0][0]) == '"':
+            # String constant
+            t = ConstExpr(eval(children[0]))
+        else:
+            # Integer or symbol
+            t = ConstExpr(' '.join(str(c) for c in children))
         t.meta = meta
         return t
 

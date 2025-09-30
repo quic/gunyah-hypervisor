@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // 2019 Cog Systems Pty Ltd.
 //
@@ -7,7 +7,9 @@
 #set empty=True
 
 \#include <hyptypes.h>
+\#include <string.h>
 \#include <compiler.h>
+\#include <util.h>
 #for i in $includes
 \#include $i
 #end for
@@ -183,11 +185,68 @@ $prototype(e)
 #else
 #set ret=None
 #end if
+#if e.is_perfect_hash
+    size_t _len = util_strnlen($e.selector.name, ${e.max_length + 1}U);
+    if ((_len > ${e.max_length}U) || (_len < ${e.min_length}U)) {
+#if not $void
+        $ret = $e.result.default;
+#end if
+        goto out;
+    }
+    static const index_t _assoc_map[256] = {
+#for c in range(256)
+#if chr(c) in e.hash_assoc_map:
+        ${e.hash_assoc_map[chr(c)]}U,
+#else
+        ${len(e.hash_word_table)}U,
+#end if
+#end for
+    };
+    index_t _hash = (index_t)_len;
+#for k in $e.hash_keyset
+#if k >= $e.min_length
+    if (_len >= ${k}U) {
+        _hash += _assoc_map[(index_t)${e.selector.name}[${k}U]];
+    }
+#else if k >= 0
+    _hash += _assoc_map[(index_t)${e.selector.name}[${k}U]];
+#else if k <= -$e.min_length
+    if (_len >= ${-k}U) {
+        _hash += _assoc_map[(index_t)${e.selector.name}[_len - ${-k}U]];
+    }
+#else
+    _hash += _assoc_map[(index_t)${e.selector.name}[_len - ${-k}U]];
+#end if
+#end for
+    static const char * _word_table[] = {
+#for w in $e.hash_word_table
+        "${w if w is not None else ''}",
+#end for
+    };
+    if (_hash >= util_array_size(_word_table)) {
+#if not $void
+        $ret = $e.result.default;
+#end if
+        goto out;
+    }
+    if (util_strncmp(_word_table[_hash], ${e.selector.name},
+            ${e.max_length + 1}U) != 0) {
+#if not $void
+        $ret = $e.result.default;
+#end if
+        goto out;
+    }
+#set switch_var = '_hash'
+#set selector_func = lambda e, x: e.hash_word_table.index(x)
+#else
+#set switch_var = $e.selector.name
+#set selector_func = lambda e, x: x
+#end if
 #if e.subscribers
-    switch ($e.selector.name) {
+    switch ($switch_var) {
 #for s in e.subscribers
 #for selector in $s.selectors
-    case $selector:
+    case ${selector_func(e, selector)}:
 #end for
         $call(s, ret);
 #if s.handler and s.handler.noreturn
@@ -211,6 +270,10 @@ $prototype(e)
 #if not $void
     $ret = $e.result.default;
 #end if
+#end if
+
+#if e.is_perfect_hash
+out:;
 #end if
 
 #if not $void
