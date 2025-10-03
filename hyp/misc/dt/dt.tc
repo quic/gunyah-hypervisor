@@ -1,0 +1,24 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define dt_tree structure {
+	dtb		pointer char;
+	header		structure fdt_header;
+};
+
+
+// FIXME: It is not really clear now whether we really need separate fdt_node /
+// fdt_property types. The intention is that the fdt_* types are used only
+// while parsing the fdt.
+define dt_node structure {
+	offset		uint32; // offset from start of dtb
+	namelen		uint32; // length including '\0' byte
+};
+
+define dt_property structure {
+	value		pointer char;
+	len		uint32;
+};
+
+define DT_VERSION constant uint32 = 17;

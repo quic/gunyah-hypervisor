@@ -1,0 +1,19 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+generic_properties {
+	required "#address-cells"	u32;
+	required "#size-cells"		u32;
+}
+
+handler dt_auto_root {
+	attributes {
+		max 1;
+	}
+
+	properties {
+		required "model"		string;
+		required "compatible"		stringlist;
+	}
+}

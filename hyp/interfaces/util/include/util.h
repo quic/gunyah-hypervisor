@@ -72,6 +72,9 @@
 // definition, use ## directly, which is equivalent and more concise.
 #define util_cpp_paste(name, suffix) name##suffix
 
+// Return the size (including NUL) of a string literal.
+#define sizeof_literal(s) _Generic(&(s), char (*)[sizeof(s)]: sizeof(s))
+
 // Return the number of elements in an array.
 #define util_array_size(a) (sizeof(a) / sizeof((a)[0]))
 

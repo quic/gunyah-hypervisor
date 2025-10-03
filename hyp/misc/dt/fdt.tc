@@ -1,0 +1,98 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define fdt_header structure {
+	magic		uint32;
+	totalsize	uint32;
+	off_dt_struct	uint32;
+	off_dt_strings	uint32;
+	off_mem_rsvmap	uint32;
+	version		uint32;
+	last_comp_version uint32;
+	boot_cpuid_phys	uint32;
+	size_dt_strings	uint32;
+	size_dt_struct	uint32;
+};
+
+define fdt_reserve_entry structure {
+	address		uint64;
+	size		uint64;
+};
+
+define fdt_property structure {
+	len		uint32;
+	nameoff		uint32;
+};
+
+define fdt_parser_node structure {
+	offset		uint32; // offset from start of dtb
+	namelen		type count_t; // length including '\0' byte
+};
+
+define fdt_parser_property structure {
+	len		uint32;
+	nameoff		uint32;
+	value		pointer char;
+};
+
+define fdt_parser structure {
+	// The current parsing state.
+	cur		pointer char;
+	depth		sint32;
+	break_depth	sint32;
+	allow_prop_token bool;
+	node		structure fdt_parser_node;
+	property	structure fdt_parser_property;
+
+	// These are set from the tree, users should not touch them!
+	tree		pointer structure dt_tree;
+	dtb		pointer char;
+	end		pointer char;
+	size_dt_strings uint32;
+
+	// The user can use this field to maintain state during a walk.
+	user_ctx	union fdt_parser_user_ctx;
+};
+
+define fdt_parser_user_ctx union {
+	dummy		uintptr;
+};
+
+// Misc constants
+define FDT_MAGIC constant uint32 = 0xd00dfeed;
+define FDT_PROPERTY_NAME_MAXLEN constant size = 32;
+
+// Tokens
+define FDT_BEGIN_NODE constant uint32 = 0x1;
+define FDT_END_NODE constant uint32 = 0x2;
+define FDT_PROP constant uint32 = 0x3;
+define FDT_NOP constant uint32 = 0x4;
+define FDT_END constant uint32 = 0x9;
+
+// Return values
+//
+// An enumeration is not used as it might force users to handle all values in
+// switch statements.
+define FDT_ERR_STRUCT_BLOCK_END_ALIGN constant sint32 = -16;
+define FDT_ERR_NOT_END		constant sint32 = -15;
+define FDT_ERR_NOT_END_NODE	constant sint32 = -14;
+define FDT_ERR_STRING_BLOCK_NUL constant sint32 = -13;
+define FDT_ERR_END_OF_SEGMENT	constant sint32 = -12;
+define FDT_ERR_UNKNOWN_TOKEN	constant sint32 = -11;
+define FDT_ERR_UNEXPECTED_END	constant sint32 = -10;
+define FDT_ERR_UNEXPECTED_PROP	constant sint32 = -9;
+define FDT_ERR_DEPTH_END	constant sint32 = -8;
+define FDT_ERR_DEPTH_END_NODE	constant sint32 = -7;
+define FDT_ERR_PROP_STRING_OFF	constant sint32 = -6;
+define FDT_ERR_PROP_VALUE_LEN	constant sint32 = -5;
+define FDT_ERR_PROP_STRUCT_LEN	constant sint32 = -4;
+define FDT_ERR_NODE_NAME	constant sint32 = -3;
+define FDT_ERR_OFFSET		constant sint32 = -2;
+define FDT_ERR_MAGIC		constant sint32 = -1;
+define FDT_OK			constant sint32 = 0;
+define FDT_RET_DONE		constant sint32 = 1;
+define FDT_RET_NODE		constant sint32 = 2;
+define FDT_RET_PROPERTY		constant sint32 = 3;
+
+define fdt_ret_t newtype sint32;

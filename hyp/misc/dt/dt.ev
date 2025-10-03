@@ -1,0 +1,12 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module dt
+
+subscribe boot_cold_init()
+	priority 999
+
+subscribe dt_init_finalise
+	handler dt_root_init_finalise()
+	priority first
