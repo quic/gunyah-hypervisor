@@ -1,0 +1,65 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+start: generic_properties_stmt? handler*
+
+handler : "handler" HANDLER_NAME "{" _handler_stmt* "}"
+HANDLER_NAME : /\w+/
+_handler_stmt : attributes_stmt
+              | properties_stmt
+              | nodes_stmt
+              | grouped_nodes_stmt
+
+attributes_stmt : "attributes" "{" _attribute_stmt* "}"
+_attribute_stmt : group_stmt
+                | max_count_stmt
+                | load_node_name_stmt
+                | temp_stmt
+group_stmt : "group" GROUP_NAME ";"
+max_count_stmt :  "max" MAX_COUNT ";"
+MAX_COUNT : /\w+/
+load_node_name_stmt : "load_node_name" ";"
+temp_stmt : "temp" ";"
+
+properties_stmt : "properties" "{" property_stmt* "}"
+generic_properties_stmt : "generic_properties" "{" property_stmt* "}"
+property_stmt : PROPERTY_ATTR* "\"" PROPERTY_NAME "\"" PROPERTY_TYPE ";"
+PROPERTY_NAME : /([0-9a-zA-Z,._+?#-])+/
+PROPERTY_TYPE : "value"
+              | "stringlist"
+              | "string"
+              | "phandle"
+              | "u32"
+              | "u64"
+              | "bool"
+PROPERTY_ATTR : "optional" | "required"
+
+nodes_stmt : "nodes" "{" node_stmt* "}"
+grouped_nodes_stmt : "grouped_nodes" GROUP_NAME "{" node_stmt* "}"
+node_stmt : NODE_NAME "{" _node_attr_stmt* "}"
+NODE_NAME: /\w+/
+GROUP_NAME : /\w+/
+
+_node_attr_stmt : node_id_stmt | _node_match_stmt
+
+node_id_stmt : "id" NODE_ID ";"
+NODE_ID : /\w+/
+
+_node_match_stmt : node_match_all_stmt
+                 | node_match_name_stmt
+                 | node_match_compatible_stmt
+                 | node_match_default_stmt
+node_match_all_stmt : "match" "all" ";"
+node_match_name_stmt : "match" "name" NODE_MATCH_STR ";"
+node_match_compatible_stmt : "match" "compatible" NODE_MATCH_STR ";"
+node_match_default_stmt : "match" "default" ";"
+NODE_MATCH_STR : /".*"/
+
+WS: /[ \t\f\r\n]/+
+BLOCK_COMMENT : /\/\*+[^*]*\*+(?:[^\/*][^*]*\*+)*\//
+LINE_COMMENT :  /\/\/[^\r\n]*/
+
+%ignore WS
+%ignore BLOCK_COMMENT
+%ignore LINE_COMMENT

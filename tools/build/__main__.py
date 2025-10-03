@@ -93,6 +93,7 @@ defmap_frags = set()
 deferred_aliases = []
 guestapi_only = False
 uses_interface_gen_dir = False
+autodts = set()
 
 bsp_dirs_arg = graph.get_argument('bsp_dirs', '')
 bsp_dirs = tuple(bsp_dirs_arg.split(',')) if bsp_dirs_arg else ()
@@ -866,6 +867,13 @@ def parse_module_conf(d, f):
                     if add_template(ts, d, words[2], w, src_requires,
                                     local_env, module, local_headers):
                         have_events = True
+        elif words[0] == 'autodt':
+            for w in words[1:]:
+                add_autodt_dsl(d, w, local_env)
+        elif words[0] == 'arch_autodt':
+            if arch_match(words[1]):
+                for w in words[2:]:
+                    add_autodt_dsl(d, w, local_env)
         elif words[0] == 'assert_config':
             test = ' '.join(words[1:])
 
@@ -1097,6 +1105,12 @@ def add_event_dsl(module_dir, src, local_env):
 
 def add_register_dsl(module_dir, src, local_env):
     return add_preproc_dsl(module_dir, src, **local_env)
+
+
+def add_autodt_dsl(module_dir, src, local_env):
+    pp = add_preproc_dsl(module_dir, src, DSL_DEFINES='-D__AUTODT_DSL__',
+                         **local_env)
+    autodts.add(pp)
 
 
 def add_template(ts, d, arch, tmpl_file, requires, local_env, module, headers):
@@ -1418,6 +1432,89 @@ for module_dir, target, arch, src_requires, is_module, local_env, headers \
 if have_object_incl:
     graph.append_env('CPPFLAGS', '-I ' + relpath(objects_incl_dir))
 
+#
+# c_utils script
+#
+c_utils_script = os.path.join('tools', 'utils', 'c_utils.py')
+graph.add_env('C_UTILS', relpath(c_utils_script))
+
+default_src_requires = (
+    hyptypes_header,
+    version_header,
+    sym_version_header,
+    registers_header,
+    typed_headers_gen,
+    event_headers_gen,
+    hypercalls_headers_gen,
+    interface_headers_gen,
+)
+
+# FIXME: FIXME:
+# Use pp for everything. Keeping it simple for now.
+
+#
+# Setup the autodt generator
+#
+autodt_script = os.path.join('tools', 'autodt', 'autodt.py')
+autodt_pickle = os.path.join(build_dir, 'autodt.pickle')
+autodt_grammar = os.path.join('tools', 'grammars', 'autodt_dsl.lark')
+
+graph.add_env('AUTODT', relpath(autodt_script))
+graph.add_env('AUTODT_GRAMMAR', relpath(autodt_grammar))
+graph.add_rule('autodt_gen',
+               '${AUTODT} '
+               '--grammar ${AUTODT_GRAMMAR} '
+               ' -d ${out}.d '
+               '--out-pickle ${out} '
+               '-- ${in}',
+               depfile='${out}.d',
+               restat=True)
+
+graph.add_rule('autodt_tmpl',
+               '${AUTODT} '
+               '-f "${FORMATTER}" '
+               '-d ${out}.d '
+               '--out ${out} '
+               '--in-pickle ${in}',
+               depfile='${out}.d',
+               restat=True)
+
+if autodts:
+    graph.add_target([autodt_pickle], 'autodt_gen', list(autodts))
+
+    autodt_tmpl_dir = os.path.join('tools', 'autodt', 'templates')
+    autodt_out_dir = os.path.join(build_dir, 'autodt')
+    autodt_inc_dir = os.path.join(build_dir, 'autodt', 'include')
+    graph.append_env('CPPFLAGS', '-I ' + relpath(autodt_inc_dir))
+
+    # Header file
+    h = os.path.join(autodt_inc_dir, 'autodt.h')
+    h_tmpl = os.path.join(autodt_tmpl_dir, 'autodt.h.tmpl')
+    graph.add_target([h], 'autodt_tmpl', [autodt_pickle, h_tmpl])
+
+    # ev file
+    ev = os.path.join(autodt_out_dir, 'autodt.ev')
+    ev_tmpl = os.path.join(autodt_tmpl_dir, 'autodt.ev.tmpl')
+    event_sources.add(add_event_dsl(autodt_out_dir, 'autodt.ev', {}))
+    graph.add_target([ev], 'autodt_tmpl', [autodt_pickle, ev_tmpl])
+
+    # tc file
+    tc = os.path.join(autodt_out_dir, 'autodt.tc')
+    tc_tmpl = os.path.join(autodt_tmpl_dir, 'autodt.tc.tmpl')
+    types.add(add_type_dsl(autodt_out_dir, 'autodt.tc', {}))
+    graph.add_target([tc], 'autodt_tmpl', [autodt_pickle, tc_tmpl])
+
+    # Source / object file
+    c = os.path.join(autodt_out_dir, 'autodt.c')
+    c_tmpl = os.path.join(autodt_tmpl_dir, 'autodt.c.tmpl')
+    o = c + '.o'
+    add_source_file(c, o, default_src_requires + (h,), {})
+    graph.add_target([c], 'autodt_tmpl', [autodt_pickle, c_tmpl])
+
+    # FIXME: Hardcoded module name here.
+    modules_with_events.add('perfect_hash')
+    interfaces_with_events.add('perfect_hash')
+    add_event_handlers('perfect_hash')
 
 #
 # Setup the types generator
