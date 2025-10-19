@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // 2019 Cog Systems Pty Ltd.
 //
@@ -108,6 +108,7 @@ declaration_offset : "@" bracketed_constant_expression
 
 enumeration_noprefix : "noprefix"
 enumeration_explicit : "explicit"
+enumeration_nocapitalize : "nocapitalize"
 enumeration_expr : "=" constant_expression
 enumeration_constant : _identifier enumeration_expr? enumeration_noprefix? ";"
 
@@ -151,7 +152,9 @@ structure_definition : _identifier public? "structure" _qualifiers? "{" declarat
 
 union_definition : _identifier public? "union" _qualifiers? "{" declaration* "}" ";"
 
-_enumeration_param : enumeration_noprefix | enumeration_explicit
+_enumeration_param : enumeration_noprefix
+                | enumeration_explicit
+                | enumeration_nocapitalize
 _enumeration_params : "(" _enumeration_param? ("," _enumeration_param)* ")"
 enumeration_definition : _identifier public? "enumeration" _enumeration_params? ("{" enumeration_constant* "}")? ";"
 

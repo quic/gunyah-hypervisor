@@ -1,4 +1,4 @@
-# © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # 2019 Cog Systems Pty Ltd.
 #
@@ -780,6 +780,16 @@ class enumeration_explicit(CommonListener):
         e.set_explicit()
 
 
+class enumeration_nocapitalize(CommonListener):
+    def init_interfaces(self):
+        self.actions = [
+            Action(self.set_nocapitalize, "enumeration_attribute"),
+        ]
+
+    def set_nocapitalize(self, e):
+        e.capitalized = False
+
+
 class enumeration_constant(CommonListener):
     def init_interfaces(self):
         name = self.children[0]
@@ -1165,7 +1175,7 @@ class enumeration_definition(IABISpecific, ITypeDefinition):
 
         d = EnumerationDefinition(self.name)
         self.definition = d
-        self.action_list.take(d, "enumeration_attribute")
+        self.action_list.take_all(d, "enumeration_attribute")
         self.action_list.take(d, "public")
         # Unused
         self.action_list.remove_all(["enumeration_noprefix"])
