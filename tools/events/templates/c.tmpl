@@ -185,8 +185,14 @@ $prototype(e)
 #else
 #set ret=None
 #end if
+#set len_param = e.selector.name + '_len'
+#set len_provided = len_param in e.param_names
 #if e.is_perfect_hash
+#if not len_provided
     size_t _len = util_strnlen($e.selector.name, ${e.max_length + 1}U);
+#else
+    size_t _len = $len_param;
+#end if
     if ((_len > ${e.max_length}U) || (_len < ${e.min_length}U)) {
 #if not $void
         $ret = $e.result.default;
@@ -194,12 +200,15 @@ $prototype(e)
         goto out;
     }
     static const index_t _assoc_map[256] = {
-#for c in range(256)
+#for c_outer in range(0, 256, 8)
+#for c in range(c_outer, c_outer + 8)
 #if chr(c) in e.hash_assoc_map:
-        ${e.hash_assoc_map[chr(c)]}U,
+        ${e.hash_assoc_map[chr(c)]}U, \
 #else
-        ${len(e.hash_word_table)}U,
+        ${len(e.hash_word_table)}U, \
 #end if
+#end for
+    // ${c_outer + 8}
 #end for
     };
     index_t _hash = (index_t)_len;
@@ -219,8 +228,8 @@ $prototype(e)
 #end if
 #end for
     static const char * _word_table[] = {
-#for w in $e.hash_word_table
-        "${w if w is not None else ''}",
+#for i, w in enumerate($e.hash_word_table)
+        "${w if w is not None else ''}", // $i
 #end for
     };
     if (_hash >= util_array_size(_word_table)) {
@@ -229,8 +238,13 @@ $prototype(e)
 #end if
         goto out;
     }
+#if not len_provided
     if (util_strncmp(_word_table[_hash], ${e.selector.name},
             ${e.max_length + 1}U) != 0) {
+#else
+    if (util_substrncmp(${e.selector.name}, _len + 1U, _word_table[_hash],
+            ${e.max_length + 1}U) != 0) {
+#end if
 #if not $void
         $ret = $e.result.default;
 #end if

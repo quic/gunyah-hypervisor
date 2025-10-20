@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# coding: utf-
+# coding: utf-8
 #
 # Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
@@ -8,7 +8,6 @@
 import sys
 import itertools
 import collections
-import random
 
 
 def gen_table(assoc_map, keys):
@@ -28,6 +27,8 @@ def handle_collision(assoc_map, freq_map, first, second):
     first_set = set(first)
     second_set = set(second)
     to_consider = (first_set | second_set) - (first_set & second_set)
+    if not to_consider:
+        raise KeyError("no disjoint chars")
     lowest_freq = min(freq_map[ch] for ch in to_consider)
     least_common = sorted(tuple(ch for ch in to_consider
                                 if freq_map[ch] == lowest_freq))
@@ -74,7 +75,6 @@ def perfect_hash(words):
         for ch in word:
             freq_map[ch] += 1
 
-
     key_candidates = sorted(reversed(range(1 - longest, longest)),
                             key=lambda x: abs(x))
     keysets = itertools.chain(*(itertools.combinations(key_candidates,
@@ -84,8 +84,7 @@ def perfect_hash(words):
     for keyset in keysets:
         try:
             return try_keyset(words, freq_map, keyset)
-        except KeyError as e:
-            print(e)
+        except KeyError:
             pass
 
     raise ValueError("Unable to find perfect hash for words: " +
@@ -105,7 +104,6 @@ def main(args):
             words.add(word)
 
     (keyset, assoc_map, word_table) = perfect_hash(words)
-    print(keyset, assoc_map, word_table, len(word_table))
 
 
 if __name__ == '__main__':

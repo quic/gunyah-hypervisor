@@ -483,11 +483,9 @@ class SelectorEvent(AbstractEvent):
                 perfect_hash.perfect_hash(all_selectors.keys())
             self._min_length = min(len(k) for k in all_selectors.keys())
             self._max_length = max(len(k) for k in all_selectors.keys())
-            print(all_selectors)
             for (h, k) in enumerate(self._hash_word_table):
                 if k is not None:
                     all_selectors[k].hash = h
-                    print(k, h, id(all_selectors[k]), all_selectors[k].hash)
 
     @property
     def lock_opts(self):
