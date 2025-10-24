@@ -92,6 +92,18 @@ SECTIONS
 		*(SORT_BY_ALIGNMENT(.data .data.*))
 	} : data
 
+#if defined(PLATFORM_PACKAGED_DT_SIZE)
+	/*
+	 * The dt needs to be page size-aligned in order for a memextent to be
+	 * created.
+	 */
+	. = ALIGN(4096);
+	image_dt_start = .;
+	.data.devicetree : {
+		. = . + PLATFORM_PACKAGED_DT_SIZE;
+	}
+#endif
+
 	. = ALIGN(8);
 	bss_base = .;
 	.bss (NOLOAD) : {

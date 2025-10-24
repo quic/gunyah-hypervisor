@@ -60,6 +60,8 @@ class NewELF():
         self.segments = []
         self.sections = []
 
+        self.dtb = None
+
         paddr_last = 0
         for i in range(0, base.num_segments()):
             seg = base.get_segment(i)
@@ -301,9 +303,29 @@ class NewELF():
                 f.write(sec._data)
                 continue
 
+        # If we have a dtb, find the device tree section and copy the dtb into
+        # that section.
+        if self.dtb:
+            sec = [x for x in self.sections if x.name == '.data.devicetree']
+            if len(sec) != 1:
+                raise ValueError("number of device tree sections != 1")
+            sec = sec[0]
+
+            dtb_data = self.dtb.read()
+            dtb_data_len = len(dtb_data)
+            sec_size = len(sec._data)
+
+            if dtb_data_len > sec_size:
+                raise ValueError("dtb size {} > section size {}".format(
+                    dtb_data_len, sec_size))
+
+            print("copying dtb to offset {:#x}".format(sec.header.sh_offset))
+            f.seek(sec.header.sh_offset)
+            f.write(dtb_data)
+
 
 def package_files(base, app, runtime, output, p_filesz_align=None,
-                  p_memsz_align=None, merge_phys=False):
+                  p_memsz_align=None, merge_phys=False, dtb=None):
 
     base_elf = ELFFile(base)
     new = NewELF(base_elf)
@@ -382,6 +404,11 @@ def package_files(base, app, runtime, output, p_filesz_align=None,
         new.segment_memsz_align(p_memsz_align)
     if merge_phys:
         new.merge_physical()
+    if dtb:
+        if dtb.name[-4:] != '.dtb':
+            raise ValueError("provided dtb file does not end with .dtb")
+        new.dtb = dtb
+
     new.write(output)
 
 
@@ -410,6 +437,9 @@ def main():
                       type=argparse.FileType('rb'),
                       help="Input runtime ELF",
                       required=True)
+    args.add_argument('--dtb',
+                      type=argparse.FileType('rb'),
+                      help="Input device tree blob")
     args.add_argument('-o', '--output',
                       type=argparse.FileType('wb'),
                       default=sys.stdout,
@@ -441,7 +471,7 @@ def main():
 
     package_files(options.input[0], options.app, options.runtime,
                   options.output, p_filesz_align, p_memsz_align,
-                  options.merge_phys_segments)
+                  options.merge_phys_segments, options.dtb)
 
 
 if __name__ == '__main__':
