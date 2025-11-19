@@ -960,163 +960,163 @@ typedef uint32_t  word_t;
 
 #include <hypresult.h>
 
-void
+ALWAYS_INLINE void
 UBitField_set_test(UBitField_t *bit_field, uint32_t val);
 
-uint32_t
+ALWAYS_INLINE uint32_t
 UBitField_get_test(const UBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 UBitField_copy_test(UBitField_t	      *bit_field_dst,
 		    const UBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 UBitField_set_test1(UBitField_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 UBitField_get_test1(const UBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 UBitField_copy_test1(UBitField_t       *bit_field_dst,
 		     const UBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 UBitField_set_test5(UBitField_t *bit_field, uint8_t val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 UBitField_get_test5(const UBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 UBitField_copy_test5(UBitField_t       *bit_field_dst,
 		     const UBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 StructBitField_set_test(StructBitField_t *bit_field, uint32_t val);
 
-uint32_t
+ALWAYS_INLINE uint32_t
 StructBitField_get_test(const StructBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 StructBitField_copy_test(StructBitField_t	*bit_field_dst,
 			 const StructBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 StructBitField_set_test1(StructBitField_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 StructBitField_get_test1(const StructBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 StructBitField_copy_test1(StructBitField_t	 *bit_field_dst,
 			  const StructBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 StructBitField_set_test5(StructBitField_t *bit_field, uint8_t val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 StructBitField_get_test5(const StructBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 StructBitField_copy_test5(StructBitField_t	 *bit_field_dst,
 			  const StructBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TestBitField_set_test(TestBitField_t *bit_field, uint32_t val);
 
-uint32_t
+ALWAYS_INLINE uint32_t
 TestBitField_get_test(const TestBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TestBitField_copy_test(TestBitField_t	    *bit_field_dst,
 		       const TestBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TestBitField_set_test1(TestBitField_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 TestBitField_get_test1(const TestBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TestBitField_copy_test1(TestBitField_t	     *bit_field_dst,
 			const TestBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TestBitField_set_test5(TestBitField_t *bit_field, uint8_t val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 TestBitField_get_test5(const TestBitField_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TestBitField_copy_test5(TestBitField_t	     *bit_field_dst,
 			const TestBitField_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_feat_var_VAR1_set_value(TEST_COMB_feat_var_VAR1_t *bit_field,
 				  uint64_t		     val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_COMB_feat_var_VAR1_get_value(const TEST_COMB_feat_var_VAR1_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_feat_var_VAR1_copy_value(
 	TEST_COMB_feat_var_VAR1_t	*bit_field_dst,
 	const TEST_COMB_feat_var_VAR1_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_feat_var_VAR2_set_value(TEST_COMB_feat_var_VAR2_t *bit_field,
 				  uint64_t		     val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_COMB_feat_var_VAR2_get_value(const TEST_COMB_feat_var_VAR2_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_feat_var_VAR2_copy_value(
 	TEST_COMB_feat_var_VAR2_t	*bit_field_dst,
 	const TEST_COMB_feat_var_VAR2_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_multi_over_VAR1_set_value(TEST_COMB_multi_over_VAR1_t *bit_field,
 				    uint64_t			 val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_COMB_multi_over_VAR1_get_value(
 	const TEST_COMB_multi_over_VAR1_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_multi_over_VAR1_copy_value(
 	TEST_COMB_multi_over_VAR1_t	  *bit_field_dst,
 	const TEST_COMB_multi_over_VAR1_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_multi_over_VAR2_set_value(TEST_COMB_multi_over_VAR2_t *bit_field,
 				    uint64_t			 val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_COMB_multi_over_VAR2_get_value(
 	const TEST_COMB_multi_over_VAR2_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_COMB_multi_over_VAR2_copy_value(
 	TEST_COMB_multi_over_VAR2_t	  *bit_field_dst,
 	const TEST_COMB_multi_over_VAR2_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_DEFAULT_feat_set_value(TEST_DEFAULT_feat_t *bit_field, uint64_t val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_DEFAULT_feat_get_value(const TEST_DEFAULT_feat_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_DEFAULT_feat_copy_value(TEST_DEFAULT_feat_t       *bit_field_dst,
 			     const TEST_DEFAULT_feat_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 TEST_DEFAULT_plain_set_value(TEST_DEFAULT_plain_t *bit_field, uint64_t val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 TEST_DEFAULT_plain_get_value(const TEST_DEFAULT_plain_t *bit_field);
 
-void
+ALWAYS_INLINE void
 TEST_DEFAULT_plain_copy_value(TEST_DEFAULT_plain_t	 *bit_field_dst,
 			      const TEST_DEFAULT_plain_t *bit_field_src);
 
@@ -1135,84 +1135,84 @@ color_code_raw_is_valid(uint32_t val);
 
 #define color_code_is_valid(val) color_code_raw_is_valid((uint32_t)(val))
 
-void
+ALWAYS_INLINE void
 auto_layout_register_set_auto_field_5bit(auto_layout_register_t *bit_field,
 					 uint8_t		 val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 auto_layout_register_get_auto_field_5bit(
 	const auto_layout_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_copy_auto_field_5bit(
 	auto_layout_register_t	     *bit_field_dst,
 	const auto_layout_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_set_auto_field_enum(auto_layout_register_t *bit_field,
 					 color_code_t		 val);
 
-color_code_t
+ALWAYS_INLINE color_code_t
 auto_layout_register_get_auto_field_enum(
 	const auto_layout_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_copy_auto_field_enum(
 	auto_layout_register_t	     *bit_field_dst,
 	const auto_layout_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_set_replacement_field(auto_layout_register_t *bit_field,
 					   uint16_t		   val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 auto_layout_register_get_replacement_field(
 	const auto_layout_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_copy_replacement_field(
 	auto_layout_register_t	     *bit_field_dst,
 	const auto_layout_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_set_additional_auto_field(
 	auto_layout_register_t *bit_field, uint8_t val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 auto_layout_register_get_additional_auto_field(
 	const auto_layout_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 auto_layout_register_copy_additional_auto_field(
 	auto_layout_register_t	     *bit_field_dst,
 	const auto_layout_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 peripheral_control_register_set_peripheral_id(
 	peripheral_control_register_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 peripheral_control_register_get_peripheral_id(
 	const peripheral_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 peripheral_control_register_copy_peripheral_id(
 	peripheral_control_register_t	    *bit_field_dst,
 	const peripheral_control_register_t *bit_field_src);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 peripheral_control_register_get_version(
 	const peripheral_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 peripheral_control_register_set_config_data(
 	peripheral_control_register_t *bit_field, uint64_t val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 peripheral_control_register_get_config_data(
 	const peripheral_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 peripheral_control_register_copy_config_data(
 	peripheral_control_register_t	    *bit_field_dst,
 	const peripheral_control_register_t *bit_field_src);
@@ -1232,174 +1232,174 @@ error_code_raw_is_valid(int32_t val);
 
 #define error_code_is_valid(val) error_code_raw_is_valid((int32_t)(val))
 
-void
+ALWAYS_INLINE void
 initialization_register_set_reset_flag(initialization_register_t *bit_field,
 				       uint16_t			  val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 initialization_register_get_reset_flag(
 	const initialization_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 initialization_register_copy_reset_flag(
 	initialization_register_t	*bit_field_dst,
 	const initialization_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 initialization_register_set_magic_byte_b(initialization_register_t *bit_field,
 					 uint16_t		    val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 initialization_register_get_magic_byte_c(
 	const initialization_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 initialization_register_set_extended_config(
 	initialization_register_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 initialization_register_get_extended_config(
 	const initialization_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 initialization_register_copy_extended_config(
 	initialization_register_t	*bit_field_dst,
 	const initialization_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_set_interrupt_id(
 	interrupt_control_register_t *bit_field, color_code_t val);
 
-color_code_t
+ALWAYS_INLINE color_code_t
 interrupt_control_register_get_interrupt_id(
 	const interrupt_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_copy_interrupt_id(
 	interrupt_control_register_t	   *bit_field_dst,
 	const interrupt_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_set_priority_level(
 	interrupt_control_register_t *bit_field, int16_t val);
 
-int16_t
+ALWAYS_INLINE int16_t
 interrupt_control_register_get_priority_level(
 	const interrupt_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_copy_priority_level(
 	interrupt_control_register_t	   *bit_field_dst,
 	const interrupt_control_register_t *bit_field_src);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 interrupt_control_register_get_handler_index(
 	const interrupt_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_set_interrupt_flags(
 	interrupt_control_register_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 interrupt_control_register_get_interrupt_flags(
 	const interrupt_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 interrupt_control_register_copy_interrupt_flags(
 	interrupt_control_register_t	   *bit_field_dst,
 	const interrupt_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 memory_config_register_set_base_address(memory_config_register_t *bit_field,
 					uint16_t		  val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 memory_config_register_get_base_address(
 	const memory_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 memory_config_register_copy_base_address(
 	memory_config_register_t       *bit_field_dst,
 	const memory_config_register_t *bit_field_src);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 memory_config_register_get_read_only_id(
 	const memory_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 memory_config_register_set_extended_address(memory_config_register_t *bit_field,
 					    uint64_t		      val);
 
-uint64_t
+ALWAYS_INLINE uint64_t
 memory_config_register_get_extended_address(
 	const memory_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 memory_config_register_copy_extended_address(
 	memory_config_register_t       *bit_field_dst,
 	const memory_config_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 module_config_register_set_extended_module_id(
 	module_config_register_t *bit_field, uint16_t val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 module_config_register_get_extended_module_id(
 	const module_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 module_config_register_copy_extended_module_id(
 	module_config_register_t       *bit_field_dst,
 	const module_config_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 module_config_register_set_module_version(module_config_register_t *bit_field,
 					  uint16_t		    val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 module_config_register_get_module_version(
 	const module_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 module_config_register_copy_module_version(
 	module_config_register_t       *bit_field_dst,
 	const module_config_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 module_config_register_set_feature_flags(module_config_register_t *bit_field,
 					 uint8_t		   val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 module_config_register_get_feature_flags(
 	const module_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 module_config_register_copy_feature_flags(
 	module_config_register_t       *bit_field_dst,
 	const module_config_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 module_config_register_set_capability_bits(module_config_register_t *bit_field,
 					   uint32_t		     val);
 
-uint32_t
+ALWAYS_INLINE uint32_t
 module_config_register_get_capability_bits(
 	const module_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 module_config_register_copy_capability_bits(
 	module_config_register_t       *bit_field_dst,
 	const module_config_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 module_config_register_set_additional_capability(
 	module_config_register_t *bit_field, uint8_t val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 module_config_register_get_additional_capability(
 	const module_config_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 module_config_register_copy_additional_capability(
 	module_config_register_t       *bit_field_dst,
 	const module_config_register_t *bit_field_src);
@@ -1451,96 +1451,96 @@ status_flag_raw_is_valid(uint32_t val);
 
 #define status_flag_is_valid(val) status_flag_raw_is_valid((uint32_t)(val))
 
-void
+ALWAYS_INLINE void
 system_control_register_set_device_id(system_control_register_t *bit_field,
 				      uint16_t			 val);
 
-uint16_t
+ALWAYS_INLINE uint16_t
 system_control_register_get_device_id(
 	const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_device_id(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_priority(system_control_register_t *bit_field,
 				     int16_t			val);
 
-int16_t
+ALWAYS_INLINE int16_t
 system_control_register_get_priority(const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_priority(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_status_code(system_control_register_t *bit_field,
 					int16_t			   val);
 
-int16_t
+ALWAYS_INLINE int16_t
 system_control_register_get_status_code(
 	const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_status_code(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_flags(system_control_register_t *bit_field,
 				  uint8_t		     val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 system_control_register_get_flags(const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_flags(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_mode(system_control_register_t *bit_field,
 				 uint8_t		    val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 system_control_register_get_mode(const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_mode(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_address_offset(system_control_register_t *bit_field,
 					   uint32_t		      val);
 
-uint32_t
+ALWAYS_INLINE uint32_t
 system_control_register_get_address_offset(
 	const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_address_offset(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_enable(system_control_register_t *bit_field,
 				   bool			      val);
 
-uint8_t
+ALWAYS_INLINE uint8_t
 system_control_register_get_lock_bit(const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_set_sign_bit(system_control_register_t *bit_field,
 				     int8_t			val);
 
-int8_t
+ALWAYS_INLINE int8_t
 system_control_register_get_sign_bit(const system_control_register_t *bit_field);
 
-void
+ALWAYS_INLINE void
 system_control_register_copy_sign_bit(
 	system_control_register_t	*bit_field_dst,
 	const system_control_register_t *bit_field_src);

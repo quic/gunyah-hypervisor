@@ -109,6 +109,8 @@ class TopLevel:
         for d in itertools.chain(sorted_defs, self.declarations):
             if public_only and not d.is_public:
                 continue
+
+            d.public_only = public_only
             c, e = d.gen_code()
             code += c
             extra += e
@@ -1598,6 +1600,7 @@ class BitFieldDeclaration(IGenCode, IDeclaration):
         self.ranges = None
         self.default = None
         self._template = None
+        self.public_only = False
 
     def gen_code(self):
         # validate parameters
@@ -2599,6 +2602,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
         self._has_set_ops = None
         self._template = None
         self._updated = False
+        self.public_only = False
 
     def update_unit_info(self):
         if self.length <= 8:
@@ -2792,6 +2796,7 @@ class BitFieldDefinition(IGenCode, ICustomizedDefinition):
                 raise DSLError("each declaration needs to specify logical" +
                                " physical bit map", d.member_name)
             else:
+                d.public_only = self.public_only
                 c, e = d.gen_code()
                 code += c
                 extra += e

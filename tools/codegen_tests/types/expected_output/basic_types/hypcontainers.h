@@ -6,7 +6,7 @@
 
 // The container_of macros for the tagged types
 
-static inline DemoContainer_t *
+ALWAYS_INLINE static inline DemoContainer_t *
 DemoContainer_container_of_int_var(const uint8_t *ptr)
 {
 	_Static_assert(
@@ -15,7 +15,7 @@ DemoContainer_container_of_int_var(const uint8_t *ptr)
 	return ((DemoContainer_t *)((uintptr_t)(ptr)-0U));
 }
 
-static inline DemoContainer_t *
+ALWAYS_INLINE static inline DemoContainer_t *
 DemoContainer_container_of_bit_field_var(const StructBitField_t *ptr)
 {
 	_Static_assert(
@@ -24,7 +24,7 @@ DemoContainer_container_of_bit_field_var(const StructBitField_t *ptr)
 	return ((DemoContainer_t *)((uintptr_t)(ptr)-8U));
 }
 
-static inline DemoContainer_t *
+ALWAYS_INLINE static inline DemoContainer_t *
 DemoContainer_container_of_nested_struct(const DemoSingleField_t *ptr)
 {
 	_Static_assert(
@@ -33,7 +33,7 @@ DemoContainer_container_of_nested_struct(const DemoSingleField_t *ptr)
 	return ((DemoContainer_t *)((uintptr_t)(ptr)-24U));
 }
 
-static inline DemoContainer_t *
+ALWAYS_INLINE static inline DemoContainer_t *
 DemoContainer_container_of_nested_struct2(const DemoFixed_t *ptr)
 {
 	_Static_assert(

@@ -16,9 +16,9 @@ typedef struct Back_ptr_result {
 	error_t alignas(register_t) e;
 } Back_ptr_result_t;
 
-Back_ptr_result_t
+ALWAYS_INLINE Back_ptr_result_t
 Back_ptr_result_error(error_t err);
-Back_ptr_result_t
+ALWAYS_INLINE Back_ptr_result_t
 Back_ptr_result_ok(Back_t *ret);
 
 typedef struct Default_result {
@@ -26,9 +26,9 @@ typedef struct Default_result {
 	error_t alignas(register_t) e;
 } Default_result_t;
 
-Default_result_t
+ALWAYS_INLINE Default_result_t
 Default_result_error(error_t err);
-Default_result_t
+ALWAYS_INLINE Default_result_t
 Default_result_ok(Default_t ret);
 
 typedef struct Default_ptr_result {
@@ -36,9 +36,9 @@ typedef struct Default_ptr_result {
 	error_t alignas(register_t) e;
 } Default_ptr_result_t;
 
-Default_ptr_result_t
+ALWAYS_INLINE Default_ptr_result_t
 Default_ptr_result_error(error_t err);
-Default_ptr_result_t
+ALWAYS_INLINE Default_ptr_result_t
 Default_ptr_result_ok(Default_t *ret);
 
 typedef struct Demo2U_ptr_result {
@@ -46,9 +46,9 @@ typedef struct Demo2U_ptr_result {
 	error_t alignas(register_t) e;
 } Demo2U_ptr_result_t;
 
-Demo2U_ptr_result_t
+ALWAYS_INLINE Demo2U_ptr_result_t
 Demo2U_ptr_result_error(error_t err);
-Demo2U_ptr_result_t
+ALWAYS_INLINE Demo2U_ptr_result_t
 Demo2U_ptr_result_ok(Demo2U_t *ret);
 
 typedef struct DemoContainer_result {
@@ -56,9 +56,9 @@ typedef struct DemoContainer_result {
 	error_t alignas(register_t) e;
 } DemoContainer_result_t;
 
-DemoContainer_result_t
+ALWAYS_INLINE DemoContainer_result_t
 DemoContainer_result_error(error_t err);
-DemoContainer_result_t
+ALWAYS_INLINE DemoContainer_result_t
 DemoContainer_result_ok(DemoContainer_t ret);
 
 typedef struct DemoContainer_ptr_result {
@@ -66,9 +66,9 @@ typedef struct DemoContainer_ptr_result {
 	error_t alignas(register_t) e;
 } DemoContainer_ptr_result_t;
 
-DemoContainer_ptr_result_t
+ALWAYS_INLINE DemoContainer_ptr_result_t
 DemoContainer_ptr_result_error(error_t err);
-DemoContainer_ptr_result_t
+ALWAYS_INLINE DemoContainer_ptr_result_t
 DemoContainer_ptr_result_ok(DemoContainer_t *ret);
 
 typedef struct DemoFixed_result {
@@ -76,9 +76,9 @@ typedef struct DemoFixed_result {
 	error_t alignas(register_t) e;
 } DemoFixed_result_t;
 
-DemoFixed_result_t
+ALWAYS_INLINE DemoFixed_result_t
 DemoFixed_result_error(error_t err);
-DemoFixed_result_t
+ALWAYS_INLINE DemoFixed_result_t
 DemoFixed_result_ok(DemoFixed_t ret);
 
 typedef struct DemoFixed_ptr_result {
@@ -86,9 +86,9 @@ typedef struct DemoFixed_ptr_result {
 	error_t alignas(register_t) e;
 } DemoFixed_ptr_result_t;
 
-DemoFixed_ptr_result_t
+ALWAYS_INLINE DemoFixed_ptr_result_t
 DemoFixed_ptr_result_error(error_t err);
-DemoFixed_ptr_result_t
+ALWAYS_INLINE DemoFixed_ptr_result_t
 DemoFixed_ptr_result_ok(DemoFixed_t *ret);
 
 typedef struct DemoPacked_result {
@@ -96,9 +96,9 @@ typedef struct DemoPacked_result {
 	error_t alignas(register_t) e;
 } DemoPacked_result_t;
 
-DemoPacked_result_t
+ALWAYS_INLINE DemoPacked_result_t
 DemoPacked_result_error(error_t err);
-DemoPacked_result_t
+ALWAYS_INLINE DemoPacked_result_t
 DemoPacked_result_ok(DemoPacked_t ret);
 
 typedef struct DemoPacked_ptr_result {
@@ -106,9 +106,9 @@ typedef struct DemoPacked_ptr_result {
 	error_t alignas(register_t) e;
 } DemoPacked_ptr_result_t;
 
-DemoPacked_ptr_result_t
+ALWAYS_INLINE DemoPacked_ptr_result_t
 DemoPacked_ptr_result_error(error_t err);
-DemoPacked_ptr_result_t
+ALWAYS_INLINE DemoPacked_ptr_result_t
 DemoPacked_ptr_result_ok(DemoPacked_t *ret);
 
 typedef struct DemoPackedInObject_result {
@@ -116,9 +116,9 @@ typedef struct DemoPackedInObject_result {
 	error_t alignas(register_t) e;
 } DemoPackedInObject_result_t;
 
-DemoPackedInObject_result_t
+ALWAYS_INLINE DemoPackedInObject_result_t
 DemoPackedInObject_result_error(error_t err);
-DemoPackedInObject_result_t
+ALWAYS_INLINE DemoPackedInObject_result_t
 DemoPackedInObject_result_ok(DemoPackedInObject_t ret);
 
 typedef struct DemoPackedInObject_ptr_result {
@@ -126,9 +126,9 @@ typedef struct DemoPackedInObject_ptr_result {
 	error_t alignas(register_t) e;
 } DemoPackedInObject_ptr_result_t;
 
-DemoPackedInObject_ptr_result_t
+ALWAYS_INLINE DemoPackedInObject_ptr_result_t
 DemoPackedInObject_ptr_result_error(error_t err);
-DemoPackedInObject_ptr_result_t
+ALWAYS_INLINE DemoPackedInObject_ptr_result_t
 DemoPackedInObject_ptr_result_ok(DemoPackedInObject_t *ret);
 
 typedef struct DemoSingleField_result {
@@ -136,9 +136,9 @@ typedef struct DemoSingleField_result {
 	error_t alignas(register_t) e;
 } DemoSingleField_result_t;
 
-DemoSingleField_result_t
+ALWAYS_INLINE DemoSingleField_result_t
 DemoSingleField_result_error(error_t err);
-DemoSingleField_result_t
+ALWAYS_INLINE DemoSingleField_result_t
 DemoSingleField_result_ok(DemoSingleField_t ret);
 
 typedef struct DemoSingleField_ptr_result {
@@ -146,9 +146,9 @@ typedef struct DemoSingleField_ptr_result {
 	error_t alignas(register_t) e;
 } DemoSingleField_ptr_result_t;
 
-DemoSingleField_ptr_result_t
+ALWAYS_INLINE DemoSingleField_ptr_result_t
 DemoSingleField_ptr_result_error(error_t err);
-DemoSingleField_ptr_result_t
+ALWAYS_INLINE DemoSingleField_ptr_result_t
 DemoSingleField_ptr_result_ok(DemoSingleField_t *ret);
 
 typedef struct DemoUStruct_result {
@@ -156,9 +156,9 @@ typedef struct DemoUStruct_result {
 	error_t alignas(register_t) e;
 } DemoUStruct_result_t;
 
-DemoUStruct_result_t
+ALWAYS_INLINE DemoUStruct_result_t
 DemoUStruct_result_error(error_t err);
-DemoUStruct_result_t
+ALWAYS_INLINE DemoUStruct_result_t
 DemoUStruct_result_ok(DemoUStruct_t ret);
 
 typedef struct DemoUStruct_ptr_result {
@@ -166,9 +166,9 @@ typedef struct DemoUStruct_ptr_result {
 	error_t alignas(register_t) e;
 } DemoUStruct_ptr_result_t;
 
-DemoUStruct_ptr_result_t
+ALWAYS_INLINE DemoUStruct_ptr_result_t
 DemoUStruct_ptr_result_error(error_t err);
-DemoUStruct_ptr_result_t
+ALWAYS_INLINE DemoUStruct_ptr_result_t
 DemoUStruct_ptr_result_ok(DemoUStruct_t *ret);
 
 typedef struct ExecContext_ptr_result {
@@ -176,9 +176,9 @@ typedef struct ExecContext_ptr_result {
 	error_t alignas(register_t) e;
 } ExecContext_ptr_result_t;
 
-ExecContext_ptr_result_t
+ALWAYS_INLINE ExecContext_ptr_result_t
 ExecContext_ptr_result_error(error_t err);
-ExecContext_ptr_result_t
+ALWAYS_INLINE ExecContext_ptr_result_t
 ExecContext_ptr_result_ok(ExecContext_t *ret);
 
 typedef struct NestUI_ptr_result {
@@ -186,9 +186,9 @@ typedef struct NestUI_ptr_result {
 	error_t alignas(register_t) e;
 } NestUI_ptr_result_t;
 
-NestUI_ptr_result_t
+ALWAYS_INLINE NestUI_ptr_result_t
 NestUI_ptr_result_error(error_t err);
-NestUI_ptr_result_t
+ALWAYS_INLINE NestUI_ptr_result_t
 NestUI_ptr_result_ok(NestUI_t *ret);
 
 typedef struct Standalone_ptr_result {
@@ -196,9 +196,9 @@ typedef struct Standalone_ptr_result {
 	error_t alignas(register_t) e;
 } Standalone_ptr_result_t;
 
-Standalone_ptr_result_t
+ALWAYS_INLINE Standalone_ptr_result_t
 Standalone_ptr_result_error(error_t err);
-Standalone_ptr_result_t
+ALWAYS_INLINE Standalone_ptr_result_t
 Standalone_ptr_result_ok(Standalone_t *ret);
 
 typedef struct StructBitField_result {
@@ -206,9 +206,9 @@ typedef struct StructBitField_result {
 	error_t alignas(register_t) e;
 } StructBitField_result_t;
 
-StructBitField_result_t
+ALWAYS_INLINE StructBitField_result_t
 StructBitField_result_error(error_t err);
-StructBitField_result_t
+ALWAYS_INLINE StructBitField_result_t
 StructBitField_result_ok(StructBitField_t ret);
 
 typedef struct StructBitField_ptr_result {
@@ -216,9 +216,9 @@ typedef struct StructBitField_ptr_result {
 	error_t alignas(register_t) e;
 } StructBitField_ptr_result_t;
 
-StructBitField_ptr_result_t
+ALWAYS_INLINE StructBitField_ptr_result_t
 StructBitField_ptr_result_error(error_t err);
-StructBitField_ptr_result_t
+ALWAYS_INLINE StructBitField_ptr_result_t
 StructBitField_ptr_result_ok(StructBitField_t *ret);
 
 typedef struct TEST_COMB_feat_var_VAR1_result {
@@ -226,9 +226,9 @@ typedef struct TEST_COMB_feat_var_VAR1_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_feat_var_VAR1_result_t;
 
-TEST_COMB_feat_var_VAR1_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR1_result_t
 TEST_COMB_feat_var_VAR1_result_error(error_t err);
-TEST_COMB_feat_var_VAR1_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR1_result_t
 TEST_COMB_feat_var_VAR1_result_ok(TEST_COMB_feat_var_VAR1_t ret);
 
 typedef struct TEST_COMB_feat_var_VAR1_ptr_result {
@@ -236,9 +236,9 @@ typedef struct TEST_COMB_feat_var_VAR1_ptr_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_feat_var_VAR1_ptr_result_t;
 
-TEST_COMB_feat_var_VAR1_ptr_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR1_ptr_result_t
 TEST_COMB_feat_var_VAR1_ptr_result_error(error_t err);
-TEST_COMB_feat_var_VAR1_ptr_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR1_ptr_result_t
 TEST_COMB_feat_var_VAR1_ptr_result_ok(TEST_COMB_feat_var_VAR1_t *ret);
 
 typedef struct TEST_COMB_feat_var_VAR2_result {
@@ -246,9 +246,9 @@ typedef struct TEST_COMB_feat_var_VAR2_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_feat_var_VAR2_result_t;
 
-TEST_COMB_feat_var_VAR2_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR2_result_t
 TEST_COMB_feat_var_VAR2_result_error(error_t err);
-TEST_COMB_feat_var_VAR2_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR2_result_t
 TEST_COMB_feat_var_VAR2_result_ok(TEST_COMB_feat_var_VAR2_t ret);
 
 typedef struct TEST_COMB_feat_var_VAR2_ptr_result {
@@ -256,9 +256,9 @@ typedef struct TEST_COMB_feat_var_VAR2_ptr_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_feat_var_VAR2_ptr_result_t;
 
-TEST_COMB_feat_var_VAR2_ptr_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR2_ptr_result_t
 TEST_COMB_feat_var_VAR2_ptr_result_error(error_t err);
-TEST_COMB_feat_var_VAR2_ptr_result_t
+ALWAYS_INLINE TEST_COMB_feat_var_VAR2_ptr_result_t
 TEST_COMB_feat_var_VAR2_ptr_result_ok(TEST_COMB_feat_var_VAR2_t *ret);
 
 typedef struct TEST_COMB_multi_over_VAR1_result {
@@ -266,9 +266,9 @@ typedef struct TEST_COMB_multi_over_VAR1_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_multi_over_VAR1_result_t;
 
-TEST_COMB_multi_over_VAR1_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR1_result_t
 TEST_COMB_multi_over_VAR1_result_error(error_t err);
-TEST_COMB_multi_over_VAR1_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR1_result_t
 TEST_COMB_multi_over_VAR1_result_ok(TEST_COMB_multi_over_VAR1_t ret);
 
 typedef struct TEST_COMB_multi_over_VAR1_ptr_result {
@@ -276,9 +276,9 @@ typedef struct TEST_COMB_multi_over_VAR1_ptr_result {
 	error_t alignas(register_t)  e;
 } TEST_COMB_multi_over_VAR1_ptr_result_t;
 
-TEST_COMB_multi_over_VAR1_ptr_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR1_ptr_result_t
 TEST_COMB_multi_over_VAR1_ptr_result_error(error_t err);
-TEST_COMB_multi_over_VAR1_ptr_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR1_ptr_result_t
 TEST_COMB_multi_over_VAR1_ptr_result_ok(TEST_COMB_multi_over_VAR1_t *ret);
 
 typedef struct TEST_COMB_multi_over_VAR2_result {
@@ -286,9 +286,9 @@ typedef struct TEST_COMB_multi_over_VAR2_result {
 	error_t alignas(register_t) e;
 } TEST_COMB_multi_over_VAR2_result_t;
 
-TEST_COMB_multi_over_VAR2_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR2_result_t
 TEST_COMB_multi_over_VAR2_result_error(error_t err);
-TEST_COMB_multi_over_VAR2_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR2_result_t
 TEST_COMB_multi_over_VAR2_result_ok(TEST_COMB_multi_over_VAR2_t ret);
 
 typedef struct TEST_COMB_multi_over_VAR2_ptr_result {
@@ -296,9 +296,9 @@ typedef struct TEST_COMB_multi_over_VAR2_ptr_result {
 	error_t alignas(register_t)  e;
 } TEST_COMB_multi_over_VAR2_ptr_result_t;
 
-TEST_COMB_multi_over_VAR2_ptr_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR2_ptr_result_t
 TEST_COMB_multi_over_VAR2_ptr_result_error(error_t err);
-TEST_COMB_multi_over_VAR2_ptr_result_t
+ALWAYS_INLINE TEST_COMB_multi_over_VAR2_ptr_result_t
 TEST_COMB_multi_over_VAR2_ptr_result_ok(TEST_COMB_multi_over_VAR2_t *ret);
 
 typedef struct TEST_DEFAULT_feat_result {
@@ -306,9 +306,9 @@ typedef struct TEST_DEFAULT_feat_result {
 	error_t alignas(register_t) e;
 } TEST_DEFAULT_feat_result_t;
 
-TEST_DEFAULT_feat_result_t
+ALWAYS_INLINE TEST_DEFAULT_feat_result_t
 TEST_DEFAULT_feat_result_error(error_t err);
-TEST_DEFAULT_feat_result_t
+ALWAYS_INLINE TEST_DEFAULT_feat_result_t
 TEST_DEFAULT_feat_result_ok(TEST_DEFAULT_feat_t ret);
 
 typedef struct TEST_DEFAULT_feat_ptr_result {
@@ -316,9 +316,9 @@ typedef struct TEST_DEFAULT_feat_ptr_result {
 	error_t alignas(register_t) e;
 } TEST_DEFAULT_feat_ptr_result_t;
 
-TEST_DEFAULT_feat_ptr_result_t
+ALWAYS_INLINE TEST_DEFAULT_feat_ptr_result_t
 TEST_DEFAULT_feat_ptr_result_error(error_t err);
-TEST_DEFAULT_feat_ptr_result_t
+ALWAYS_INLINE TEST_DEFAULT_feat_ptr_result_t
 TEST_DEFAULT_feat_ptr_result_ok(TEST_DEFAULT_feat_t *ret);
 
 typedef struct TEST_DEFAULT_plain_result {
@@ -326,9 +326,9 @@ typedef struct TEST_DEFAULT_plain_result {
 	error_t alignas(register_t) e;
 } TEST_DEFAULT_plain_result_t;
 
-TEST_DEFAULT_plain_result_t
+ALWAYS_INLINE TEST_DEFAULT_plain_result_t
 TEST_DEFAULT_plain_result_error(error_t err);
-TEST_DEFAULT_plain_result_t
+ALWAYS_INLINE TEST_DEFAULT_plain_result_t
 TEST_DEFAULT_plain_result_ok(TEST_DEFAULT_plain_t ret);
 
 typedef struct TEST_DEFAULT_plain_ptr_result {
@@ -336,9 +336,9 @@ typedef struct TEST_DEFAULT_plain_ptr_result {
 	error_t alignas(register_t) e;
 } TEST_DEFAULT_plain_ptr_result_t;
 
-TEST_DEFAULT_plain_ptr_result_t
+ALWAYS_INLINE TEST_DEFAULT_plain_ptr_result_t
 TEST_DEFAULT_plain_ptr_result_error(error_t err);
-TEST_DEFAULT_plain_ptr_result_t
+ALWAYS_INLINE TEST_DEFAULT_plain_ptr_result_t
 TEST_DEFAULT_plain_ptr_result_ok(TEST_DEFAULT_plain_t *ret);
 
 typedef struct TestBitField_result {
@@ -346,9 +346,9 @@ typedef struct TestBitField_result {
 	error_t alignas(register_t) e;
 } TestBitField_result_t;
 
-TestBitField_result_t
+ALWAYS_INLINE TestBitField_result_t
 TestBitField_result_error(error_t err);
-TestBitField_result_t
+ALWAYS_INLINE TestBitField_result_t
 TestBitField_result_ok(TestBitField_t ret);
 
 typedef struct TestBitField_ptr_result {
@@ -356,9 +356,9 @@ typedef struct TestBitField_ptr_result {
 	error_t alignas(register_t) e;
 } TestBitField_ptr_result_t;
 
-TestBitField_ptr_result_t
+ALWAYS_INLINE TestBitField_ptr_result_t
 TestBitField_ptr_result_error(error_t err);
-TestBitField_ptr_result_t
+ALWAYS_INLINE TestBitField_ptr_result_t
 TestBitField_ptr_result_ok(TestBitField_t *ret);
 
 typedef struct UBitField_result {
@@ -366,9 +366,9 @@ typedef struct UBitField_result {
 	error_t alignas(register_t) e;
 } UBitField_result_t;
 
-UBitField_result_t
+ALWAYS_INLINE UBitField_result_t
 UBitField_result_error(error_t err);
-UBitField_result_t
+ALWAYS_INLINE UBitField_result_t
 UBitField_result_ok(UBitField_t ret);
 
 typedef struct UBitField_ptr_result {
@@ -376,9 +376,9 @@ typedef struct UBitField_ptr_result {
 	error_t alignas(register_t) e;
 } UBitField_ptr_result_t;
 
-UBitField_ptr_result_t
+ALWAYS_INLINE UBitField_ptr_result_t
 UBitField_ptr_result_error(error_t err);
-UBitField_ptr_result_t
+ALWAYS_INLINE UBitField_ptr_result_t
 UBitField_ptr_result_ok(UBitField_t *ret);
 
 typedef struct auto_layout_register_result {
@@ -386,9 +386,9 @@ typedef struct auto_layout_register_result {
 	error_t alignas(register_t) e;
 } auto_layout_register_result_t;
 
-auto_layout_register_result_t
+ALWAYS_INLINE auto_layout_register_result_t
 auto_layout_register_result_error(error_t err);
-auto_layout_register_result_t
+ALWAYS_INLINE auto_layout_register_result_t
 auto_layout_register_result_ok(auto_layout_register_t ret);
 
 typedef struct auto_layout_register_ptr_result {
@@ -396,9 +396,9 @@ typedef struct auto_layout_register_ptr_result {
 	error_t alignas(register_t) e;
 } auto_layout_register_ptr_result_t;
 
-auto_layout_register_ptr_result_t
+ALWAYS_INLINE auto_layout_register_ptr_result_t
 auto_layout_register_ptr_result_error(error_t err);
-auto_layout_register_ptr_result_t
+ALWAYS_INLINE auto_layout_register_ptr_result_t
 auto_layout_register_ptr_result_ok(auto_layout_register_t *ret);
 
 typedef struct byte_result {
@@ -406,9 +406,9 @@ typedef struct byte_result {
 	error_t alignas(register_t) e;
 } byte_result_t;
 
-byte_result_t
+ALWAYS_INLINE byte_result_t
 byte_result_error(error_t err);
-byte_result_t
+ALWAYS_INLINE byte_result_t
 byte_result_ok(byte_t ret);
 
 typedef struct byte_ptr_result {
@@ -416,9 +416,9 @@ typedef struct byte_ptr_result {
 	error_t alignas(register_t) e;
 } byte_ptr_result_t;
 
-byte_ptr_result_t
+ALWAYS_INLINE byte_ptr_result_t
 byte_ptr_result_error(error_t err);
-byte_ptr_result_t
+ALWAYS_INLINE byte_ptr_result_t
 byte_ptr_result_ok(byte_t *ret);
 
 typedef struct color_code_result {
@@ -426,9 +426,9 @@ typedef struct color_code_result {
 	error_t alignas(register_t) e;
 } color_code_result_t;
 
-color_code_result_t
+ALWAYS_INLINE color_code_result_t
 color_code_result_error(error_t err);
-color_code_result_t
+ALWAYS_INLINE color_code_result_t
 color_code_result_ok(color_code_t ret);
 
 typedef struct color_code_ptr_result {
@@ -436,9 +436,9 @@ typedef struct color_code_ptr_result {
 	error_t alignas(register_t) e;
 } color_code_ptr_result_t;
 
-color_code_ptr_result_t
+ALWAYS_INLINE color_code_ptr_result_t
 color_code_ptr_result_error(error_t err);
-color_code_ptr_result_t
+ALWAYS_INLINE color_code_ptr_result_t
 color_code_ptr_result_ok(color_code_t *ret);
 
 typedef struct count_result {
@@ -446,9 +446,9 @@ typedef struct count_result {
 	error_t alignas(register_t) e;
 } count_result_t;
 
-count_result_t
+ALWAYS_INLINE count_result_t
 count_result_error(error_t err);
-count_result_t
+ALWAYS_INLINE count_result_t
 count_result_ok(count_t ret);
 
 typedef struct count_ptr_result {
@@ -456,9 +456,9 @@ typedef struct count_ptr_result {
 	error_t alignas(register_t) e;
 } count_ptr_result_t;
 
-count_ptr_result_t
+ALWAYS_INLINE count_ptr_result_t
 count_ptr_result_error(error_t err);
-count_ptr_result_t
+ALWAYS_INLINE count_ptr_result_t
 count_ptr_result_ok(count_t *ret);
 
 typedef struct device_descriptor_result {
@@ -466,9 +466,9 @@ typedef struct device_descriptor_result {
 	error_t alignas(register_t) e;
 } device_descriptor_result_t;
 
-device_descriptor_result_t
+ALWAYS_INLINE device_descriptor_result_t
 device_descriptor_result_error(error_t err);
-device_descriptor_result_t
+ALWAYS_INLINE device_descriptor_result_t
 device_descriptor_result_ok(device_descriptor_t ret);
 
 typedef struct device_descriptor_ptr_result {
@@ -476,9 +476,9 @@ typedef struct device_descriptor_ptr_result {
 	error_t alignas(register_t) e;
 } device_descriptor_ptr_result_t;
 
-device_descriptor_ptr_result_t
+ALWAYS_INLINE device_descriptor_ptr_result_t
 device_descriptor_ptr_result_error(error_t err);
-device_descriptor_ptr_result_t
+ALWAYS_INLINE device_descriptor_ptr_result_t
 device_descriptor_ptr_result_ok(device_descriptor_t *ret);
 
 typedef struct dword_result {
@@ -486,9 +486,9 @@ typedef struct dword_result {
 	error_t alignas(register_t) e;
 } dword_result_t;
 
-dword_result_t
+ALWAYS_INLINE dword_result_t
 dword_result_error(error_t err);
-dword_result_t
+ALWAYS_INLINE dword_result_t
 dword_result_ok(dword_t ret);
 
 typedef struct dword_ptr_result {
@@ -496,9 +496,9 @@ typedef struct dword_ptr_result {
 	error_t alignas(register_t) e;
 } dword_ptr_result_t;
 
-dword_ptr_result_t
+ALWAYS_INLINE dword_ptr_result_t
 dword_ptr_result_error(error_t err);
-dword_ptr_result_t
+ALWAYS_INLINE dword_ptr_result_t
 dword_ptr_result_ok(dword_t *ret);
 
 typedef struct error_code_result {
@@ -506,9 +506,9 @@ typedef struct error_code_result {
 	error_t alignas(register_t) e;
 } error_code_result_t;
 
-error_code_result_t
+ALWAYS_INLINE error_code_result_t
 error_code_result_error(error_t err);
-error_code_result_t
+ALWAYS_INLINE error_code_result_t
 error_code_result_ok(error_code_t ret);
 
 typedef struct error_code_ptr_result {
@@ -516,9 +516,9 @@ typedef struct error_code_ptr_result {
 	error_t alignas(register_t) e;
 } error_code_ptr_result_t;
 
-error_code_ptr_result_t
+ALWAYS_INLINE error_code_ptr_result_t
 error_code_ptr_result_error(error_t err);
-error_code_ptr_result_t
+ALWAYS_INLINE error_code_ptr_result_t
 error_code_ptr_result_ok(error_code_t *ret);
 
 typedef struct half_result {
@@ -526,9 +526,9 @@ typedef struct half_result {
 	error_t alignas(register_t) e;
 } half_result_t;
 
-half_result_t
+ALWAYS_INLINE half_result_t
 half_result_error(error_t err);
-half_result_t
+ALWAYS_INLINE half_result_t
 half_result_ok(half_t ret);
 
 typedef struct half_ptr_result {
@@ -536,9 +536,9 @@ typedef struct half_ptr_result {
 	error_t alignas(register_t) e;
 } half_ptr_result_t;
 
-half_ptr_result_t
+ALWAYS_INLINE half_ptr_result_t
 half_ptr_result_error(error_t err);
-half_ptr_result_t
+ALWAYS_INLINE half_ptr_result_t
 half_ptr_result_ok(half_t *ret);
 
 typedef struct index_result {
@@ -546,9 +546,9 @@ typedef struct index_result {
 	error_t alignas(register_t) e;
 } index_result_t;
 
-index_result_t
+ALWAYS_INLINE index_result_t
 index_result_error(error_t err);
-index_result_t
+ALWAYS_INLINE index_result_t
 index_result_ok(index_t ret);
 
 typedef struct index_ptr_result {
@@ -556,9 +556,9 @@ typedef struct index_ptr_result {
 	error_t alignas(register_t) e;
 } index_ptr_result_t;
 
-index_ptr_result_t
+ALWAYS_INLINE index_ptr_result_t
 index_ptr_result_error(error_t err);
-index_ptr_result_t
+ALWAYS_INLINE index_ptr_result_t
 index_ptr_result_ok(index_t *ret);
 
 typedef struct initialization_register_result {
@@ -566,9 +566,9 @@ typedef struct initialization_register_result {
 	error_t alignas(register_t) e;
 } initialization_register_result_t;
 
-initialization_register_result_t
+ALWAYS_INLINE initialization_register_result_t
 initialization_register_result_error(error_t err);
-initialization_register_result_t
+ALWAYS_INLINE initialization_register_result_t
 initialization_register_result_ok(initialization_register_t ret);
 
 typedef struct initialization_register_ptr_result {
@@ -576,9 +576,9 @@ typedef struct initialization_register_ptr_result {
 	error_t alignas(register_t) e;
 } initialization_register_ptr_result_t;
 
-initialization_register_ptr_result_t
+ALWAYS_INLINE initialization_register_ptr_result_t
 initialization_register_ptr_result_error(error_t err);
-initialization_register_ptr_result_t
+ALWAYS_INLINE initialization_register_ptr_result_t
 initialization_register_ptr_result_ok(initialization_register_t *ret);
 
 typedef struct interrupt_control_register_result {
@@ -586,9 +586,9 @@ typedef struct interrupt_control_register_result {
 	error_t alignas(register_t)  e;
 } interrupt_control_register_result_t;
 
-interrupt_control_register_result_t
+ALWAYS_INLINE interrupt_control_register_result_t
 interrupt_control_register_result_error(error_t err);
-interrupt_control_register_result_t
+ALWAYS_INLINE interrupt_control_register_result_t
 interrupt_control_register_result_ok(interrupt_control_register_t ret);
 
 typedef struct interrupt_control_register_ptr_result {
@@ -596,9 +596,9 @@ typedef struct interrupt_control_register_ptr_result {
 	error_t alignas(register_t)   e;
 } interrupt_control_register_ptr_result_t;
 
-interrupt_control_register_ptr_result_t
+ALWAYS_INLINE interrupt_control_register_ptr_result_t
 interrupt_control_register_ptr_result_error(error_t err);
-interrupt_control_register_ptr_result_t
+ALWAYS_INLINE interrupt_control_register_ptr_result_t
 interrupt_control_register_ptr_result_ok(interrupt_control_register_t *ret);
 
 typedef struct memory_config_register_result {
@@ -606,9 +606,9 @@ typedef struct memory_config_register_result {
 	error_t alignas(register_t) e;
 } memory_config_register_result_t;
 
-memory_config_register_result_t
+ALWAYS_INLINE memory_config_register_result_t
 memory_config_register_result_error(error_t err);
-memory_config_register_result_t
+ALWAYS_INLINE memory_config_register_result_t
 memory_config_register_result_ok(memory_config_register_t ret);
 
 typedef struct memory_config_register_ptr_result {
@@ -616,9 +616,9 @@ typedef struct memory_config_register_ptr_result {
 	error_t alignas(register_t) e;
 } memory_config_register_ptr_result_t;
 
-memory_config_register_ptr_result_t
+ALWAYS_INLINE memory_config_register_ptr_result_t
 memory_config_register_ptr_result_error(error_t err);
-memory_config_register_ptr_result_t
+ALWAYS_INLINE memory_config_register_ptr_result_t
 memory_config_register_ptr_result_ok(memory_config_register_t *ret);
 
 typedef struct module_config_register_result {
@@ -626,9 +626,9 @@ typedef struct module_config_register_result {
 	error_t alignas(register_t) e;
 } module_config_register_result_t;
 
-module_config_register_result_t
+ALWAYS_INLINE module_config_register_result_t
 module_config_register_result_error(error_t err);
-module_config_register_result_t
+ALWAYS_INLINE module_config_register_result_t
 module_config_register_result_ok(module_config_register_t ret);
 
 typedef struct module_config_register_ptr_result {
@@ -636,9 +636,9 @@ typedef struct module_config_register_ptr_result {
 	error_t alignas(register_t) e;
 } module_config_register_ptr_result_t;
 
-module_config_register_ptr_result_t
+ALWAYS_INLINE module_config_register_ptr_result_t
 module_config_register_ptr_result_error(error_t err);
-module_config_register_ptr_result_t
+ALWAYS_INLINE module_config_register_ptr_result_t
 module_config_register_ptr_result_ok(module_config_register_t *ret);
 
 typedef struct peripheral_control_register_result {
@@ -646,9 +646,9 @@ typedef struct peripheral_control_register_result {
 	error_t alignas(register_t)   e;
 } peripheral_control_register_result_t;
 
-peripheral_control_register_result_t
+ALWAYS_INLINE peripheral_control_register_result_t
 peripheral_control_register_result_error(error_t err);
-peripheral_control_register_result_t
+ALWAYS_INLINE peripheral_control_register_result_t
 peripheral_control_register_result_ok(peripheral_control_register_t ret);
 
 typedef struct peripheral_control_register_ptr_result {
@@ -656,9 +656,9 @@ typedef struct peripheral_control_register_ptr_result {
 	error_t alignas(register_t)    e;
 } peripheral_control_register_ptr_result_t;
 
-peripheral_control_register_ptr_result_t
+ALWAYS_INLINE peripheral_control_register_ptr_result_t
 peripheral_control_register_ptr_result_error(error_t err);
-peripheral_control_register_ptr_result_t
+ALWAYS_INLINE peripheral_control_register_ptr_result_t
 peripheral_control_register_ptr_result_ok(peripheral_control_register_t *ret);
 
 typedef struct priority_level_result {
@@ -666,9 +666,9 @@ typedef struct priority_level_result {
 	error_t alignas(register_t) e;
 } priority_level_result_t;
 
-priority_level_result_t
+ALWAYS_INLINE priority_level_result_t
 priority_level_result_error(error_t err);
-priority_level_result_t
+ALWAYS_INLINE priority_level_result_t
 priority_level_result_ok(priority_level_t ret);
 
 typedef struct priority_level_ptr_result {
@@ -676,9 +676,9 @@ typedef struct priority_level_ptr_result {
 	error_t alignas(register_t) e;
 } priority_level_ptr_result_t;
 
-priority_level_ptr_result_t
+ALWAYS_INLINE priority_level_ptr_result_t
 priority_level_ptr_result_error(error_t err);
-priority_level_ptr_result_t
+ALWAYS_INLINE priority_level_ptr_result_t
 priority_level_ptr_result_ok(priority_level_t *ret);
 
 typedef struct result_code_result {
@@ -686,9 +686,9 @@ typedef struct result_code_result {
 	error_t alignas(register_t) e;
 } result_code_result_t;
 
-result_code_result_t
+ALWAYS_INLINE result_code_result_t
 result_code_result_error(error_t err);
-result_code_result_t
+ALWAYS_INLINE result_code_result_t
 result_code_result_ok(result_code_t ret);
 
 typedef struct result_code_ptr_result {
@@ -696,9 +696,9 @@ typedef struct result_code_ptr_result {
 	error_t alignas(register_t) e;
 } result_code_ptr_result_t;
 
-result_code_ptr_result_t
+ALWAYS_INLINE result_code_ptr_result_t
 result_code_ptr_result_error(error_t err);
-result_code_ptr_result_t
+ALWAYS_INLINE result_code_ptr_result_t
 result_code_ptr_result_ok(result_code_t *ret);
 
 typedef struct sizeof_test_result {
@@ -706,9 +706,9 @@ typedef struct sizeof_test_result {
 	error_t alignas(register_t) e;
 } sizeof_test_result_t;
 
-sizeof_test_result_t
+ALWAYS_INLINE sizeof_test_result_t
 sizeof_test_result_error(error_t err);
-sizeof_test_result_t
+ALWAYS_INLINE sizeof_test_result_t
 sizeof_test_result_ok(sizeof_test_t ret);
 
 typedef struct sizeof_test_ptr_result {
@@ -716,9 +716,9 @@ typedef struct sizeof_test_ptr_result {
 	error_t alignas(register_t) e;
 } sizeof_test_ptr_result_t;
 
-sizeof_test_ptr_result_t
+ALWAYS_INLINE sizeof_test_ptr_result_t
 sizeof_test_ptr_result_error(error_t err);
-sizeof_test_ptr_result_t
+ALWAYS_INLINE sizeof_test_ptr_result_t
 sizeof_test_ptr_result_ok(sizeof_test_t *ret);
 
 typedef struct status_flag_result {
@@ -726,9 +726,9 @@ typedef struct status_flag_result {
 	error_t alignas(register_t) e;
 } status_flag_result_t;
 
-status_flag_result_t
+ALWAYS_INLINE status_flag_result_t
 status_flag_result_error(error_t err);
-status_flag_result_t
+ALWAYS_INLINE status_flag_result_t
 status_flag_result_ok(status_flag_t ret);
 
 typedef struct status_flag_ptr_result {
@@ -736,9 +736,9 @@ typedef struct status_flag_ptr_result {
 	error_t alignas(register_t) e;
 } status_flag_ptr_result_t;
 
-status_flag_ptr_result_t
+ALWAYS_INLINE status_flag_ptr_result_t
 status_flag_ptr_result_error(error_t err);
-status_flag_ptr_result_t
+ALWAYS_INLINE status_flag_ptr_result_t
 status_flag_ptr_result_ok(status_flag_t *ret);
 
 typedef struct system_control_register_result {
@@ -746,9 +746,9 @@ typedef struct system_control_register_result {
 	error_t alignas(register_t) e;
 } system_control_register_result_t;
 
-system_control_register_result_t
+ALWAYS_INLINE system_control_register_result_t
 system_control_register_result_error(error_t err);
-system_control_register_result_t
+ALWAYS_INLINE system_control_register_result_t
 system_control_register_result_ok(system_control_register_t ret);
 
 typedef struct system_control_register_ptr_result {
@@ -756,9 +756,9 @@ typedef struct system_control_register_ptr_result {
 	error_t alignas(register_t) e;
 } system_control_register_ptr_result_t;
 
-system_control_register_ptr_result_t
+ALWAYS_INLINE system_control_register_ptr_result_t
 system_control_register_ptr_result_error(error_t err);
-system_control_register_ptr_result_t
+ALWAYS_INLINE system_control_register_ptr_result_t
 system_control_register_ptr_result_ok(system_control_register_t *ret);
 
 typedef struct temperature_offset_result {
@@ -766,9 +766,9 @@ typedef struct temperature_offset_result {
 	error_t alignas(register_t) e;
 } temperature_offset_result_t;
 
-temperature_offset_result_t
+ALWAYS_INLINE temperature_offset_result_t
 temperature_offset_result_error(error_t err);
-temperature_offset_result_t
+ALWAYS_INLINE temperature_offset_result_t
 temperature_offset_result_ok(temperature_offset_t ret);
 
 typedef struct temperature_offset_ptr_result {
@@ -776,9 +776,9 @@ typedef struct temperature_offset_ptr_result {
 	error_t alignas(register_t) e;
 } temperature_offset_ptr_result_t;
 
-temperature_offset_ptr_result_t
+ALWAYS_INLINE temperature_offset_ptr_result_t
 temperature_offset_ptr_result_error(error_t err);
-temperature_offset_ptr_result_t
+ALWAYS_INLINE temperature_offset_ptr_result_t
 temperature_offset_ptr_result_ok(temperature_offset_t *ret);
 
 typedef struct test_struct_result {
@@ -786,9 +786,9 @@ typedef struct test_struct_result {
 	error_t alignas(register_t) e;
 } test_struct_result_t;
 
-test_struct_result_t
+ALWAYS_INLINE test_struct_result_t
 test_struct_result_error(error_t err);
-test_struct_result_t
+ALWAYS_INLINE test_struct_result_t
 test_struct_result_ok(test_struct_t ret);
 
 typedef struct test_struct_ptr_result {
@@ -796,9 +796,9 @@ typedef struct test_struct_ptr_result {
 	error_t alignas(register_t) e;
 } test_struct_ptr_result_t;
 
-test_struct_ptr_result_t
+ALWAYS_INLINE test_struct_ptr_result_t
 test_struct_ptr_result_error(error_t err);
-test_struct_ptr_result_t
+ALWAYS_INLINE test_struct_ptr_result_t
 test_struct_ptr_result_ok(test_struct_t *ret);
 
 typedef struct vaddr_result {
@@ -806,9 +806,9 @@ typedef struct vaddr_result {
 	error_t alignas(register_t) e;
 } vaddr_result_t;
 
-vaddr_result_t
+ALWAYS_INLINE vaddr_result_t
 vaddr_result_error(error_t err);
-vaddr_result_t
+ALWAYS_INLINE vaddr_result_t
 vaddr_result_ok(vaddr_t ret);
 
 typedef struct vaddr_ptr_result {
@@ -816,9 +816,9 @@ typedef struct vaddr_ptr_result {
 	error_t alignas(register_t) e;
 } vaddr_ptr_result_t;
 
-vaddr_ptr_result_t
+ALWAYS_INLINE vaddr_ptr_result_t
 vaddr_ptr_result_error(error_t err);
-vaddr_ptr_result_t
+ALWAYS_INLINE vaddr_ptr_result_t
 vaddr_ptr_result_ok(vaddr_t *ret);
 
 typedef struct word_result {
@@ -826,9 +826,9 @@ typedef struct word_result {
 	error_t alignas(register_t) e;
 } word_result_t;
 
-word_result_t
+ALWAYS_INLINE word_result_t
 word_result_error(error_t err);
-word_result_t
+ALWAYS_INLINE word_result_t
 word_result_ok(word_t ret);
 
 typedef struct word_ptr_result {
@@ -836,9 +836,9 @@ typedef struct word_ptr_result {
 	error_t alignas(register_t) e;
 } word_ptr_result_t;
 
-word_ptr_result_t
+ALWAYS_INLINE word_ptr_result_t
 word_ptr_result_error(error_t err);
-word_ptr_result_t
+ALWAYS_INLINE word_ptr_result_t
 word_ptr_result_ok(word_t *ret);
 
 typedef struct bool_result {
@@ -846,9 +846,9 @@ typedef struct bool_result {
 	error_t alignas(register_t) e;
 } bool_result_t;
 
-bool_result_t
+ALWAYS_INLINE bool_result_t
 bool_result_error(error_t err);
-bool_result_t
+ALWAYS_INLINE bool_result_t
 bool_result_ok(bool ret);
 
 typedef struct uint8_result {
@@ -856,9 +856,9 @@ typedef struct uint8_result {
 	error_t alignas(register_t) e;
 } uint8_result_t;
 
-uint8_result_t
+ALWAYS_INLINE uint8_result_t
 uint8_result_error(error_t err);
-uint8_result_t
+ALWAYS_INLINE uint8_result_t
 uint8_result_ok(uint8_t ret);
 
 typedef struct uint16_result {
@@ -866,9 +866,9 @@ typedef struct uint16_result {
 	error_t alignas(register_t) e;
 } uint16_result_t;
 
-uint16_result_t
+ALWAYS_INLINE uint16_result_t
 uint16_result_error(error_t err);
-uint16_result_t
+ALWAYS_INLINE uint16_result_t
 uint16_result_ok(uint16_t ret);
 
 typedef struct uint32_result {
@@ -876,9 +876,9 @@ typedef struct uint32_result {
 	error_t alignas(register_t) e;
 } uint32_result_t;
 
-uint32_result_t
+ALWAYS_INLINE uint32_result_t
 uint32_result_error(error_t err);
-uint32_result_t
+ALWAYS_INLINE uint32_result_t
 uint32_result_ok(uint32_t ret);
 
 typedef struct uint64_result {
@@ -886,9 +886,9 @@ typedef struct uint64_result {
 	error_t alignas(register_t) e;
 } uint64_result_t;
 
-uint64_result_t
+ALWAYS_INLINE uint64_result_t
 uint64_result_error(error_t err);
-uint64_result_t
+ALWAYS_INLINE uint64_result_t
 uint64_result_ok(uint64_t ret);
 
 typedef struct uintptr_result {
@@ -896,9 +896,9 @@ typedef struct uintptr_result {
 	error_t alignas(register_t) e;
 } uintptr_result_t;
 
-uintptr_result_t
+ALWAYS_INLINE uintptr_result_t
 uintptr_result_error(error_t err);
-uintptr_result_t
+ALWAYS_INLINE uintptr_result_t
 uintptr_result_ok(uintptr_t ret);
 
 typedef struct sint8_result {
@@ -906,9 +906,9 @@ typedef struct sint8_result {
 	error_t alignas(register_t) e;
 } sint8_result_t;
 
-sint8_result_t
+ALWAYS_INLINE sint8_result_t
 sint8_result_error(error_t err);
-sint8_result_t
+ALWAYS_INLINE sint8_result_t
 sint8_result_ok(int8_t ret);
 
 typedef struct sint16_result {
@@ -916,9 +916,9 @@ typedef struct sint16_result {
 	error_t alignas(register_t) e;
 } sint16_result_t;
 
-sint16_result_t
+ALWAYS_INLINE sint16_result_t
 sint16_result_error(error_t err);
-sint16_result_t
+ALWAYS_INLINE sint16_result_t
 sint16_result_ok(int16_t ret);
 
 typedef struct sint32_result {
@@ -926,9 +926,9 @@ typedef struct sint32_result {
 	error_t alignas(register_t) e;
 } sint32_result_t;
 
-sint32_result_t
+ALWAYS_INLINE sint32_result_t
 sint32_result_error(error_t err);
-sint32_result_t
+ALWAYS_INLINE sint32_result_t
 sint32_result_ok(int32_t ret);
 
 typedef struct sint64_result {
@@ -936,9 +936,9 @@ typedef struct sint64_result {
 	error_t alignas(register_t) e;
 } sint64_result_t;
 
-sint64_result_t
+ALWAYS_INLINE sint64_result_t
 sint64_result_error(error_t err);
-sint64_result_t
+ALWAYS_INLINE sint64_result_t
 sint64_result_ok(int64_t ret);
 
 typedef struct sintptr_result {
@@ -946,9 +946,9 @@ typedef struct sintptr_result {
 	error_t alignas(register_t) e;
 } sintptr_result_t;
 
-sintptr_result_t
+ALWAYS_INLINE sintptr_result_t
 sintptr_result_error(error_t err);
-sintptr_result_t
+ALWAYS_INLINE sintptr_result_t
 sintptr_result_ok(intptr_t ret);
 
 typedef struct char_result {
@@ -956,9 +956,9 @@ typedef struct char_result {
 	error_t alignas(register_t) e;
 } char_result_t;
 
-char_result_t
+ALWAYS_INLINE char_result_t
 char_result_error(error_t err);
-char_result_t
+ALWAYS_INLINE char_result_t
 char_result_ok(char ret);
 
 typedef struct size_result {
@@ -966,9 +966,9 @@ typedef struct size_result {
 	error_t alignas(register_t) e;
 } size_result_t;
 
-size_result_t
+ALWAYS_INLINE size_result_t
 size_result_error(error_t err);
-size_result_t
+ALWAYS_INLINE size_result_t
 size_result_ok(size_t ret);
 
 typedef struct void_ptr_result {
@@ -976,9 +976,9 @@ typedef struct void_ptr_result {
 	error_t alignas(register_t) e;
 } void_ptr_result_t;
 
-void_ptr_result_t
+ALWAYS_INLINE void_ptr_result_t
 void_ptr_result_error(error_t err);
-void_ptr_result_t
+ALWAYS_INLINE void_ptr_result_t
 void_ptr_result_ok(void *ret);
 
 #pragma clang diagnostic pop

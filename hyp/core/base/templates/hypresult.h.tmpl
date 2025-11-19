@@ -8,6 +8,12 @@
 \#define HYPRESULT_H_
 // _result_t type definitions and accessors
 
+#if $public_only
+#set global accessor_attrs=''
+#else
+#set global accessor_attrs='ALWAYS_INLINE'
+#end if
+
 #def declare_result(name, type_name=None)
 #if $type_name is None
 #set type_name = name
@@ -20,9 +26,9 @@ typedef struct ${name}_result {
 	error_t alignas(register_t) e;
 } ${name}_result_t;
 
-${name}_result_t
+$accessor_attrs ${name}_result_t
 ${name}_result_error(error_t err);
-${name}_result_t
+$accessor_attrs ${name}_result_t
 ${name}_result_ok(${type_name} ret);
 #end def
 #def declare_result_ptr(name, type_name=None)
@@ -37,9 +43,9 @@ typedef struct ${name}_ptr_result {
 	error_t alignas(register_t) e;
 } ${name}_ptr_result_t;
 
-${name}_ptr_result_t
+$accessor_attrs ${name}_ptr_result_t
 ${name}_ptr_result_error(error_t err);
-${name}_ptr_result_t
+$accessor_attrs ${name}_ptr_result_t
 ${name}_ptr_result_ok(${type_name} * ret);
 #end def
 \#pragma clang diagnostic push

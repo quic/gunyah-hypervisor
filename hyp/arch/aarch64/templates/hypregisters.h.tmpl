@@ -58,7 +58,7 @@ mrs %0, $r.name#slurp
 )
 #silent $macros.add($macro_name)
 #end if
-static inline ${vt}_t
+ALWAYS_INLINE static inline ${vt}_t
 register_${vn}_read${suffix}(
 #if ordered
 asm_ordering_dummy_t *ordering_var
@@ -107,7 +107,7 @@ msr $r.name, %[r]#slurp
 )
 #silent $macros.add($macro_name)
 #end if
-static inline void
+ALWAYS_INLINE static inline void
 register_${vn}_write${suffix}(const ${vt}_t val
 #if ordered
 , asm_ordering_dummy_t *ordering_var

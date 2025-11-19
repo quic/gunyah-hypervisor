@@ -1,22 +1,28 @@
 #*
-# © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # 2019 Cog Systems Pty Ltd.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 *#
 
+#if $public_only
+#set global accessor_attrs=''
+#else
+#set global accessor_attrs='ALWAYS_INLINE'
+#end if
+
 #set field_type = $compound_type.gen_type_name(unqualified=True)
 #if not $is_const
-void ${bf_type_name}_set_${field_name}(${bf_type_name}_t *bit_field, ${compound_type.gen_declaration('val')});
+${accessor_attrs} void ${bf_type_name}_set_${field_name}(${bf_type_name}_t *bit_field, ${compound_type.gen_declaration('val')});
 #end if
 
 #if not $is_writeonly
-${field_type} ${bf_type_name}_get_${field_name}(const ${bf_type_name}_t *bit_field);
+${accessor_attrs} ${field_type} ${bf_type_name}_get_${field_name}(const ${bf_type_name}_t *bit_field);
 #end if
 
 #if not $is_writeonly and not $is_const
-void ${bf_type_name}_copy_${field_name}(
+${accessor_attrs} void ${bf_type_name}_copy_${field_name}(
         ${bf_type_name}_t *bit_field_dst,
         const ${bf_type_name}_t *bit_field_src);
 #end if

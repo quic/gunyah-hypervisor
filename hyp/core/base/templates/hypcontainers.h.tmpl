@@ -11,7 +11,7 @@
 #set outer_type = d.type_name + '_t'
 #for $name, $type, $offset in $d.layout
 #if $type.is_contained
-static inline ${outer_type} *
+ALWAYS_INLINE static inline ${outer_type} *
 ${d.type_name}_container_of_${name}(const ${type.pointer.gen_declaration('ptr')}) {
 	_Static_assert(offsetof(${outer_type}, ${name}) == ${offset}U,
 		"Generated offset for ${name} in ${outer_type} is incorrect");
@@ -19,7 +19,7 @@ ${d.type_name}_container_of_${name}(const ${type.pointer.gen_declaration('ptr')}
 }
 
 #if $type.is_array
-static inline ${outer_type} *
+ALWAYS_INLINE static inline ${outer_type} *
 ${d.type_name}_container_of_${name}_element(
 		${type.base_type.pointer.gen_declaration('ptr')},
 		index_t index) {
