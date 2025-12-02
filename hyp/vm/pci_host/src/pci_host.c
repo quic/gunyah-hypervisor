@@ -21,6 +21,7 @@
 #include <panic.h>
 #include <partition.h>
 #include <pgtable.h>
+#include <rcu.h>
 #include <trace.h>
 #include <util.h>
 
@@ -47,6 +48,30 @@ pci_host_search_function(pci_host_t	      *pci_host,
 	LIST_FOREACH_CONTAINER_END
 
 	return found;
+}
+
+memextent_t *
+pci_host_search_aperture(pci_host_t *pci_host, paddr_t addr)
+{
+	memextent_t *me = NULL;
+
+	rcu_read_start();
+	memdb_obj_type_result_t res = memdb_lookup(addr);
+	if ((res.e != OK) || (res.r.type != MEMDB_TYPE_EXTENT)) {
+		goto out;
+	}
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		if (fd->memextent == (memextent_t *)res.r.object) {
+			me = fd->memextent;
+			break;
+		}
+	LIST_FOREACH_CONTAINER_END
+out:
+	rcu_read_finish();
+	return me;
 }
 
 error_t
@@ -168,4 +193,31 @@ void
 pci_host_handle_object_cleanup_pci_host(pci_host_t *pci_host)
 {
 	(void)pci_host;
+}
+
+error_t
+pci_host_handle_object_activate_pci_function(pci_function_t *pci_function)
+{
+	error_t err;
+
+	assert(pci_function != NULL);
+	assert(pci_function->pci_host != NULL);
+
+	err = pci_host_function_prepare(pci_function->pci_host->cam_vaddr,
+					pci_function->pci_host->cam_size,
+					pci_function);
+
+	return err;
+}
+
+void
+pci_host_handle_object_deactivate_pci_function(pci_function_t *pci_function)
+{
+	(void)pci_function;
+}
+
+void
+pci_host_handle_object_cleanup_pci_function(pci_function_t *pci_function)
+{
+	(void)pci_function;
 }

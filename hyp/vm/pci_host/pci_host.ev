@@ -15,3 +15,11 @@ subscribe object_activate_pci_host
 subscribe object_deactivate_pci_host
 
 subscribe object_cleanup_pci_host(pci_host)
+
+subscribe object_activate_pci_function
+	priority last
+	require_lock(pci_function->header.lock)
+
+subscribe object_deactivate_pci_function
+
+subscribe object_cleanup_pci_function(pci_function)

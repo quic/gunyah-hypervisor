@@ -22,28 +22,28 @@ define pci_responder_id public bitfield<16> {
 
 // Type 0 Configuration Header
 define pci_config_header structure {
-	vendor_id @ 0x00	uint16;
-	product_id @ 0x02	uint16;
-	command @ 0x04		bitfield pci_function_command;
-	status @ 0x06		bitfield pci_function_status;
-	device_revision @ 0x08	uint8;
-	device_interface @ 0x09	uint8;
-	device_subclass @ 0x0a	uint8;
-	device_class @ 0x0b	uint8;
-	cacheline_size @ 0x0c	uint8;
-	latency_timer @ 0x0d	uint8;
-	header_type @ 0x0e	uint8;
-	bist @ 0x0f		uint8;
-	bars @ 0x10		array(6) uint32;
-	cardbus_cis_ptr @ 0x28	uint32;
-	subsys_vendor_id @ 0x2c	uint16;
-	subsys_id @ 0x02e	uint16;
-	exp_rom_base @ 0x30	uint32;
-	capability_ptr @ 0x34	uint8;
-	interrupt_line @ 0x3c	uint8;
-	interrupt_pin @ 0x3d	uint8;
-	min_gnt @ 0x3e		uint8;
-	max_lat @ 0x3f		uint8;
+	vendor_id @ 0x00	uint16(atomic);
+	product_id @ 0x02	uint16(atomic);
+	command @ 0x04		bitfield pci_function_command(atomic);
+	status @ 0x06		bitfield pci_function_status(atomic);
+	device_revision @ 0x08	uint8(atomic);
+	device_interface @ 0x09	uint8(atomic);
+	device_subclass @ 0x0a	uint8(atomic);
+	device_class @ 0x0b	uint8(atomic);
+	cacheline_size @ 0x0c	uint8(atomic);
+	latency_timer @ 0x0d	uint8(atomic);
+	header_type @ 0x0e	uint8(atomic);
+	bist @ 0x0f		uint8(atomic);
+	bars @ 0x10		array(6) uint32(atomic);
+	cardbus_cis_ptr @ 0x28	uint32(atomic);
+	subsys_vendor_id @ 0x2c	uint16(atomic);
+	subsys_id @ 0x02e	uint16(atomic);
+	exp_rom_base @ 0x30	uint32(atomic);
+	capability_ptr @ 0x34	uint8(atomic);
+	interrupt_line @ 0x3c	uint8(atomic);
+	interrupt_pin @ 0x3d	uint8(atomic);
+	min_gnt @ 0x3e		uint8(atomic);
+	max_lat @ 0x3f		uint8(atomic);
 };
 
 define pci_function_command bitfield<16> {

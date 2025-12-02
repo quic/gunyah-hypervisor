@@ -21,6 +21,10 @@ extend pci_function object {
 	passedthrough	bool;
 	option_flags	bitfield pci_function_option_flags;
 	pci_host	pointer object pci_host;
+	pci_vdevice	structure vpci_device;
+	base_addr	uintptr;
+	// PCI device function 0
+	fn0		structure vpci_function(contained);
 };
 
 extend pci_host object {
@@ -51,4 +55,9 @@ extend pci_host object {
 	// To hold the pci_device(function) created for this
 	// host_pci
 	function_list		structure list;
+};
+
+extend vpci_function_type enumeration {
+	passthrough;
+	physical;
 };
