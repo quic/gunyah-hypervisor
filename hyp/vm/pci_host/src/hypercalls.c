@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <hyptypes.h>
+#include <string.h>
 
 #include <hypcall_def.h>
 #include <hypcontainers.h>
@@ -160,11 +161,76 @@ error_t
 hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 				vmaddr_t mem_base)
 {
-	(void)pci_host_cap;
-	(void)mem_me_cap;
-	(void)mem_base;
+	error_t	    ret;
+	cspace_t   *cspace;
+	pci_host_t *pci_host;
 
-	return ERROR_UNIMPLEMENTED;
+	cspace				 = cspace_get_self();
+	pci_host_ptr_result_t pci_host_r = cspace_lookup_pci_host_any(
+		cspace, pci_host_cap, CAP_RIGHTS_PCI_HOST_OBJECT_ACTIVATE);
+	if (compiler_unexpected(pci_host_r.e != OK)) {
+		ret = pci_host_r.e;
+		goto out_pci_host_released;
+	}
+
+	pci_host = pci_host_r.r;
+
+	memextent_ptr_result_t mem_r = cspace_lookup_memextent(
+		cspace, mem_me_cap, CAP_RIGHTS_MEMEXTENT_MAP);
+	if (compiler_unexpected(mem_r.e != OK)) {
+		ret = mem_r.e;
+		goto out_pci_host_put;
+	}
+
+	size_result_t mem_size_r = memextent_get_mapped_size(mem_r.r);
+	if (mem_size_r.e != OK) {
+		ret = mem_size_r.e;
+		goto out_pci_host_put;
+	}
+
+	size_result_t size_r = pci_host_aperture_check(
+		pci_host->addrspace, mem_base, mem_size_r.r, 20U, SIZE_MAX,
+		pci_host->pcie ? 12U : 8U);
+	if (size_r.e != OK) {
+		ret = size_r.e;
+		goto out_pci_host_put;
+	}
+
+	partition_t *partition = pci_host->header.partition;
+	size_t	     size      = sizeof(pci_host_aperture_data_t);
+
+	void_ptr_result_t alloc_r = partition_alloc(
+		partition, size, alignof(pci_host_aperture_data_t));
+	if (alloc_r.e != OK) {
+		ret = ERROR_NOMEM;
+		goto out_pci_host_put;
+	}
+
+	pci_host_aperture_data_t *d = (pci_host_aperture_data_t *)alloc_r.r;
+	(void)memset_s(d, sizeof(*d), 0, sizeof(*d));
+
+	d->vmaddr    = mem_base;
+	d->memextent = object_get_memextent_additional(mem_r.r);
+	d->pci_host  = pci_host;
+
+	spinlock_acquire(&pci_host->header.lock);
+
+	// add aperture must be called before the object is active
+	if (atomic_load_relaxed(&pci_host->header.state) != OBJECT_STATE_INIT) {
+		ret = ERROR_OBJECT_STATE;
+		partition_free(partition, d, sizeof(pci_host_aperture_data_t));
+		goto out_pci_host_ref;
+	}
+
+	list_insert_at_tail(&pci_host->aperture_list, &d->list_node);
+	ret = OK;
+out_pci_host_ref:
+	spinlock_release(&pci_host->header.lock);
+out_pci_host_put:
+	object_put_memextent(mem_r.r);
+	object_put_pci_host(pci_host);
+out_pci_host_released:
+	return ret;
 }
 
 error_t

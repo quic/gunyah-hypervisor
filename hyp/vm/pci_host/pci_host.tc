@@ -3,6 +3,13 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+define pci_host_aperture_data structure {
+	memextent		pointer object memextent;
+	vmaddr			type vmaddr_t;
+	list_node		structure list_node(contained);
+	pci_host		pointer object pci_host;
+};
+
 extend pci_host object {
 	// Object attachments.
 	addrspace	pointer object addrspace;
@@ -20,6 +27,9 @@ extend pci_host object {
 
 	// Is PCIe
 	pcie		bool;
+
+	// To hold the aperture memextent
+	aperture_list	structure list;
 
 	lock		structure spinlock;
 	// lockdown state
