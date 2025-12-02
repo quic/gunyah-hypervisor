@@ -14,7 +14,7 @@
 #error Unimplemented
 #endif
 
-define pci_responder_id bitfield<16> {
+define pci_responder_id public bitfield<16> {
 	2:0		function		type index_t;
 	7:3		slot			type index_t;
 	15:8		bus			type index_t;
