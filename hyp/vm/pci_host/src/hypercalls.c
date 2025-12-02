@@ -237,10 +237,100 @@ error_t
 hypercall_pci_host_set_lockdown(cap_id_t		  pci_host_cap,
 				pci_host_lockdown_state_t lockdown_state)
 {
-	(void)pci_host_cap;
-	(void)lockdown_state;
+	error_t	    ret = OK;
+	cspace_t   *cspace;
+	pci_host_t *pci_host;
 
-	return ERROR_UNIMPLEMENTED;
+	cspace				 = cspace_get_self();
+	pci_host_ptr_result_t pci_host_r = cspace_lookup_pci_host(
+		cspace, pci_host_cap, CAP_RIGHTS_PCI_HOST_SET_LOCKDOWN);
+	if (compiler_unexpected(pci_host_r.e != OK)) {
+		ret = pci_host_r.e;
+		goto out_pci_host_released;
+	}
+
+	pci_host = pci_host_r.r;
+	spinlock_acquire(&pci_host->header.lock);
+
+	if (atomic_load_relaxed(&pci_host->header.state) !=
+	    OBJECT_STATE_ACTIVE) {
+		ret = ERROR_OBJECT_STATE;
+		goto out_pci_host_ref;
+	}
+
+	if (!pci_host->lockdown) {
+		ret = ERROR_OBJECT_CONFIG;
+		goto out_pci_host_ref;
+	}
+
+	switch (lockdown_state) {
+	case PCI_HOST_LOCKDOWN_STATE_SCANNING:
+		if (pci_host->state != PCI_HOST_LOCKDOWN_STATE_PERMISSIVE) {
+			// No other transition is allowed
+			ret = ERROR_DENIED;
+			goto out_pci_host_ref;
+		}
+
+		ret = pci_host_transition_scanning_state(pci_host);
+		if (ret != OK) {
+			goto out_pci_host_ref;
+		}
+		// State transition is successful
+		pci_host->state = PCI_HOST_LOCKDOWN_STATE_SCANNING;
+		break;
+	case PCI_HOST_LOCKDOWN_STATE_RESTRICTED:
+		if (pci_host->state != PCI_HOST_LOCKDOWN_STATE_SCANNING) {
+			// No other transition is allowed
+			ret = ERROR_DENIED;
+			goto out_pci_host_ref;
+		}
+
+		// Scanning to Restricted is only allowed if
+		// all the derived PCIe Functions are in ACTIVE
+		// state.
+		if (pci_host_search_inactive_function(pci_host)) {
+			// Atleast one of the function is inactive
+			ret = ERROR_BUSY;
+			goto out_pci_host_ref;
+		}
+
+		ret = pci_host_transition_restricted_state(pci_host);
+		if (ret != OK) {
+			goto out_pci_host_ref;
+		}
+		// State transition is successful
+		pci_host->state = PCI_HOST_LOCKDOWN_STATE_RESTRICTED;
+		break;
+	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
+		if (pci_host->state == PCI_HOST_LOCKDOWN_STATE_PERMISSIVE) {
+			ret = ERROR_DENIED;
+			goto out_pci_host_ref;
+		}
+
+		// Scanning/Restricted to Permissive is only allowed if
+		// no PCIe Function object exists
+		if (!list_is_empty(&pci_host->function_list)) {
+			ret = ERROR_BUSY;
+			goto out_pci_host_ref;
+		}
+
+		ret = pci_host_transition_permissive_state(pci_host);
+		if (ret != OK) {
+			goto out_pci_host_ref;
+		}
+		// State transition is successful
+		pci_host->state = PCI_HOST_LOCKDOWN_STATE_PERMISSIVE;
+		break;
+	default:
+		ret = ERROR_ARGUMENT_INVALID;
+		// assert
+		break;
+	}
+out_pci_host_ref:
+	spinlock_release(&pci_host->header.lock);
+	object_put_pci_host(pci_host);
+out_pci_host_released:
+	return ret;
 }
 
 error_t

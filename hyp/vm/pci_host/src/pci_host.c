@@ -22,6 +22,7 @@
 #include <partition.h>
 #include <pgtable.h>
 #include <rcu.h>
+#include <spinlock.h>
 #include <trace.h>
 #include <util.h>
 
@@ -45,6 +46,27 @@ pci_host_search_function(pci_host_t	      *pci_host,
 			found = true;
 			break;
 		}
+	LIST_FOREACH_CONTAINER_END
+
+	return found;
+}
+
+bool
+pci_host_search_inactive_function(pci_host_t *pci_host)
+{
+	bool found = false;
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_function_data_t,
+				     &pci_host->function_list,
+				     pci_host_function_data, list_node, fd)
+		spinlock_acquire_nopreempt(&fd->function->header.lock);
+		if (atomic_load_relaxed(&fd->function->header.state) !=
+		    OBJECT_STATE_ACTIVE) {
+			found = true;
+			spinlock_release_nopreempt(&fd->function->header.lock);
+			break;
+		}
+		spinlock_release_nopreempt(&fd->function->header.lock);
 	LIST_FOREACH_CONTAINER_END
 
 	return found;
@@ -148,6 +170,63 @@ pci_host_map_cam(pci_host_t *pci_host)
 	}
 
 out:
+	return err;
+}
+
+error_t
+pci_host_transition_scanning_state(pci_host_t *pci_host)
+{
+	error_t err = OK;
+
+	// NOTE: This function assumes that the pci_host's
+	// spinlock is held.
+
+	assert(pci_host != NULL);
+
+	// The ECAM aperture must be read-only to the owner VM.
+	// Any VCPU access to ECAM should be blocked until the
+	// scanning state is exited.
+	// Also, the VPCU accesses to memory apertures
+	// may trapped and briefly blocked in order to serialize
+	// it against BAR probes.
+	// PCIe function objects are allowed to be created in
+	// this state but cannot be pass-throughed.
+
+	return err;
+}
+
+error_t
+pci_host_transition_restricted_state(pci_host_t *pci_host)
+{
+	error_t err = OK;
+
+	// NOTE: This function assumes that the pci_host's
+	// spinlock is held.
+
+	assert(pci_host != NULL);
+
+	// We need to unblock all the VPCUs blocked on
+	// to the access to Memory apertures and also
+	// map the memory aperture access attributes to
+	// RW and detach the emulator for these
+	// apertures.
+
+	return err;
+}
+
+error_t
+pci_host_transition_permissive_state(pci_host_t *pci_host)
+{
+	error_t err = OK;
+
+	// NOTE: This function assumes that the pci_host's
+	// spinlock is held.
+
+	assert(pci_host != NULL);
+
+	// The ECAM and Memory apertures are fully
+	// accessible to the owner VM.
+
 	return err;
 }
 
