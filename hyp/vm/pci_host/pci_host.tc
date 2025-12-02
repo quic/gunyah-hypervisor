@@ -10,6 +10,19 @@ define pci_host_aperture_data structure {
 	pci_host		pointer object pci_host;
 };
 
+define pci_host_function_data structure {
+	function		pointer object pci_function;
+	cap_id			type cap_id_t;
+	list_node		structure list_node(contained);
+};
+
+extend pci_function object {
+	id		bitfield pci_responder_id;
+	passedthrough	bool;
+	option_flags	bitfield pci_function_option_flags;
+	pci_host	pointer object pci_host;
+};
+
 extend pci_host object {
 	// Object attachments.
 	addrspace	pointer object addrspace;
@@ -34,4 +47,8 @@ extend pci_host object {
 	lock		structure spinlock;
 	// lockdown state
 	state		enumeration pci_host_lockdown_state;
+
+	// To hold the pci_device(function) created for this
+	// host_pci
+	function_list		structure list;
 };

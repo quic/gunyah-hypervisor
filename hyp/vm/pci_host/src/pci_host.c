@@ -29,11 +29,32 @@
 #include "event_handlers.h"
 #include "pci_host.h"
 
+bool
+pci_host_search_function(pci_host_t	      *pci_host,
+			 const pci_function_t *pci_function)
+{
+	bool found = false;
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_function_data_t,
+				     &pci_host->function_list,
+				     pci_host_function_data, list_node, fd)
+		if (pci_responder_id_is_equal(fd->function->id,
+					      pci_function->id)) {
+			// Function already exists in the pci_host
+			found = true;
+			break;
+		}
+	LIST_FOREACH_CONTAINER_END
+
+	return found;
+}
+
 error_t
 pci_host_handle_object_create_pci_host(pci_host_create_t pci_host_create)
 {
 	// Initialize the sub objects in pci_host
 	list_init(&pci_host_create.pci_host->aperture_list);
+	list_init(&pci_host_create.pci_host->function_list);
 	return OK;
 }
 
