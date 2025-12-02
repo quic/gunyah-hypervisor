@@ -10,20 +10,150 @@
 #include <hypcontainers.h>
 #include <hyprights.h>
 
+#include <addrspace.h>
+#include <atomic.h>
+#include <compiler.h>
+#include <cspace.h>
+#include <cspace_lookup.h>
+#include <list.h>
+#include <memextent.h>
+#include <object.h>
+#include <partition.h>
+#include <partition_alloc.h>
+#include <spinlock.h>
+#include <util.h>
+
 #include "pci_host.h"
+
+static size_result_t
+pci_host_aperture_check(addrspace_t *aspace, vmaddr_t base, size_t size,
+			size_t min_size, size_t max_size, index_t size_bits)
+{
+	size_result_t ret;
+
+	if ((size < min_size) || (size > max_size)) {
+		ret = size_result_error(ERROR_ARGUMENT_SIZE);
+		goto out;
+	}
+	if (!util_is_p2aligned(base, size_bits)) {
+		ret = size_result_error(ERROR_ARGUMENT_ALIGNMENT);
+		goto out;
+	}
+	if (util_add_overflows(base, size)) {
+		ret = size_result_error(ERROR_ADDR_OVERFLOW);
+		goto out;
+	}
+
+	error_t err = addrspace_check_range(aspace, base, size);
+	if (err != OK) {
+		ret = size_result_error(err);
+		goto out;
+	}
+	ret = size_result_ok(size);
+out:
+	return ret;
+}
 
 error_t
 hypercall_pci_host_configure(cap_id_t pci_host_cap, cap_id_t aspace_cap,
 			     cap_id_t cam_me_cap, vmaddr_t cam_base,
 			     pci_host_option_flags_t options)
 {
-	(void)pci_host_cap;
-	(void)aspace_cap;
-	(void)cam_me_cap;
-	(void)cam_base;
-	(void)options;
+	error_t	      ret;
+	cspace_t     *cspace;
+	object_type_t type;
 
-	return ERROR_UNIMPLEMENTED;
+	cspace		      = cspace_get_self();
+	object_ptr_result_t o = cspace_lookup_object_any(
+		cspace, pci_host_cap, CAP_RIGHTS_GENERIC_OBJECT_ACTIVATE,
+		&type);
+	if (compiler_unexpected(o.e != OK)) {
+		ret = o.e;
+		goto out_pci_host_released;
+	}
+	if (type != OBJECT_TYPE_PCI_HOST) {
+		ret = ERROR_CSPACE_WRONG_OBJECT_TYPE;
+		object_put(type, o.r);
+		goto out_pci_host_released;
+	}
+
+	pci_host_t *pci_host = o.r.pci_host;
+	spinlock_acquire(&pci_host->header.lock);
+
+	if (atomic_load_relaxed(&pci_host->header.state) != OBJECT_STATE_INIT) {
+		ret = ERROR_OBJECT_STATE;
+		goto out_pci_host_ref;
+	}
+
+	if (!pci_host_option_flags_is_clean(options)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out_pci_host_ref;
+	}
+	bool pcie = pci_host_option_flags_get_pcie(&options);
+#if PCI_HOST_PCIE_ONLY
+	if (!pcie) {
+		// Conventional PCI is not implemented yet
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out_pci_host_ref;
+	}
+#else
+#error Conventional PCI not implemented
+#endif /* PCI_HOST_PCIE_ONLY */
+
+	addrspace_ptr_result_t aspace_r = cspace_lookup_addrspace(
+		cspace, aspace_cap, CAP_RIGHTS_ADDRSPACE_MAP);
+	if (compiler_unexpected(aspace_r.e != OK)) {
+		ret = aspace_r.e;
+		goto out_pci_host_ref;
+	}
+
+	memextent_ptr_result_t mem_r = cspace_lookup_memextent(
+		cspace, cam_me_cap, CAP_RIGHTS_MEMEXTENT_MAP);
+
+	if (compiler_unexpected(mem_r.e != OK)) {
+		ret = mem_r.e;
+		goto out_aspace_ref;
+	}
+
+	size_result_t mem_size_r = memextent_get_mapped_size(mem_r.r);
+	if (mem_size_r.e != OK) {
+		ret = mem_size_r.e;
+		goto out_memextent_ref;
+	}
+	// Size must be power-of-2 between 2MB and 256MB
+	size_result_t cam_size_r = pci_host_aperture_check(
+		aspace_r.r, cam_base, mem_size_r.r, util_bit(pcie ? 21U : 17U),
+		util_bit(pcie ? 28U : 24U), pcie ? 12U : 8U);
+	if (cam_size_r.e != OK) {
+		ret = cam_size_r.e;
+		goto out_memextent_ref;
+	}
+
+	// Update the object pci_host
+	if (pci_host->addrspace != NULL) {
+		object_put_addrspace(pci_host->addrspace);
+	}
+
+	pci_host->addrspace = object_get_addrspace_additional(aspace_r.r);
+	pci_host->lockdown  = pci_host_option_flags_get_lockdown(&options);
+	pci_host->pcie	    = pci_host_option_flags_get_pcie(&options);
+	pci_host->cam_base  = cam_base;
+	pci_host->cam_size  = cam_size_r.r;
+	pci_host->memextent = object_get_memextent_additional(mem_r.r);
+	pci_host->state	    = PCI_HOST_LOCKDOWN_STATE_PERMISSIVE;
+
+	ret = OK;
+out_memextent_ref:
+	if (mem_r.e == OK) {
+		object_put_memextent(mem_r.r);
+	}
+out_aspace_ref:
+	object_put_addrspace(aspace_r.r);
+out_pci_host_ref:
+	spinlock_release(&pci_host->header.lock);
+	object_put_pci_host(pci_host);
+out_pci_host_released:
+	return ret;
 }
 
 error_t

@@ -2,3 +2,26 @@
 // All Rights Reserved.
 //
 // SPDX-License-Identifier: BSD-3-Clause
+
+extend pci_host object {
+	// Object attachments.
+	addrspace	pointer object addrspace;
+
+	// Address ranges. These must not be changed after activation.
+	memextent	pointer object memextent;
+	cam_base	type vmaddr_t;
+	cam_size	size;
+
+	// Hold the hyp virt addr of ECAM
+	cam_vaddr	uintptr;
+
+	// Enable Lockdown
+	lockdown	bool;
+
+	// Is PCIe
+	pcie		bool;
+
+	lock		structure spinlock;
+	// lockdown state
+	state		enumeration pci_host_lockdown_state;
+};
