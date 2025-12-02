@@ -4,3 +4,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 module pci_host
+
+subscribe object_create_pci_host
+	require_lock(pci_host_create.pci_host->header.lock)
+
+subscribe object_activate_pci_host
+	priority last
+	require_lock(pci_host->header.lock)
+
+subscribe object_deactivate_pci_host
+
+subscribe object_cleanup_pci_host(pci_host)
