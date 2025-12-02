@@ -73,3 +73,8 @@ extend vdevice_type enumeration {
 	pci_host_cam;
 	pci_mem_aperture;
 };
+
+extend scheduler_block enumeration {
+	pci_host_ecam_fault;
+	pci_host_mem_aperture_fault;
+};

@@ -200,6 +200,30 @@ out:
 	return err;
 }
 
+pci_function_t *
+pci_host_search_function_in_ecam(pci_host_t *pci_host, size_t access_offset,
+				 size_t access_size)
+{
+	pci_function_t *pci_function = NULL;
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_function_data_t,
+				     &pci_host->function_list,
+				     pci_host_function_data, list_node, fd)
+
+		// Verify if the access is within the PCIe Function (function
+		// size 4K page)
+		if (((access_offset + pci_host->cam_base) >=
+		     fd->function->base_addr) &&
+		    ((access_offset + pci_host->cam_base + access_size) <
+		     (fd->function->base_addr + 0x1000U))) {
+			pci_function = fd->function;
+			break;
+		}
+	LIST_FOREACH_CONTAINER_END
+
+	return pci_function;
+}
+
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)
 {

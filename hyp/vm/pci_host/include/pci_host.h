@@ -20,6 +20,10 @@ pci_host_function_prepare(uintptr_t ecam_base, size_t ecam_size,
 memextent_t *
 pci_host_search_aperture(pci_host_t *pci_host, paddr_t addr);
 
+pci_function_t *
+pci_host_search_function_in_ecam(pci_host_t *pci_host, size_t access_offset,
+				 size_t access_size);
+
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)
 	REQUIRE_LOCK(preempt_disabled);
