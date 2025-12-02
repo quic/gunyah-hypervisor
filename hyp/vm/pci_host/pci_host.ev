@@ -23,3 +23,12 @@ subscribe object_activate_pci_function
 subscribe object_deactivate_pci_function
 
 subscribe object_cleanup_pci_function(pci_function)
+
+subscribe vdevice_access[VDEVICE_TYPE_PCI_HOST_CAM]
+	handler pci_host_vdevice_access_cam(
+		vdevice, offset, access_size, value, is_write)
+
+subscribe vdevice_access[VDEVICE_TYPE_PCI_MEM_APERTURE]
+	handler pci_host_vdevice_access_mem_aperture(
+		vdevice, offset, access_size, value, is_write)
+

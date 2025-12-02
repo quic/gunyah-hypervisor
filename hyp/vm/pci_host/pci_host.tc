@@ -8,6 +8,9 @@ define pci_host_aperture_data structure {
 	vmaddr			type vmaddr_t;
 	list_node		structure list_node(contained);
 	pci_host		pointer object pci_host;
+
+	// vdevice structure to handle Memory aperture accesses.
+	mem_aperture_vdevice structure vdevice(contained);
 };
 
 define pci_host_function_data structure {
@@ -55,9 +58,18 @@ extend pci_host object {
 	// To hold the pci_device(function) created for this
 	// host_pci
 	function_list		structure list;
+
+	// Virtual device structure representing PCI Host CAM. If the
+	// type is set to VDEVICE_TYPE_NONE, it has not been mapped.
+	cam_vdevice			structure vdevice(contained);
 };
 
 extend vpci_function_type enumeration {
 	passthrough;
 	physical;
+};
+
+extend vdevice_type enumeration {
+	pci_host_cam;
+	pci_mem_aperture;
 };

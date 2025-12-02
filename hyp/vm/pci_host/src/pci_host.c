@@ -25,6 +25,7 @@
 #include <spinlock.h>
 #include <trace.h>
 #include <util.h>
+#include <vdevice.h>
 
 #include <events/pci_host.h>
 
@@ -102,6 +103,8 @@ pci_host_handle_object_create_pci_host(pci_host_create_t pci_host_create)
 	// Initialize the sub objects in pci_host
 	list_init(&pci_host_create.pci_host->aperture_list);
 	list_init(&pci_host_create.pci_host->function_list);
+	vdevice_init(&pci_host_create.pci_host->cam_vdevice);
+
 	return OK;
 }
 
@@ -173,6 +176,30 @@ out:
 	return err;
 }
 
+static error_t
+pci_host_memextent_update_access(memextent_t *memextent, addrspace_t *addrspace,
+				 vmaddr_t	  vm_base,
+				 pgtable_access_t pgtable_access)
+{
+	error_t			 err = OK;
+	memextent_access_attrs_t access_attrs =
+		memextent_access_attrs_default();
+
+	memextent_access_attrs_set_user_access(&access_attrs, pgtable_access);
+	memextent_access_attrs_set_kernel_access(&access_attrs, pgtable_access);
+
+	err = memextent_update_access(memextent, addrspace, vm_base,
+				      access_attrs,
+				      addrspace_map_flags_default());
+	if (err != OK) {
+		goto out;
+	}
+
+	err = memextent_sync_all(memextent);
+out:
+	return err;
+}
+
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)
 {
@@ -191,7 +218,63 @@ pci_host_transition_scanning_state(pci_host_t *pci_host)
 	// it against BAR probes.
 	// PCIe function objects are allowed to be created in
 	// this state but cannot be pass-throughed.
+	// Attach the cam_vdevice
+	err = vdevice_attach_vmaddr(VDEVICE_TYPE_PCI_HOST_CAM,
+				    &pci_host->cam_vdevice, pci_host->addrspace,
+				    pci_host->cam_base, pci_host->cam_size);
+	if (err != OK) {
+		goto out;
+	}
 
+	// Also update the access
+	err = pci_host_memextent_update_access(pci_host->memextent,
+					       pci_host->addrspace,
+					       pci_host->cam_base,
+					       PGTABLE_ACCESS_R);
+	if (err != OK) {
+		goto out;
+	}
+
+	// Any VCPU access to a memory aperture is trapped and
+	// briefly blocked in order to serialize it against BAR
+	// probes.
+	// Note: Atleast one pci memory aperture should be present.
+	assert(!list_is_empty(&pci_host->aperture_list));
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		// At this point we assume all the memory
+		// apertures are already mapped in the given
+		// addrspace.
+		size_result_t size_r = memextent_get_mapped_size(fd->memextent);
+		if (size_r.e != OK) {
+			err = size_r.e;
+			goto out;
+		}
+
+		// Note: We emulate all the VPCU accesses to
+		// memory apertures until the scanning state is
+		// exited. The blocked VCPUs will be unblocked
+		// when the state is changed to either
+		// Restricted or Permissive.
+		err = vdevice_attach_vmaddr(VDEVICE_TYPE_PCI_MEM_APERTURE,
+					    &fd->mem_aperture_vdevice,
+					    pci_host->addrspace, fd->vmaddr,
+					    size_r.r);
+		if (err != OK) {
+			goto out;
+		}
+
+		err = pci_host_memextent_update_access(fd->memextent,
+						       pci_host->addrspace,
+						       fd->vmaddr,
+						       PGTABLE_ACCESS_R);
+		if (err != OK) {
+			goto out;
+		}
+	LIST_FOREACH_CONTAINER_END
+out:
 	return err;
 }
 
@@ -254,6 +337,7 @@ pci_host_handle_object_activate_pci_host(pci_host_t *pci_host)
 		if (err != OK) {
 			goto out;
 		}
+		vdevice_init(&fd->mem_aperture_vdevice);
 	LIST_FOREACH_CONTAINER_END
 
 	err = pci_host_map_cam(pci_host);
