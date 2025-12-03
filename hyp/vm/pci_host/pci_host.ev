@@ -32,3 +32,5 @@ subscribe vdevice_access[VDEVICE_TYPE_PCI_MEM_APERTURE]
 	handler pci_host_vdevice_access_mem_aperture(
 		vdevice, offset, access_size, value, is_write)
 
+subscribe vpci_attach
+	require_lock(vpci->header.lock)

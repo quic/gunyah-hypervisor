@@ -13,11 +13,14 @@
 #include <addrspace.h>
 #include <atomic.h>
 #include <compiler.h>
+#include <cspace.h>
+#include <cspace_lookup.h>
 #include <hyp_aspace.h>
 #include <list.h>
 #include <log.h>
 #include <memdb.h>
 #include <memextent.h>
+#include <object.h>
 #include <panic.h>
 #include <partition.h>
 #include <pgtable.h>
@@ -29,6 +32,7 @@
 #include <util.h>
 #include <vcpu.h>
 #include <vdevice.h>
+#include <vpci.h>
 
 #include <events/pci_host.h>
 
@@ -483,6 +487,41 @@ pci_host_handle_object_activate_pci_host(pci_host_t *pci_host)
 	err = pci_host_map_cam(pci_host);
 out:
 
+	return err;
+}
+
+error_t
+pci_host_handle_vpci_attach(vpci_t *vpci, index_t *slot, cap_id_t device_cap)
+{
+	error_t		err;
+	cspace_t       *cspace;
+	pci_function_t *pci_function;
+
+	cspace					 = cspace_get_self();
+	pci_function_ptr_result_t pci_function_r = cspace_lookup_pci_function(
+		cspace, device_cap, CAP_RIGHTS_PCI_FUNCTION_ATTACH);
+	if (compiler_unexpected(pci_function_r.e != OK)) {
+		err = pci_function_r.e;
+		goto out;
+	}
+	pci_function = pci_function_r.r;
+
+	if ((pci_function->fn0.type != VPCI_FUNCTION_TYPE_PASSTHROUGH) ||
+	    (!pci_function->passedthrough)) {
+		err = ERROR_OBJECT_CONFIG;
+		goto out_ref;
+	}
+
+	index_result_t slot_r =
+		vpci_bind_device(vpci, *slot, &pci_function->pci_vdevice);
+	err = slot_r.e;
+	if (err == OK) {
+		*slot = slot_r.r;
+	}
+
+out_ref:
+	object_put_pci_function(pci_function);
+out:
 	return err;
 }
 
