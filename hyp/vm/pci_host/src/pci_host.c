@@ -22,9 +22,12 @@
 #include <partition.h>
 #include <pgtable.h>
 #include <rcu.h>
+#include <scheduler.h>
 #include <spinlock.h>
+#include <thread.h>
 #include <trace.h>
 #include <util.h>
+#include <vcpu.h>
 #include <vdevice.h>
 
 #include <events/pci_host.h>
@@ -224,6 +227,49 @@ pci_host_search_function_in_ecam(pci_host_t *pci_host, size_t access_offset,
 	return pci_function;
 }
 
+static void
+pci_host_unblock_vcpus(pci_host_t *pci_host) REQUIRE_LOCK(preempt_disabled)
+{
+	partition_t *partition	   = pci_host->header.partition;
+	list_t	    *thread_list   = &partition->thread_list;
+	bool	     sched_trigger = false;
+
+	spinlock_acquire_nopreempt(&partition->thread_list_lock);
+
+	LIST_FOREACH_CONTAINER_CONSUME_BEGIN(thread_t, thread_list, thread,
+					     thread_list_node, thread)
+		if (!vcpu_is_vcpu(thread)) {
+			continue;
+		}
+
+		// May happen for partially setup threads.
+		if (thread->addrspace == NULL) {
+			continue;
+		}
+
+		scheduler_lock_nopreempt(thread);
+		if (scheduler_is_blocked(thread,
+					 SCHEDULER_BLOCK_PCI_HOST_ECAM_FAULT)) {
+			sched_trigger = scheduler_unblock(
+				thread, SCHEDULER_BLOCK_PCI_HOST_ECAM_FAULT);
+		}
+		if (scheduler_is_blocked(
+			    thread,
+			    SCHEDULER_BLOCK_PCI_HOST_MEM_APERTURE_FAULT)) {
+			sched_trigger = scheduler_unblock(
+				thread,
+				SCHEDULER_BLOCK_PCI_HOST_MEM_APERTURE_FAULT);
+		}
+		scheduler_unlock_nopreempt(thread);
+	LIST_FOREACH_CONTAINER_CONSUME_END
+
+	spinlock_release_nopreempt(&partition->thread_list_lock);
+
+	if (sched_trigger) {
+		scheduler_trigger();
+	}
+}
+
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)
 {
@@ -317,7 +363,37 @@ pci_host_transition_restricted_state(pci_host_t *pci_host)
 	// map the memory aperture access attributes to
 	// RW and detach the emulator for these
 	// apertures.
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		err = pci_host_memextent_update_access(fd->memextent,
+						       pci_host->addrspace,
+						       fd->vmaddr,
+						       PGTABLE_ACCESS_RW);
+		if (err != OK) {
+			goto out;
+		}
 
+		// Note: The memory aperture emulator
+		// must be detached now.
+		vdevice_detach_vmaddr(&fd->mem_aperture_vdevice);
+
+		spinlock_acquire_nopreempt(&fd->mem_aperture_vdevice.lock);
+		fd->mem_aperture_vdevice.type = VDEVICE_TYPE_NONE;
+		spinlock_release_nopreempt(&fd->mem_aperture_vdevice.lock);
+
+		// Note: The ECAM remains mapped as
+		// ReadOnly but partially, i.e.
+		// capabilities are emulated accordingly
+		// and not given direct access to the
+		// guest.
+	LIST_FOREACH_CONTAINER_END
+
+	// Unblock the blocked VCPUs on ECAM & Memory
+	// Apertures
+	pci_host_unblock_vcpus(pci_host);
+
+out:
 	return err;
 }
 

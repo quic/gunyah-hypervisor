@@ -74,6 +74,32 @@ pci_host_vdevice_access_cam(vdevice_t *vdevice, size_t offset,
 		}
 		break;
 	case PCI_HOST_LOCKDOWN_STATE_RESTRICTED:
+		// Verify if the function has passthrough disabled and the
+		// pci_host in Restricted Mode
+		pci_function = pci_host_search_function_in_ecam(
+			pci_host, offset, access_size);
+		if ((pci_function == NULL) ||
+		    ((pci_function != NULL) &&
+		     (!pci_function_option_flags_get_passthrough(
+			     &pci_function->option_flags)))) {
+			// The function is NULL, or it does have the passthrough
+			// option set, either way, it should result in a fault.
+			ret = VCPU_TRAP_RESULT_FAULT;
+			goto out_ref;
+		} else {
+			// The ECAM is partially read-only, i.e. capabilities
+			// are emulated.
+			// We should receive traps only for functions which are
+			// not attached to a vpci bus.
+			if (pci_function->fn0.type !=
+			    VPCI_FUNCTION_TYPE_PHYSICAL) {
+				ret = VCPU_TRAP_RESULT_FAULT;
+				goto out_ref;
+			}
+			// TODO: Emulate capabilities
+			ret = VCPU_TRAP_RESULT_EMULATED;
+		}
+		break;
 	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
 	default:
 		// Unknown state of the PCI Host.
@@ -126,6 +152,13 @@ pci_host_vdevice_access_mem_aperture(vdevice_t *vdevice, size_t offset,
 		scheduler_unlock_nopreempt(current);
 		break;
 	case PCI_HOST_LOCKDOWN_STATE_RESTRICTED:
+		// We should not receive any traps
+		// while in Permissive state.
+		TRACE_AND_LOG(
+			DEBUG, WARN,
+			"Unexpected Memory Aperture trap received @ {:x} in Permissive state",
+			aperture_data->vmaddr + offset);
+		break;
 	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
 	default:
 		// Unknown state of the PCI Host.
