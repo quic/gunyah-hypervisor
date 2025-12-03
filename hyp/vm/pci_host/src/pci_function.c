@@ -395,3 +395,39 @@ pci_host_function_prepare(uintptr_t ecam_base, size_t ecam_size,
 out:
 	return err;
 }
+
+error_t
+pci_function_passthrough(pci_function_t *pci_function)
+{
+	error_t err = OK;
+
+	assert(pci_function != NULL);
+	vpci_function_t *fn	   = pci_function->pci_vdevice.functions[0];
+	addrspace_t	*addrspace = pci_function->pci_host->addrspace;
+
+	for (index_t bar_idx = 0U; bar_idx < util_array_size(fn->bars);
+	     bar_idx++) {
+		vpci_bar_data_t *bar = &fn->bars[bar_idx];
+
+		if (bar->size_bits == 0U) {
+			// BAR is unimplmeneted, skip it
+			continue;
+		}
+
+		// Unmap the BAR from the pci_host's addrspace
+		err = memextent_unmap_whole_extent(
+			bar->memextent, addrspace,
+			addrspace_map_flags_default());
+		if (err != OK) {
+			goto out;
+		}
+	}
+
+	// The function has been successfully unmapped
+	//  and now can be attached to the vpci
+	pci_function->passedthrough = true;
+	fn->type		    = VPCI_FUNCTION_TYPE_PASSTHROUGH;
+
+out:
+	return err;
+}

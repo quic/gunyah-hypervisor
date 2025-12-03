@@ -466,8 +466,50 @@ hypercall_pci_function_add_capability(cap_id_t pci_function_cap, size_t offset,
 error_t
 hypercall_pci_function_set_passthrough(cap_id_t pci_function_cap, bool enable)
 {
-	(void)pci_function_cap;
-	(void)enable;
+	error_t		ret = OK;
+	cspace_t       *cspace;
+	pci_function_t *pci_function;
 
-	return ERROR_UNIMPLEMENTED;
+	cspace					 = cspace_get_self();
+	pci_function_ptr_result_t pci_function_r = cspace_lookup_pci_function(
+		cspace, pci_function_cap, CAP_RIGHTS_PCI_FUNCTION_PASSTHROUGH);
+	if (compiler_unexpected(pci_function_r.e != OK)) {
+		ret = pci_function_r.e;
+		goto out_pci_function_released;
+	}
+
+	pci_function = pci_function_r.r;
+	spinlock_acquire(&pci_function->header.lock);
+
+	// Passthrough is only possible when the given function
+	// is configured to allow passthrough.
+	if (!pci_function_option_flags_get_passthrough(
+		    &pci_function->option_flags)) {
+		ret = ERROR_OBJECT_CONFIG;
+		goto out_pci_function_ref;
+	}
+
+	// Check if the function already passedthrough
+	if (pci_function->passedthrough) {
+		ret = ERROR_DENIED;
+		goto out_pci_function_ref;
+	}
+
+	pci_host_t *pci_host = pci_function->pci_host;
+
+	if (enable) {
+		if (pci_host->lockdown &&
+		    (pci_host->state == PCI_HOST_LOCKDOWN_STATE_RESTRICTED)) {
+			// Unmap function's BAR ranges from pci_host->addrspace
+			// and stop emulating trapped writes to the function's
+			// ECAM range.
+			ret = pci_function_passthrough(pci_function);
+		}
+	}
+
+out_pci_function_ref:
+	spinlock_release(&pci_function->header.lock);
+	object_put_pci_function(pci_function);
+out_pci_function_released:
+	return ret;
 }
