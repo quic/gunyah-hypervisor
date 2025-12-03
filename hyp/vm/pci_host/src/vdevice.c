@@ -101,6 +101,13 @@ pci_host_vdevice_access_cam(vdevice_t *vdevice, size_t offset,
 		}
 		break;
 	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
+		// We should not receive any traps
+		// while in Permissive state.
+		TRACE_AND_LOG(
+			DEBUG, WARN,
+			"Unexpected ECAM trap received @ {:x} in Permissive state",
+			pci_host->cam_base + offset);
+		break;
 	default:
 		// Unknown state of the PCI Host.
 		TRACE_AND_LOG(DEBUG, WARN,
@@ -152,14 +159,14 @@ pci_host_vdevice_access_mem_aperture(vdevice_t *vdevice, size_t offset,
 		scheduler_unlock_nopreempt(current);
 		break;
 	case PCI_HOST_LOCKDOWN_STATE_RESTRICTED:
+	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
 		// We should not receive any traps
-		// while in Permissive state.
+		// while in Restricted/Permissive state.
 		TRACE_AND_LOG(
 			DEBUG, WARN,
-			"Unexpected Memory Aperture trap received @ {:x} in Permissive state",
+			"Unexpected Memory Aperture trap received @ {:x} in Restricted/Permissive state",
 			aperture_data->vmaddr + offset);
 		break;
-	case PCI_HOST_LOCKDOWN_STATE_PERMISSIVE:
 	default:
 		// Unknown state of the PCI Host.
 		TRACE_AND_LOG(

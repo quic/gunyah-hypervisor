@@ -409,7 +409,47 @@ pci_host_transition_permissive_state(pci_host_t *pci_host)
 
 	// The ECAM and Memory apertures are fully
 	// accessible to the owner VM.
+	if (!memextent_is_mapped(pci_host->memextent, pci_host->addrspace,
+				 true)) {
+		err = pci_host_map_device_memextent(pci_host->memextent,
+						    pci_host->addrspace,
+						    pci_host->cam_base);
+	}
 
+	if (err != OK) {
+		goto out;
+	}
+
+	// Detach the vdevice
+	if (pci_host->addrspace != NULL) {
+		if (pci_host->cam_vdevice.type != VDEVICE_TYPE_NONE) {
+			vdevice_detach_vmaddr(&pci_host->cam_vdevice);
+		}
+	}
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		if (!memextent_is_mapped(fd->memextent, pci_host->addrspace,
+					 true)) {
+			err = pci_host_map_device_memextent(
+				fd->memextent, pci_host->addrspace, fd->vmaddr);
+		}
+		if (err != OK) {
+			goto out;
+		}
+	LIST_FOREACH_CONTAINER_END
+
+	// If we are coming from the Scanning state,
+	// then there might be VCPUs blocked which we
+	// need to unblock.
+	if (pci_host->state == PCI_HOST_LOCKDOWN_STATE_SCANNING) {
+		pci_host_unblock_vcpus(pci_host);
+	}
+
+	// Note: The Restricted State does not block any
+	// VCPUS.
+out:
 	return err;
 }
 
