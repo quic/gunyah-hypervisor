@@ -67,7 +67,10 @@
 #define ECAM_PCIE_GET_HEADER_TYPE(x)	  ((x) & 0x0000007FU)
 #define ECAM_PCIE_HEADER_TYPE1		  1U
 // PCI/PCIe Capabilities
-#define ECAM_PCIE_GET_STD_CAP_ID(x) ((x) & 0x000000FFU)
+#define ECAM_PCIE_GET_STD_CAP_ID(x)	  ((x) & 0x000000FFU)
+#define ECAM_PCIE_GET_EXT_CAP_ID(x)	  ((x) & 0x0000FFFFU)
+#define ECAM_PCIE_GET_EXT_NEXT_CAP_PTR(x) (((x) >> 20) & 0x00000FFFU)
+#define ECAM_PCIE_GET_EXT_CAP_VERSION(x)  (((x) >> 16) & 0x0000000FU)
 
 static uintptr_t
 pci_function_get_ecam_offset(const pci_function_t *pci_function)
@@ -448,9 +451,17 @@ pci_function_add_capability(pci_function_t	    *pci_function,
 				     cap_data->base.offset);
 	uint32_t reg_val = atomic_load_relaxed(cap_id_ptr);
 
-	// Standard capability is 8 bits.
-	capability->cap_id = (uint8_t)ECAM_PCIE_GET_STD_CAP_ID(reg_val);
-	capability->next   = NULL;
+	if (cap_data->base.type == PCI_CAPABILITY_TYPE_STANDARD) {
+		// Standard capability is 8 bits.
+		capability->cap_id = (uint8_t)ECAM_PCIE_GET_STD_CAP_ID(reg_val);
+	} else {
+		// Extended capability is 16 bits.
+		capability->cap_id =
+			(uint16_t)ECAM_PCIE_GET_EXT_CAP_ID(reg_val);
+		capability->version =
+			(uint8_t)ECAM_PCIE_GET_EXT_CAP_VERSION(reg_val);
+	}
+	capability->next = NULL;
 	if (fn->capabilities != NULL) {
 		vpci_capability_data_t *node = fn->capabilities;
 		while (node != NULL) {

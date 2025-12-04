@@ -73,14 +73,16 @@ define vpci_function structure {
 	capabilities		pointer structure vpci_capability_data;
 };
 
-// Description of one of the device's PCI 2.1 capability structures in
-// configuration space. Note that these are completely unrelated to Gunyah
-// capabilities.
+// Description of one of the device's PCI 2.1 capability (& extended capability)
+// structures in configuration space. Note that these are completely unrelated
+// to Gunyah capabilities.
 define vpci_capability_data structure {
 	next			pointer structure vpci_capability_data;
-	cap_id			uint8;
-	size			uint8;
-	offset			uint8;
+	cap_id			uint16;
+	size			uint16;
+	offset			uint16;
+	version			uint8;
+	type			enumeration pci_capability_type;
 };
 
 // Description of one of the device's BARs.

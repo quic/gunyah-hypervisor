@@ -40,6 +40,88 @@ vpci_config_find_capability(vpci_function_t *function, size_t offset)
 	return cap;
 }
 
+static bool
+vpci_config_capability_header_read(vpci_capability_data_t *capability,
+				   size_t		   reg_offset,
+				   register_t		  *accessed_value,
+				   size_t		  *accessed_size)
+{
+	bool handled = true;
+
+	if ((capability->type == PCI_CAPABILITY_TYPE_STANDARD) &&
+	    ((reg_offset - capability->offset) ==
+	     offsetof(pci_capability_t, cap_id))) {
+		// Capability ID byte
+		*accessed_value = capability->cap_id;
+		*accessed_size	= 1U;
+	} else if ((capability->type == PCI_CAPABILITY_TYPE_EXTENDED) &&
+		   ((reg_offset - capability->offset) ==
+		    offsetof(pcie_ext_capability_t, cap_id))) {
+		// Capability ID 2 bytes
+		*accessed_value = capability->cap_id;
+		*accessed_size	= 2U;
+	} else if ((capability->type == PCI_CAPABILITY_TYPE_STANDARD) &&
+		   ((reg_offset - capability->offset) ==
+		    offsetof(pci_capability_t, next))) {
+		// Capability next pointer
+		*accessed_value = (capability->next != NULL)
+					  ? capability->next->offset
+					  : 0U;
+		*accessed_size	= 1U;
+	} else if ((capability->type == PCI_CAPABILITY_TYPE_EXTENDED) &&
+		   ((reg_offset - capability->offset) ==
+		    offsetof(pcie_ext_capability_t, version_next))) {
+		pcie_ext_version_next_t val = pcie_ext_version_next_default();
+		pcie_ext_version_next_set_version(&val, capability->version);
+		pcie_ext_version_next_set_next(
+			&val, (capability->next != NULL)
+				      ? capability->next->offset
+				      : 0U);
+		// Capability version and next pointer
+		*accessed_value = pcie_ext_version_next_raw(val);
+		*accessed_size	= 2U;
+	} else if ((capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_VENDOR) &&
+		   (capability->type == PCI_CAPABILITY_TYPE_STANDARD) &&
+		   ((reg_offset - capability->offset) ==
+		    offsetof(pci_vendor_capability_t, size))) {
+		// Capability size byte (vendor capabilitites only)
+		*accessed_value = capability->size;
+		*accessed_size	= 1U;
+	} else {
+		// Access is in capability structure content
+		handled = false;
+	}
+
+	return handled;
+}
+
+static bool
+vpci_config_capability_header_write(vpci_capability_data_t *capability,
+				    size_t reg_offset, size_t *accessed_size)
+{
+	bool handled = true;
+
+	// The capability headers are mostly WI
+	if ((capability->type == PCI_CAPABILITY_TYPE_STANDARD) &&
+	    ((reg_offset - capability->offset) < 2U)) {
+		// Standard Capability header; WI
+		*accessed_size = 1U;
+	} else if ((capability->type == PCI_CAPABILITY_TYPE_STANDARD) &&
+		   (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_VENDOR) &&
+		   ((reg_offset - capability->offset) == 2U)) {
+		// Capability size byte; WI (vendor capabilities)
+		*accessed_size = 1U;
+	} else if ((capability->type == PCI_CAPABILITY_TYPE_EXTENDED) &&
+		   ((reg_offset - capability->offset) < 4U)) {
+		// Extended Capability header; WI
+		*accessed_size = 1U;
+	} else {
+		handled = false;
+	}
+
+	return handled;
+}
+
 static uint32_t
 vpci_config_bar_read(vpci_function_t *function, index_t bar_index)
 {
@@ -320,12 +402,7 @@ vpci_config_read(vpci_function_t *function, size_t offset, size_t access_size)
 		size_t	   accessed_size;
 		register_t accessed_value;
 
-		if (reg_offset >= 0x100U) {
-			// PCIe device-specific config space; currently all
-			// RAZ/WI
-			accessed_value = 0U;
-			accessed_size  = access_size - read_size;
-		} else if (reg_offset >= sizeof(pci_config_header_t)) {
+		if (reg_offset >= sizeof(pci_config_header_t)) {
 			// PCI device-specific config space
 			vpci_capability_data_t *capability =
 				vpci_config_find_capability(function,
@@ -348,27 +425,10 @@ vpci_config_read(vpci_function_t *function, size_t offset, size_t access_size)
 					access_r.r
 					<< (read_size * util_width(uint8_t));
 				goto done;
-			} else if ((reg_offset - capability->offset) ==
-				   offsetof(pci_capability_t, cap_id)) {
-				// Capability ID byte
-				accessed_value = capability->cap_id;
-				accessed_size  = 1U;
-			} else if ((reg_offset - capability->offset) ==
-				   offsetof(pci_capability_t, next)) {
-				// Capability next pointer
-				accessed_value =
-					(capability->next != NULL)
-						? capability->next->offset
-						: 0U;
-				accessed_size = 1U;
-			} else if ((capability->cap_id ==
-				    (uint8_t)PCI_CAPABILITY_ID_VENDOR) &&
-				   ((reg_offset - capability->offset) ==
-				    offsetof(pci_vendor_capability_t, size))) {
-				// Capability size byte (vendor capabilities
-				// only)
-				accessed_value = capability->size;
-				accessed_size  = 1U;
+			} else if (vpci_config_capability_header_read(
+					   capability, reg_offset,
+					   &accessed_value, &accessed_size)) {
+				// Nothing to be done here
 			} else {
 				// Capability structure contents
 				register_result_t access_r =
@@ -594,11 +654,7 @@ vpci_config_write(vpci_function_t *function, size_t offset, size_t access_size,
 	while (remaining_size > 0U) {
 		size_t accessed_size;
 
-		if (reg_offset >= 0x100U) {
-			// PCIe device-specific config space; currently all
-			// RAZ/WI
-			accessed_size = remaining_size;
-		} else if (reg_offset >= sizeof(pci_config_header_t)) {
+		if (reg_offset >= sizeof(pci_config_header_t)) {
 			// PCI device-specific config space
 			vpci_capability_data_t *capability =
 				vpci_config_find_capability(function,
@@ -612,15 +668,10 @@ vpci_config_write(vpci_function_t *function, size_t offset, size_t access_size,
 				// FIXME: QC Gunyah issue #252
 				rcu_read_finish();
 				goto done;
-			} else if ((reg_offset - capability->offset) < 2U) {
-				// Capability header; WI
-				accessed_size = 1U;
-			} else if ((capability->cap_id ==
-				    (uint8_t)PCI_CAPABILITY_ID_VENDOR) &&
-				   ((reg_offset - capability->offset) == 2U)) {
-				// Capability size byte; WI (vendor capabilities
-				// only)
-				accessed_size = 1U;
+			} else if (vpci_config_capability_header_write(
+					   capability, reg_offset,
+					   &accessed_size)) {
+				// Nothing to be done here
 			} else {
 				// Capability structure contents
 				ret = trigger_vpci_config_write_event(

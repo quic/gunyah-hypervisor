@@ -157,19 +157,23 @@ virtio_pci_handle_vpci_config_read(vpci_function_t	  *function,
 	} else if (capability == NULL) {
 		// Access outside of any capability
 		ret = register_result_error(ERROR_UNIMPLEMENTED);
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_MSIX) {
+	} else if (capability->type != PCI_CAPABILITY_TYPE_STANDARD) {
+		// Only standard capabilities are supported
+		// FIXME: QC Gunyah issue #291
+		ret = register_result_error(ERROR_UNIMPLEMENTED);
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_MSIX) {
 		ret = vpci_msix_config_read(
 			vpci_msix_data_container_of_base(capability), offset,
 			access_size);
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PCIE) {
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_PCIE) {
 		ret = vpci_pcie_config_read(
 			vpci_pcie_data_container_of_base(capability), offset,
 			access_size);
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PM) {
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_PM) {
 		// Power Management
 		// The vcpi power state is hardcoded. Just return the defaults
 		ret = vpci_pm_config_read(offset, access_size);
-	} else if (capability->cap_id != (uint8_t)PCI_CAPABILITY_ID_VENDOR) {
+	} else if (capability->cap_id != (uint16_t)PCI_CAPABILITY_ID_VENDOR) {
 		// Unknown capability
 		ret = register_result_error(ERROR_UNIMPLEMENTED);
 	} else {
@@ -260,18 +264,22 @@ virtio_pci_handle_vpci_config_write(vpci_function_t	   *function,
 	} else if (capability == NULL) {
 		// Access outside of any capability
 		err = ERROR_UNIMPLEMENTED;
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_MSIX) {
+	} else if (capability->type != PCI_CAPABILITY_TYPE_STANDARD) {
+		// Only standard capabilities are supported
+		// FIXME: QC Gunyah issue #291
+		err = ERROR_UNIMPLEMENTED;
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_MSIX) {
 		err = vpci_msix_config_write(
 			function, vpci_msix_data_container_of_base(capability),
 			offset, access_size, data);
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PCIE) {
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_PCIE) {
 		err = vpci_pcie_config_write(
 			vpci_pcie_data_container_of_base(capability), offset,
 			access_size, data);
-	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PM) {
+	} else if (capability->cap_id == (uint16_t)PCI_CAPABILITY_ID_PM) {
 		// Ignore all writes
 		err = OK;
-	} else if (capability->cap_id != (uint8_t)PCI_CAPABILITY_ID_VENDOR) {
+	} else if (capability->cap_id != (uint16_t)PCI_CAPABILITY_ID_VENDOR) {
 		// Unknown capability
 		err = ERROR_UNIMPLEMENTED;
 	} else {

@@ -535,11 +535,14 @@ hypercall_pci_function_add_capability(cap_id_t pci_function_cap, size_t offset,
 	(void)memset_s(cap_data, sizeof(*cap_data), 0, sizeof(*cap_data));
 
 	cap_data->flags	    = flags;
-	cap_data->base.size = (uint8_t)size;
+	cap_data->base.size = (uint16_t)size;
+	cap_data->base.type = (offset < PCI_HOST_STD_CAP_OFFSET_END)
+				      ? PCI_CAPABILITY_TYPE_STANDARD
+				      : PCI_CAPABILITY_TYPE_EXTENDED;
 	// The offset may not be the same in the virtual ECAM as it is in
 	// the physical ECAM. For now, all capabilities are mapped 1:1.
 	// FIXME: QC Gunyah issue #293
-	cap_data->base.offset = (uint8_t)offset;
+	cap_data->base.offset = (uint16_t)offset;
 
 	// Lifetime of a capability is same a function
 	cap_data->function = pci_function;

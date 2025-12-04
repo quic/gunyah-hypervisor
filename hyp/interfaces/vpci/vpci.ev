@@ -25,7 +25,11 @@ handled_event vpci_attach
 // relative to the start of the capability structure. The framework handles
 // accesses to the first two bytes (next pointer and ID) of any capability
 // structure, and also to the third byte (size) of a vendor-defined capability
-// structure (cap_id == 0x09).
+// structure (cap_id == 0x09).The framework also handles accesses to first 4
+// bytes (next pointer, version and ID) of any extended capability structure.
+//
+// Handling of vendor specific extended capabilities is not yet supported.
+// FIXME: Gitlab issue #291 - chussain
 //
 // If the capability pointer is NULL, no capability structure could be found
 // that contains the first accessed address, and the offset is relative to the

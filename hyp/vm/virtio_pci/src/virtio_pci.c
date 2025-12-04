@@ -77,7 +77,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 {
 	error_t err = OK;
 
-	uint8_t			cap_offset = 0x40;
+	uint16_t		cap_offset = 0x40;
 	vpci_capability_data_t *cap_list   = NULL;
 
 	virtio_pci_t *pci = &virtio->frontend_data.pci;
@@ -103,6 +103,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 	pci->cap_common_cfg.base.size =
 		(uint8_t)sizeof(virtio_pci_capability_t);
 	pci->cap_common_cfg.base.offset = cap_offset;
+	pci->cap_common_cfg.base.type	= PCI_CAPABILITY_TYPE_STANDARD;
 	pci->cap_common_cfg.type	= VIRTIO_PCI_CAP_TYPE_COMMON_CFG;
 	pci->cap_common_cfg.bar_index	= (index_t)VIRTIO_PCI_BAR_COMMON;
 	pci->cap_common_cfg.bar_offset	= 0U;
@@ -115,6 +116,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 	pci->cap_notify_cfg.base.size =
 		(uint8_t)sizeof(virtio_pci_notify_capability_t);
 	pci->cap_notify_cfg.base.offset = cap_offset;
+	pci->cap_notify_cfg.base.type	= PCI_CAPABILITY_TYPE_STANDARD;
 	pci->cap_notify_cfg.type	= VIRTIO_PCI_CAP_TYPE_NOTIFY_CFG;
 	pci->cap_notify_cfg.bar_index	= (index_t)VIRTIO_PCI_BAR_COMMON;
 	pci->cap_notify_cfg.bar_offset =
@@ -127,6 +129,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 	pci->cap_isr_cfg.base.cap_id = (uint8_t)PCI_CAPABILITY_ID_VENDOR;
 	pci->cap_isr_cfg.base.size   = (uint8_t)sizeof(virtio_pci_capability_t);
 	pci->cap_isr_cfg.base.offset = cap_offset;
+	pci->cap_isr_cfg.base.type   = PCI_CAPABILITY_TYPE_STANDARD;
 	pci->cap_isr_cfg.type	     = VIRTIO_PCI_CAP_TYPE_ISR_CFG;
 	pci->cap_isr_cfg.bar_index   = (index_t)VIRTIO_PCI_BAR_COMMON;
 	pci->cap_isr_cfg.bar_offset =
@@ -156,6 +159,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 		pci->cap_device_cfg.base.size =
 			(uint8_t)sizeof(virtio_pci_capability_t);
 		pci->cap_device_cfg.base.offset = cap_offset;
+		pci->cap_device_cfg.base.type	= PCI_CAPABILITY_TYPE_STANDARD;
 		pci->cap_device_cfg.type       = VIRTIO_PCI_CAP_TYPE_DEVICE_CFG;
 		pci->cap_device_cfg.bar_index  = (index_t)VIRTIO_PCI_BAR_DEVCFG;
 		pci->cap_device_cfg.bar_offset = virtio->config_offset;
@@ -171,6 +175,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 	pci->cap_pci_cfg.base.cap_id = (uint8_t)PCI_CAPABILITY_ID_VENDOR;
 	pci->cap_pci_cfg.base.size   = (uint8_t)sizeof(virtio_pci_capability_t);
 	pci->cap_pci_cfg.base.offset = cap_offset;
+	pci->cap_pci_cfg.base.type   = PCI_CAPABILITY_TYPE_STANDARD;
 	pci->cap_pci_cfg.type	     = VIRTIO_PCI_CAP_TYPE_PCI_CFG;
 	cap_offset += pci->cap_pci_cfg.base.size;
 	cap_list = &pci->cap_pci_cfg.base;
@@ -203,6 +208,7 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 		pci->msix_data.base.size =
 			(uint8_t)sizeof(pci_msix_capability_t);
 		pci->msix_data.base.offset  = cap_offset;
+		pci->msix_data.base.type    = PCI_CAPABILITY_TYPE_STANDARD;
 		pci->msix_data.table_offset = 0U;
 		pci->msix_data.table_bar_index =
 			(index_t)VIRTIO_PCI_BAR_MSIX_TABLE;
