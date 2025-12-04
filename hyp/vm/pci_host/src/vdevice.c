@@ -18,6 +18,7 @@
 #include <trace.h>
 #include <util.h>
 #include <vcpu_run.h>
+#include <vpci.h>
 
 #include "event_handlers.h"
 #include "pci_host.h"
@@ -27,8 +28,6 @@ pci_host_vdevice_access_cam(vdevice_t *vdevice, size_t offset,
 			    size_t access_size, register_t *value,
 			    bool is_write) REQUIRE_READ((rcu_read))
 {
-	(void)value;
-
 	thread_t	  *current = thread_get_self();
 	vcpu_trap_result_t ret	   = VCPU_TRAP_RESULT_UNHANDLED;
 	pci_host_t     *pci_host   = pci_host_container_of_cam_vdevice(vdevice);
@@ -98,7 +97,62 @@ pci_host_vdevice_access_cam(vdevice_t *vdevice, size_t offset,
 				ret = VCPU_TRAP_RESULT_FAULT;
 				goto out_ref;
 			}
-			// TODO: Emulate capabilities
+
+			// Configuration space only supports accesses within one
+			// aligned 64-bit word; we're allowed to reject anything
+			// else. This means we don't have to handle accesses
+			// that cross a function boundary.
+			if ((offset / sizeof(uint64_t)) !=
+			    ((offset + access_size - 1U) / sizeof(uint64_t))) {
+				ret = VCPU_TRAP_RESULT_FAULT;
+				goto out_ref;
+			}
+
+			if (is_write) {
+				TRACE(DEBUG, INFO,
+				      "pci_host {:#x}: CAM write RID {:#x}: {:#x}@{:#x}/{:d}",
+				      (uintptr_t)pci_host,
+				      pci_responder_id_raw(pci_function->id),
+				      *value, offset, access_size);
+				error_t err = vpci_config_write(
+					&pci_function->fn0, offset, access_size,
+					*value);
+				// The config access might have blocked, and has
+				// therefore dropped the RCU critical section.
+				// Re-acquire it.
+				// FIXME: QC Gunyah issue #252
+				rcu_read_start();
+				if (err != OK) {
+					TRACE(DEBUG, WARN,
+					      "pci_host {:#x}: CAM write failed: {:d}",
+					      (uintptr_t)pci_host,
+					      (register_t)err);
+				}
+			} else {
+				TRACE(DEBUG, INFO,
+				      "pci_host {:#x}: CAM read RID {:#x}: {:#x}@{:#x}/{:d}",
+				      (uintptr_t)pci_host,
+				      pci_responder_id_raw(pci_function->id),
+				      *value, offset, access_size);
+				register_result_t val_r =
+					vpci_config_read(&pci_function->fn0,
+							 offset, access_size);
+				// The config access might have blocked, and has
+				// therefore dropped the RCU critical section.
+				// Re-acquire it.
+				// FIXME: QC Gunyah issue #252
+				rcu_read_start();
+				if (val_r.e != OK) {
+					TRACE(DEBUG, WARN,
+					      "pci_host {:#x}: CAM read failed {:d}",
+					      (uintptr_t)pci_host,
+					      (register_t)val_r.e);
+					// Failed read accesses are RAO
+					*value = ~(register_t)0U;
+				} else {
+					*value = val_r.r;
+				}
+			}
 			ret = VCPU_TRAP_RESULT_EMULATED;
 		}
 		break;
@@ -293,6 +347,75 @@ pci_host_passthrough_config_write(vpci_function_t	 *function,
 					      offset, access_size, data);
 		} else {
 			// Emulate as WI;
+		}
+	}
+
+	return err;
+}
+
+register_result_t
+pci_host_physical_config_read(vpci_function_t	     *function,
+			      vpci_capability_data_t *capability, size_t offset,
+			      size_t access_size)
+{
+	register_result_t ret;
+	uint64_t	  read_val;
+
+	if (access_size > sizeof(ret.r)) {
+		// Access larger than one register
+		ret = register_result_error(ERROR_UNIMPLEMENTED);
+	} else if (capability == NULL) {
+		// Access outside of capability
+		ret = register_result_error(ERROR_UNIMPLEMENTED);
+	} else {
+		pci_function_cap_data_t *cap_data =
+			pci_function_cap_data_container_of_base(capability);
+
+		if (pci_capability_access_flags_get_lockdown_visible(
+			    &cap_data->flags)) {
+			pci_function_t *pci_function =
+				pci_function_container_of_fn0(function);
+			read_val = pci_host_config_read(
+				pci_function->base_addr + cap_data->base.offset,
+				offset, access_size);
+		} else {
+			// Emulate as NULL capability data
+			read_val = 0U;
+		}
+
+		ret = register_result_ok(read_val);
+	}
+
+	return ret;
+}
+
+error_t
+pci_host_physical_config_write(vpci_function_t	      *function,
+			       vpci_capability_data_t *capability,
+			       size_t offset, size_t access_size,
+			       register_t data)
+{
+	error_t err = OK;
+
+	if (access_size > sizeof(data)) {
+		// Access larger than one register
+		err = ERROR_UNIMPLEMENTED;
+	} else if (capability == NULL) {
+		// Access outside of capability
+		err = ERROR_UNIMPLEMENTED;
+	} else {
+		pci_function_cap_data_t *cap_data =
+			pci_function_cap_data_container_of_base(capability);
+
+		if (pci_capability_access_flags_get_lockdown_writable(
+			    &cap_data->flags)) {
+			pci_function_t *pci_function =
+				pci_function_container_of_fn0(function);
+			pci_host_config_write(pci_function->base_addr +
+						      cap_data->base.offset,
+					      offset, access_size, data);
+		} else {
+			// Emulate as write ignored
 		}
 	}
 

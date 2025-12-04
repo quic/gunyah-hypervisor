@@ -48,3 +48,17 @@ subscribe vpci_config_write[VPCI_FUNCTION_TYPE_PASSTHROUGH]
 	// This should be release_rcu_read.
 	// FIXME: QC Gunyah issue #252
 	require_rcu_read
+
+subscribe vpci_config_read[VPCI_FUNCTION_TYPE_PHYSICAL]
+	handler pci_host_physical_config_read(
+	function, capability, offset, access_size)
+	// This should be release_rcu_read.
+	// FIXME: QC Gunyah issue #252
+	require_rcu_read
+
+subscribe vpci_config_write[VPCI_FUNCTION_TYPE_PHYSICAL]
+	handler pci_host_physical_config_write(
+	function, capability, offset, access_size, data)
+	// This should be release_rcu_read.
+	// FIXME: QC Gunyah issue #252
+	require_rcu_read

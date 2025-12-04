@@ -261,3 +261,12 @@ vpci_pcie_error(vpci_function_t *reporter, error_t error);
 // Writes are ignored
 register_result_t
 vpci_pm_config_read(size_t offset, size_t access_size);
+
+// Handle generic PCIe Configuration space reads and writes.
+register_result_t
+vpci_config_read(vpci_function_t *function, size_t offset, size_t access_size)
+	RELEASE_RCU_READ;
+
+error_t
+vpci_config_write(vpci_function_t *function, size_t offset, size_t access_size,
+		  register_t access_value) RELEASE_RCU_READ;

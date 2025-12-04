@@ -388,7 +388,7 @@ vpci_function_header_read(vpci_function_t *function, size_t offset,
 	}
 }
 
-static register_result_t
+register_result_t
 vpci_config_read(vpci_function_t *function, size_t offset, size_t access_size)
 	RELEASE_RCU_READ
 {
@@ -642,7 +642,7 @@ out:
 	return ret;
 }
 
-static error_t
+error_t
 vpci_config_write(vpci_function_t *function, size_t offset, size_t access_size,
 		  register_t access_value) RELEASE_RCU_READ
 {
