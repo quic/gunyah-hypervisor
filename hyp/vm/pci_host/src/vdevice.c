@@ -8,6 +8,7 @@
 
 #include <hypcontainers.h>
 
+#include <atomic.h>
 #include <compiler.h>
 #include <log.h>
 #include <rcu.h>
@@ -15,6 +16,7 @@
 #include <spinlock.h>
 #include <thread.h>
 #include <trace.h>
+#include <util.h>
 #include <vcpu_run.h>
 
 #include "event_handlers.h"
@@ -179,4 +181,120 @@ pci_host_vdevice_access_mem_aperture(vdevice_t *vdevice, size_t offset,
 	spinlock_release(&pci_host->header.lock);
 
 	return ret;
+}
+
+static uint64_t
+pci_host_config_read(uintptr_t addr, size_t offset, size_t access_size)
+	REQUIRE_RCU_READ
+{
+	uintptr_t mem_addr  = addr + offset;
+	uint64_t  read_val  = 0U;
+	size_t	  read_size = 0U;
+
+	while (read_size < access_size) {
+		uint8_t byte = atomic_load_relaxed((_Atomic uint8_t *)mem_addr);
+		read_val |= (uint64_t)byte << (util_width(uint8_t) * read_size);
+		read_size++;
+		mem_addr++;
+	}
+
+	return read_val;
+}
+
+register_result_t
+pci_host_passthrough_config_read(vpci_function_t	*function,
+				 vpci_capability_data_t *capability,
+				 size_t offset, size_t access_size)
+{
+	register_result_t ret;
+	uint64_t	  read_val;
+
+	if (access_size > sizeof(ret.r)) {
+		// Access larger than one register
+		ret = register_result_error(ERROR_UNIMPLEMENTED);
+	} else if (capability == NULL) {
+		// Access outside of any capability
+		ret = register_result_error(ERROR_UNIMPLEMENTED);
+	} else {
+		pci_function_cap_data_t *cap_data =
+			pci_function_cap_data_container_of_base(capability);
+
+		if (pci_capability_access_flags_get_passthrough_visible(
+			    &cap_data->flags)) {
+			pci_function_t *pci_function =
+				pci_function_container_of_fn0(function);
+			read_val = pci_host_config_read(
+				pci_function->base_addr + cap_data->base.offset,
+				offset, access_size);
+		} else {
+			// Emulate as NULL capability data
+			read_val = 0U;
+		}
+
+		ret = register_result_ok(read_val);
+	}
+
+	return ret;
+}
+
+static void
+pci_host_config_write(uintptr_t addr, size_t offset, size_t access_size,
+		      register_t data)
+{
+	// Write the value directly to the memory
+	switch (access_size) {
+	case 1U:
+		atomic_store_relaxed((_Atomic uint8_t *)(addr + offset),
+				     (uint8_t)data);
+		break;
+	case 2U:
+		atomic_store_relaxed((_Atomic uint16_t *)(addr + offset),
+				     (uint16_t)data);
+		break;
+	case 4U:
+		atomic_store_relaxed((_Atomic uint32_t *)(addr + offset),
+				     (uint32_t)data);
+		break;
+	case 8U:
+		atomic_store_relaxed((_Atomic uint64_t *)(addr + offset), data);
+		break;
+	default:
+		TRACE_AND_LOG(DEBUG, WARN,
+			      "ECAM: Undefined write access size {:d}",
+			      access_size);
+		break;
+	}
+}
+
+error_t
+pci_host_passthrough_config_write(vpci_function_t	 *function,
+				  vpci_capability_data_t *capability,
+				  size_t offset, size_t access_size,
+				  register_t data)
+{
+	error_t err = OK;
+
+	if (access_size > sizeof(data)) {
+		// Access larger than one register
+		err = ERROR_UNIMPLEMENTED;
+	} else if (capability == NULL) {
+		// Access outside of capability
+		err = ERROR_UNIMPLEMENTED;
+	} else {
+		pci_function_cap_data_t *cap_data =
+			pci_function_cap_data_container_of_base(capability);
+
+		if (pci_capability_access_flags_get_passthrough_writable(
+			    &cap_data->flags)) {
+			pci_function_t *pci_function =
+				pci_function_container_of_fn0(function);
+			pci_host_config_write(pci_function->base_addr +
+						      cap_data->base.offset,
+					      offset, access_size, data);
+		} else {
+			// Emulate as WI;
+		}
+	}
+
+	return err;
 }

@@ -34,3 +34,17 @@ subscribe vdevice_access[VDEVICE_TYPE_PCI_MEM_APERTURE]
 
 subscribe vpci_attach
 	require_lock(vpci->header.lock)
+
+subscribe vpci_config_read[VPCI_FUNCTION_TYPE_PASSTHROUGH]
+	handler pci_host_passthrough_config_read(
+	function, capability, offset, access_size)
+	// This should be release_rcu_read.
+	// FIXME: QC Gunyah issue #252
+	require_rcu_read
+
+subscribe vpci_config_write[VPCI_FUNCTION_TYPE_PASSTHROUGH]
+	handler pci_host_passthrough_config_write(
+	function, capability, offset, access_size, data)
+	// This should be release_rcu_read.
+	// FIXME: QC Gunyah issue #252
+	require_rcu_read
