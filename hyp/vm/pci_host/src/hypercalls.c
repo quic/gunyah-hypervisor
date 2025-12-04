@@ -455,12 +455,105 @@ hypercall_pci_function_add_capability(cap_id_t pci_function_cap, size_t offset,
 				      size_t			    size,
 				      pci_capability_access_flags_t flags)
 {
-	(void)pci_function_cap;
-	(void)offset;
-	(void)size;
-	(void)flags;
+	error_t		ret;
+	cspace_t       *cspace;
+	pci_function_t *pci_function;
 
-	return ERROR_UNIMPLEMENTED;
+	cspace					 = cspace_get_self();
+	pci_function_ptr_result_t pci_function_r = cspace_lookup_pci_function(
+		cspace, pci_function_cap, CAP_RIGHTS_PCI_FUNCTION_ALL);
+	if (compiler_unexpected(pci_function_r.e != OK)) {
+		ret = pci_function_r.e;
+		goto out_pci_function_released;
+	}
+
+	pci_function = pci_function_r.r;
+	spinlock_acquire(&pci_function->header.lock);
+
+	pci_host_t *pci_host = pci_function->pci_host;
+
+	// Capability can only be added if the function has not
+	// been passed-through yet. Also, the attached pci_host must
+	// have lockdown enabled, and must be in Scanning state.
+	if ((pci_function->passedthrough) ||
+	    ((pci_host->lockdown) &&
+	     (pci_host->state != PCI_HOST_LOCKDOWN_STATE_SCANNING))) {
+		ret = ERROR_OBJECT_STATE;
+		goto out_pci_function_ref;
+	}
+
+	// Offset must be a multiple of 4
+	if (!util_is_p2aligned(offset, 2)) {
+		ret = ERROR_ARGUMENT_ALIGNMENT;
+		goto out_pci_function_ref;
+	}
+
+	// Offset and size must be within the range 0x40-0xFF or 0x100-0xFFF
+	if ((size == 0U) || (util_add_overflows(offset, size)) ||
+	    (((offset < PCI_HOST_STD_CAP_OFFSET_START) ||
+	      ((offset + size - 1U) > PCI_HOST_STD_CAP_OFFSET_END)) &&
+	     ((offset < PCI_HOST_EXT_CAP_OFFSET_START) ||
+	      ((offset + size - 1U) > PCI_HOST_EXT_CAP_OFFSET_END)))) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out_pci_function_ref;
+	}
+
+	if (!pci_capability_access_flags_is_clean(flags)) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out_pci_function_ref;
+	}
+
+	// If passthrough visibile/writeable, pci_function passthrough must be
+	// configured
+	if ((pci_capability_access_flags_get_passthrough_visible(&flags) ||
+	     pci_capability_access_flags_get_passthrough_writable(&flags)) &&
+	    (!pci_function_option_flags_get_passthrough(
+		    &pci_function->option_flags))) {
+		ret = ERROR_OBJECT_CONFIG;
+		goto out_pci_function_ref;
+	}
+
+	// If lockdown visible/writeable, pci_host lockdown must be configured
+	if ((pci_capability_access_flags_get_lockdown_visible(&flags) ||
+	     pci_capability_access_flags_get_lockdown_writable(&flags)) &&
+	    (!pci_host->lockdown)) {
+		ret = ERROR_OBJECT_CONFIG;
+		goto out_pci_function_ref;
+	}
+
+	partition_t	 *partition = pci_function->header.partition;
+	void_ptr_result_t alloc_r =
+		partition_alloc(partition, sizeof(pci_function_cap_data_t),
+				alignof(pci_function_cap_data_t));
+	if (alloc_r.e != OK) {
+		ret = alloc_r.e;
+		goto out_pci_function_ref;
+	}
+
+	pci_function_cap_data_t *cap_data =
+		(pci_function_cap_data_t *)alloc_r.r;
+	(void)memset_s(cap_data, sizeof(*cap_data), 0, sizeof(*cap_data));
+
+	cap_data->flags	    = flags;
+	cap_data->base.size = (uint8_t)size;
+	// The offset may not be the same in the virtual ECAM as it is in
+	// the physical ECAM. For now, all capabilities are mapped 1:1.
+	// FIXME: QC Gunyah issue #293
+	cap_data->base.offset = (uint8_t)offset;
+
+	// Lifetime of a capability is same a function
+	cap_data->function = pci_function;
+
+	ret = pci_function_add_capability(pci_function, cap_data);
+	if ((ret != OK) && (cap_data != NULL)) {
+		partition_free(partition, cap_data,
+			       sizeof(pci_function_cap_data_t));
+	}
+out_pci_function_ref:
+	spinlock_release(&pci_function->header.lock);
+	object_put_pci_function(pci_function);
+out_pci_function_released:
+	return ret;
 }
 
 error_t

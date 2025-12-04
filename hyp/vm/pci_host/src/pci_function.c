@@ -66,6 +66,8 @@
 #define ECAM_PCIE_IS_BAR_UNIMPLEMENTED(x) ((x) == ECAM_PCIE_BAR_UNIMPL_VAL)
 #define ECAM_PCIE_GET_HEADER_TYPE(x)	  ((x) & 0x0000007FU)
 #define ECAM_PCIE_HEADER_TYPE1		  1U
+// PCI/PCIe Capabilities
+#define ECAM_PCIE_GET_STD_CAP_ID(x) ((x) & 0x000000FFU)
 
 static uintptr_t
 pci_function_get_ecam_offset(const pci_function_t *pci_function)
@@ -428,6 +430,50 @@ pci_function_passthrough(pci_function_t *pci_function)
 	pci_function->passedthrough = true;
 	fn->type		    = VPCI_FUNCTION_TYPE_PASSTHROUGH;
 
+out:
+	return err;
+}
+
+error_t
+pci_function_add_capability(pci_function_t	    *pci_function,
+			    pci_function_cap_data_t *cap_data)
+{
+	error_t err = OK;
+
+	assert(pci_function != NULL);
+	vpci_function_t	       *fn = pci_function->pci_vdevice.functions[0];
+	vpci_capability_data_t *capability = &cap_data->base;
+	_Atomic uint32_t       *cap_id_ptr =
+		(_Atomic uint32_t *)(pci_function->base_addr +
+				     cap_data->base.offset);
+	uint32_t reg_val = atomic_load_relaxed(cap_id_ptr);
+
+	// Standard capability is 8 bits.
+	capability->cap_id = (uint8_t)ECAM_PCIE_GET_STD_CAP_ID(reg_val);
+	capability->next   = NULL;
+	if (fn->capabilities != NULL) {
+		vpci_capability_data_t *node = fn->capabilities;
+		while (node != NULL) {
+			// Verify if the given capability does not
+			// overlap with an existing one
+			if ((capability->offset <
+			     (node->offset + node->size)) &&
+			    (node->offset <
+			     (capability->offset + capability->size))) {
+				err = ERROR_ARGUMENT_INVALID;
+				goto out;
+			}
+
+			// check if we are on the last node
+			if (node->next == NULL) {
+				node->next = capability;
+				break;
+			}
+			node = node->next;
+		}
+	} else {
+		fn->capabilities = capability;
+	}
 out:
 	return err;
 }

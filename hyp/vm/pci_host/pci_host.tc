@@ -30,6 +30,12 @@ extend pci_function object {
 	fn0		structure vpci_function(contained);
 };
 
+define pci_function_cap_data structure {
+	base		structure vpci_capability_data(contained);
+	flags		bitfield pci_capability_access_flags;
+	function	pointer object pci_function;
+};
+
 extend pci_host object {
 	// Object attachments.
 	addrspace	pointer object addrspace;

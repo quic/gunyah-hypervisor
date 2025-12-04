@@ -5,6 +5,12 @@
 
 // Internal pci_host module functions that are called by pci_host
 
+#define PCI_HOST_STD_CAP_OFFSET_START 0x40U
+#define PCI_HOST_STD_CAP_OFFSET_END   0xFFU
+
+#define PCI_HOST_EXT_CAP_OFFSET_START 0x100U
+#define PCI_HOST_EXT_CAP_OFFSET_END   0xFFFU
+
 bool
 pci_host_search_function(pci_host_t	      *pci_host,
 			 const pci_function_t *pci_function);
@@ -26,6 +32,10 @@ pci_host_search_function_in_ecam(pci_host_t *pci_host, size_t access_offset,
 
 error_t
 pci_function_passthrough(pci_function_t *pci_function);
+
+error_t
+pci_function_add_capability(pci_function_t	    *pci_function,
+			    pci_function_cap_data_t *cap_data);
 
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)
