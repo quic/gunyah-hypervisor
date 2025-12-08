@@ -82,6 +82,10 @@ arm_vm_timer_handle_thread_context_switch_pre(void)
 	// Enqueue thread's timeout if it is enabled, not already queued, and is
 	// capable of waking the VCPU
 	if ((compiler_expected(vcpu_is_vcpu(thread)) &&
+#if defined(MODULE_VM_VCPU_RUN)
+	     !vcpu_option_flags_get_vcpu_run_no_timer_wakeup(
+		     &thread->vcpu_options) &&
+#endif
 	     vcpu_expects_wakeup(thread))) {
 		if (arm_vm_timer_is_irq_enabled_thread(
 			    thread, ARM_VM_TIMER_TYPE_VIRTUAL)) {
@@ -165,4 +169,36 @@ arm_vm_timer_handle_vcpu_suspend(void)
 	}
 
 	return OK;
+}
+
+void
+arm_vm_timer_handle_vcpu_run_get_next_wakeup(const thread_t *vcpu,
+					     ticks_t	    *timeout)
+{
+	ticks_t next_timeout = *timeout;
+
+	// Note: we don't check whether the PPI is enabled in the vGIC. This
+	// means that a vCPU that disables the timer irq in the GIC, but leaves
+	// the architecture timer enabled will experience a sleep-wakeup loop.
+	// This isn't any different to the KVM which makes the same assumption
+	// that the OS drivers are well written and don't do this.
+
+	if (arm_vm_timer_is_irq_enabled_thread(vcpu,
+					       ARM_VM_TIMER_TYPE_VIRTUAL)) {
+		ticks_t timeout_virt = arm_vm_timer_get_timeout_thread(
+			vcpu, ARM_VM_TIMER_TYPE_VIRTUAL);
+		if (timeout_virt < next_timeout) {
+			next_timeout = timeout_virt;
+		}
+	}
+	if (arm_vm_timer_is_irq_enabled_thread(vcpu,
+					       ARM_VM_TIMER_TYPE_PHYSICAL)) {
+		ticks_t timeout_phys = arm_vm_timer_get_timeout_thread(
+			vcpu, ARM_VM_TIMER_TYPE_PHYSICAL);
+		if (timeout_phys < next_timeout) {
+			next_timeout = timeout_phys;
+		}
+	}
+
+	*timeout = next_timeout;
 }

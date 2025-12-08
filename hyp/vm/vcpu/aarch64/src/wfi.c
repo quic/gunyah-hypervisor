@@ -185,12 +185,21 @@ vcpu_run_state_t
 vcpu_arch_handle_vcpu_run_check(const thread_t *vcpu, register_t *state_data_0,
 				register_t *state_data_1)
 {
-	vcpu_run_state_t state = VCPU_RUN_STATE_BLOCKED;
+	vcpu_run_state_t state;
+
+	// When we support WFIT, we need to save the wakeup time in the trap
+	// above and subscribe to the vcpu_run_get_next_wakeup_event to report
+	// the timeout.
+	// FIXME: Gitlab issue #206 - cvanscha.
+
 	if (scheduler_is_blocked(vcpu, SCHEDULER_BLOCK_VCPU_WFI)) {
 		state	      = VCPU_RUN_STATE_EXPECTS_WAKEUP;
 		*state_data_0 = 0U;
 		*state_data_1 = (register_t)VCPU_RUN_WAKEUP_FROM_STATE_WFI;
+	} else {
+		state = VCPU_RUN_STATE_BLOCKED;
 	}
+
 	return state;
 }
 #endif

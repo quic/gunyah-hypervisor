@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -6,6 +6,10 @@
 extend hyp_api_flags0 bitfield {
 	delete	vcpu_run;
 	11	vcpu_run bool = 1;
+};
+extend hyp_api_flags1 bitfield {
+	delete	vcpu_run_no_timer_wakeup;
+	32	vcpu_run_no_timer_wakeup bool = 1;
 };
 #endif
 define vcpu_run_state public enumeration(explicit) {
@@ -33,8 +37,16 @@ define vcpu_run_state public enumeration(explicit) {
 	// normally transient, and the EL1 caller should retry after yielding.
 	blocked = 3;
 
+	// 4, 5, 7 reserved for addrspace module
+
 	// VCPU has an unrecoverable fault.
 	fault = 6;
+
+	// VCPU is sleeping until an interrupt or timeout expires. See
+	// 'expects_wakeup'. This run_state extends the ABI to return a timeout
+	// to the caller which indicates the expected wake-up time in lieu of
+	// any earlier interrupt wakeup.
+	expects_wakeup_or_timeout = 8;
 };
 
 // Type of the first state data word for VCPU_RUN_STATE_POWERED_OFF.

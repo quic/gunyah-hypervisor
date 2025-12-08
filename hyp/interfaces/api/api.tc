@@ -43,6 +43,7 @@ define hyp_api_flags0 public bitfield<64>(const) {
 
 define hyp_api_flags1 public bitfield<64>(const) {
 	31:0		arch_reserved	uint64 = 0;
+	32		vcpu_run_no_timer_wakeup	bool = 0;
 	others		unknown = 0;
 };
 

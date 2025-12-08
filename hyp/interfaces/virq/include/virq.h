@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -74,4 +74,4 @@ virq_clear(virq_source_t *source);
 // If the source has not claimed a VIRQ, or the target VIC or VCPU has been
 // destroyed, this function returns ERROR_VIRQ_NOT_BOUND.
 bool_result_t
-virq_query(virq_source_t *source);
+virq_query(virq_source_t *source) REQUIRE_PREEMPT_DISABLED;

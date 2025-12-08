@@ -16,7 +16,10 @@ extend vcpu_option_flags bitfield {
 	5		trace_allowed		bool = 0;
 	// 7		reserved: mpam_allowed
 	// 8		critical bool;
+	// 9		reserved vcpu_run_scheduled;
 	10		sme_allowed		bool = 0;
+	// 11		sdei_allowed
+	// 12		vcpu_run_no_timer_wakeup
 	63		hlos_vm			bool = 0;
 	others		unknown = 0;
 };

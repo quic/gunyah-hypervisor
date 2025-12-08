@@ -63,3 +63,7 @@ subscribe vcpu_set_local_virq[VCPU_LOCAL_VIRQ_TYPE_VIRTUAL_TIMER]
 
 subscribe vcpu_set_local_virq[VCPU_LOCAL_VIRQ_TYPE_PHYSICAL_TIMER]
 	handler arm_vm_timer_handle_vcpu_set_physical_timer_virq(vcpu, virq)
+
+#if defined(MODULE_VM_VCPU_RUN)
+subscribe vcpu_run_get_next_wakeup
+#endif

@@ -331,7 +331,8 @@ arm_vm_timer_handle_boot_cpu_warm_init(void)
 }
 
 bool
-arm_vm_timer_is_irq_enabled_thread(thread_t *thread, arm_vm_timer_type_t tt)
+arm_vm_timer_is_irq_enabled_thread(const thread_t     *thread,
+				   arm_vm_timer_type_t tt)
 {
 	CNT_CTL_t cnt_ctl;
 
@@ -347,7 +348,7 @@ arm_vm_timer_is_irq_enabled_thread(thread_t *thread, arm_vm_timer_type_t tt)
 }
 
 ticks_t
-arm_vm_timer_get_timeout_thread(thread_t *thread, arm_vm_timer_type_t tt)
+arm_vm_timer_get_timeout_thread(const thread_t *thread, arm_vm_timer_type_t tt)
 {
 	CNT_CVAL_t cnt_cval;
 

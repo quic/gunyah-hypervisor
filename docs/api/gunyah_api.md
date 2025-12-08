@@ -276,7 +276,7 @@ Identifies the hypervisor version and feature set.
 
 | Bits | Mask | Description |
 |-|---|-----|
-|     0                |     `0x1`                  |     1   = Partition and CSpace APIs supported                            |
+|     0                |     `0x1`                  |     1 = Partition and CSpace APIs supported                              |
 |     1                |     `0x2`                  |     1 = Doorbell APIs supported                                          |
 |     2                |     `0x4`                  |     1 = Message Queue APIs supported                                     |
 |     3                |     `0x8`                  |     1 = Virtual Interrupt Controller and Virtual IRQ   APIs supported    |
@@ -284,7 +284,14 @@ Identifies the hypervisor version and feature set.
 |     5                |     `0x20`                 |     1 = Virtual CPU APIs supported                                       |
 |     6                |     `0x40`                 |     1 = Memory Extent APIs supported                                     |
 |     7                |     `0x80`                 |     1 = Tracing control API supported                                    |
-|     15:8             |     `0xFF00`               |     Reserved = 0 [TBD   additional API flags]                            |
+|     8                |     `0x100`                |     1 = Watchdog API supported                                           |
+|     9                |     `0x200`                |     1 = Virtio MMIO API supported                                        |
+|     10               |     `0x400`                |     1 = PRNG API supported                                               |
+|     11               |     `0x800`                |     1 = VCPU Run API supported                                           |
+|     12               |     `0x1000`               |     1 = Trace Profile API supported                                      |
+|     13               |     `0x2000`               |     1 = Virtual PCI API supported                                        |
+|     14               |     `0x4000`               |     1 = Power API supported                                              |
+|     15               |     `0x8000`               |     Reserved = 0 [TBD   additional API flags]                            |
 |     16               |     `0x10000`              |     Reserved                                                             |
 |     63:17            |     `0xFFFFFFFF.FFFE0000`  |     Reserved = 0 [TBD   additional API flags]                            |
 
@@ -296,7 +303,9 @@ Identifies the hypervisor version and feature set.
 |     0                |     `0x1`                  |     1 = ARM v8.2 SVE support         |
 |     1                |     `0x2`                  |     1 = vGIC extended SPI support    |
 |     2                |     `0x4`                  |     1 = vGIC extended PPI support    |
-|     63:3             |     `0xFFFFFFFF.FFFFFFF8 ` |     Reserved = 0                     |
+|     31:3             |     `0xFFFFFFF8`           |     Reserved Arch Flags = 0          |
+|     32               |     `0x1.00000000`         |     1 = VCPU Run — Arch Timer No-Wakeup API supported  |
+|     63:33            |     `0xFFFFFFFE.00000000`  |     Reserved = 0                     |
 
 *API Flags 2:*
 
@@ -2585,9 +2594,20 @@ Configure a VCPU Thread whose state is OBJECT_STATE_INIT.
 
 | Bits | Mask | Description |
 |-|---|-----|
-|     0                |     `0x1`                  |     AArch64 Self-hosted Debug Enable    |
-|     1                |     `0x2`                  |     VCPU containing HLOS VM             |
-|     63:2             |     `0xFFFFFFFF.FFFFFFFC`  |     Reserved,   Must be Zero            |
+|     0                |     `0x1`                  |     Pinned to a physical CPU            |
+|     1                |     `0x2`                  |     VCPU is delegated as RAS error handler |
+|     2                |     `0x4`                  |     AMU counting is disabled for VCPU   |
+|     3                |     `0x8`                  |     Arm SVE register and instruction access |
+|     4                |     `0x10`                 |     AArch64 Self-hosted Debug Enable    |
+|     5                |     `0x20`                 |     Arm Self-hosted Trace Access Enable |
+|     7                |     `0x80`                 |     Arm MPAM Enable                     |
+|     8                |     `0x100`                |     Critical VCPU                       |
+|     9                |     `0x200`                |     vcpu_run Scheduled Enable           |
+|     10               |     `0x400`                |     Arm SME register and instruction access |
+|     11               |     `0x800`                |     SDEI Interface Enable               |
+|     12               |     `0x1000`               |     vcpu_run No Timer Wakeup Enable     |
+|     62:13,6          |     `0x7FFFFFFF.FFFFE040`  |     Reserved,   Must be Zero            |
+|     63               |     `0x80000000.00000000`  |     VCPU member of the HLOS VM          |
 
 AArch64 Self-hosted Debug: give the VCPU access to use AArch64 Self-hosted debug functionality and registers.
 
@@ -2960,13 +2980,14 @@ The following table shows the expected types of the state-specific data and resu
 | State | Name | State Data 1 | State Data 2 | State Data 3 | Resume Data 1 | Resume Data 2
 |-|--|--|--|--|--|--|
 | 0x0 | `READY` | 0 | 0 | 0 | 0 | 0 |
-| 0x1 | `EXPECTS_WAKEUP` | VCPU Sleep Type | 0 | 0 | 0 | 0 |
+| 0x1 | `EXPECTS_WAKEUP` | VCPU Sleep Type | From State | 0 | 0 | 0 |
 | 0x2 | `POWERED_OFF` | VCPU Poweroff Type | 0 | 0 | 0 | 0 |
 | 0x3 | `BLOCKED` | 0 | 0 | 0 | 0 | 0 |
 | 0x4 | `ADDRSPACE_VMMIO_READ` | VMPhysAddr | Size | 0 | Register | Action |
 | 0x5 | `ADDRSPACE_VMMIO_WRITE` | VMPhysAddr | Size | Register | 0 | Action |
 | 0x6 | `FAULT` | 0 | 0 | 0 | 0 | 0 |
 | 0x7 | `ADDRSPACE_PAGE_FAULT` | VMPhysAddr | Access Type | 0 | Action | 0 |
+| 0x8 | `EXPECTS_WAKEUP_OR_TIMEOUT` | VCPU Sleep Type | From State | Timeout | 0 | 0 |
 | 0x100 | `PSCI_SYSTEM_RESET` | PSCI Reset Type | 0 | 0 | 0 | 0 |
 
 The Resume Data 3 argument is currently unused and must be zero for all states.
@@ -2975,7 +2996,10 @@ The Resume Data 3 argument is currently unused and must be zero for all states.
 :The caller's hypervisor timeslice ended, or the caller received an interrupt. The caller should retry after handling any pending interrupts.
 
 0x1 `EXPECTS_WAKEUP`
-:The VCPU is waiting to receive an interrupt; for example, it may have executed a WFI instruction, or made a firmware call requesting entry into a low-power state. In the latter case, the state-specific data in X2 will be a platform-specific nonzero value indicating the requested power state. For a platform that implements Arm's PSCI standard, it is in the same format as the state argument to a `PSCI_CPU_SUSPEND` call. The `VCPU_RUN_WAKEUP` VIRQ will be asserted when the VCPU leaves this state.
+:The VCPU is waiting to receive an interrupt; for example, it may have executed a WFI instruction, or made a firmware call (such as PSCI) requesting entry into a low-power state. In the latter case, the state-specific return in State Data 1 will be a platform-specific nonzero value indicating the requested power state. For a platform that implements Arm's PSCI standard, it is in the same format as the state argument to a `PSCI_CPU_SUSPEND` call. The interface used to enture a low-power state is described in State Data 2, if known. The `VCPU_RUN_WAKEUP` VIRQ will be asserted when the VCPU leaves this state.
+
+0x8 `EXPECTS_WAKEUP_OR_TIMEOUT`
+: This code extends the `EXPECTS_WAKEUP` by providing an additional Timeout value. The timeout value is an absolute value, in units of system counter ticks. The caller is expected to call `vcpu_run` again once the timeout time is reached. The VCPU may however wakeup due to an external event before the timeout, signalled by the `VCPU_RUN_WAKEUP` VIRQ. Receipt of the wakeup VIRQ should be treated as immediate expiry of the timer.
 
 0x2 `POWERED_OFF`
 :The VCPU has not yet been started by calling `vcpu_poweron`, or has stopped itself by calling `vcpu_poweroff`, or has been terminated due to a reset request from another VM. If PSCI is implemented, this state is also reachable via PSCI calls. The `VCPU_RUN_WAKEUP` VIRQ will be asserted when the VCPU leaves this state. The first state data word contains a VCPU Poweroff Type value (defined below).
@@ -3018,6 +3042,21 @@ When resuming a VCPU that has been halted by a fault, one of the resume data wor
 This is a platform-specific unsigned word indicating a low-power suspend state. The value 0 is reserved for a trapped wait-for-interrupt or halt instruction, such as the AArch64 `WFI` instruction.
 
 If the platform implements PSCI, nonzero values are power state values as passed to `PSCI_CPU_SUSPEND`.
+
+*From State:*
+
+This indicated the interface used (if known) for entering a low-power state.
+
+On Arm platforms:
+
+| Value | Description |
+|-|-----|
+| 0 | Unspecified. |
+| 1 | WFI instruction |
+| 2 | `PSCI_CPU_SUSPEND` call|
+| 3 | `PSCI_SYSTEM_SUSPEND` call|
+| >3 | Reserved. |
+
 
 *VCPU Poweroff Type*:
 

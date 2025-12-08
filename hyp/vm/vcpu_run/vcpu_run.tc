@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -12,14 +12,24 @@ extend thread object module vcpu_run {
 	// variables maintained by handlers for the resume & check events are
 	// protected the same way.
 	last_state		enumeration vcpu_run_state;
+};
 
+extend vcpu_runtime_flags bitfield {
+	// vcpu_run_scheduled flag here is distinct from the vcpu_run
+	// scheduler_block state. This allows us to differentiate between
+	// wakeups during the vcpu_run hypercall and other wakeups.
+	auto		vcpu_run_scheduled	bool = 0;
 	// Deprecated, will be moved to vcpu options when dynamic enablement of
 	// vcpu_run is removed.
-	enabled			bool;	// Protected by the scheduler lock.
+	auto		vcpu_run_enabled	bool = 0;
 };
 
 extend vcpu_option_flags bitfield {
+	// vcpu is vcpu_run scheduled
 	9	vcpu_run_scheduled	bool = 0;
+	// vcpu_run no timer wakeup feature, does not enqueue vcpu timers for
+	// wake-up events. Next wakeup time is returned to the host VM.
+	12	vcpu_run_no_timer_wakeup	bool = 0;
 };
 
 extend virq_trigger enumeration {

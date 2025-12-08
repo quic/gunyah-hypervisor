@@ -255,7 +255,7 @@ vgic_read_irqbits(vic_t *vic, thread_t *vcpu, size_t base_offset, size_t offset)
 		goto out;
 	}
 	assert(compiler_sizeof_object(dstates) >=
-	       range_size * sizeof(*dstates));
+	       (range_size * sizeof(*dstates)));
 
 	bool listed = false;
 

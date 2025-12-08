@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -50,3 +50,7 @@ handled_event vcpu_run_check
 	param state_data_1: register_t *
 	param state_data_2: register_t *
 	return: vcpu_run_state_t = VCPU_RUN_STATE_BLOCKED
+
+event vcpu_run_get_next_wakeup
+	param vcpu: const thread_t *
+	param timeout: ticks_t *

@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -12,10 +12,16 @@ subscribe vcpu_activate_thread
 
 subscribe vcpu_wakeup
 	handler vcpu_run_trigger_virq
+	require_scheduler_lock(vcpu)
+
+subscribe vcpu_run_resume[VCPU_RUN_STATE_EXPECTS_WAKEUP_OR_TIMEOUT](vcpu)
+	require_scheduler_lock(vcpu)
 
 subscribe vcpu_poweron(vcpu)
+	require_scheduler_lock(vcpu)
 
 subscribe thread_killed
+	exclude_scheduler_lock(thread)
 
 subscribe vcpu_bind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu, vic, virq)
 
@@ -23,3 +29,6 @@ subscribe vcpu_unbind_virq[VCPU_VIRQ_TYPE_VCPU_RUN_WAKEUP](vcpu)
 	exclude_preempt_disabled
 
 subscribe scheduler_get_block_properties[SCHEDULER_BLOCK_VCPU_RUN]
+
+subscribe vcpu_run_get_next_wakeup(timeout)
+	priority first
