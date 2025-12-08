@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -20,9 +20,6 @@ platform_get_cpu_features(void)
 #endif
 #if defined(INTERFACE_DEBUG)
 	platform_cpu_features_set_debug_disable(&features, false);
-#endif
-#if defined(MODULE_VM_ARM_VM_SVE_SIMPLE)
-	platform_cpu_features_set_sve_disable(&features, false);
 #endif
 
 	return features;

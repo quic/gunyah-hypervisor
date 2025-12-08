@@ -1,8 +1,0 @@
-// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
-//
-// SPDX-License-Identifier: BSD-3-Clause
-
-#if defined(ARCH_ARM_FEAT_SVE)
-define SVE_Z_MIN_REG_SIZE constant type count_t = 16;
-define SVE_Z_REG_SIZE constant type count_t = PLATFORM_SVE_REG_SIZE;
-#endif
