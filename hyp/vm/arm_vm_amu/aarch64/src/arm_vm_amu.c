@@ -83,8 +83,8 @@ bool
 arm_vm_amu_handle_vcpu_activate_thread(thread_t		  *thread,
 				       vcpu_option_flags_t options)
 {
-	assert(thread != NULL);
-	assert(vcpu_is_vcpu(thread));
+	assert_debug(thread != NULL);
+	assert_debug(vcpu_is_vcpu(thread));
 
 	// Trap accesses to AMU registers. For HLOS we will emulate
 	// them, for the rest of the VMs we will leave them unhandled

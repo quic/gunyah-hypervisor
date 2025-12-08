@@ -20,7 +20,7 @@
 bool
 arm_vm_lor_null_handle_vcpu_activate_thread(thread_t *thread)
 {
-	assert(thread != NULL);
+	assert_debug(thread != NULL);
 	assert_debug(vcpu_is_vcpu(thread));
 
 	// Trap accesses to the LOR registers

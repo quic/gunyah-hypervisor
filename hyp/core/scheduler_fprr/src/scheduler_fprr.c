@@ -331,7 +331,7 @@ scheduler_fprr_handle_vcpu_activate_thread(thread_t	      *thread,
 {
 	bool ret = false, pin = false;
 
-	assert(vcpu_is_vcpu(thread));
+	assert_debug(vcpu_is_vcpu(thread));
 
 	scheduler_lock(thread);
 

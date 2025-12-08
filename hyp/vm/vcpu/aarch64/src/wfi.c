@@ -142,8 +142,8 @@ vcpu_handle_thread_context_switch_post(void)
 void
 vcpu_wakeup(thread_t *vcpu)
 {
-	assert(vcpu != NULL);
-	assert(vcpu_is_vcpu(vcpu));
+	assert_safety(vcpu != NULL);
+	assert_safety(vcpu_is_vcpu(vcpu));
 
 #if !defined(PREEMPT_NULL)
 	// Inhibit sleep in preempted WFI handlers (see above)

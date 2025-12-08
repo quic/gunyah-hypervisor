@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -93,7 +93,7 @@ arm_pv_time_handle_vcpu_activate_thread(thread_t *thread)
 {
 	bool success;
 
-	assert(thread != NULL);
+	assert_debug(thread != NULL);
 
 	arm_pv_time_self_block_state_t new_state =
 		arm_pv_time_self_block_state_default();

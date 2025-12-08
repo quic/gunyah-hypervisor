@@ -145,8 +145,8 @@ vcpu_handle_vcpu_activate_thread(thread_t *thread, vcpu_option_flags_t options)
 {
 	bool ret = false;
 
-	assert(thread != NULL);
-	assert(vcpu_is_vcpu(thread));
+	assert_debug(thread != NULL);
+	assert_debug(vcpu_is_vcpu(thread));
 
 	// Check that the partition has the right to mark the VCPU as critical.
 	if (vcpu_option_flags_get_critical(&options) ||
