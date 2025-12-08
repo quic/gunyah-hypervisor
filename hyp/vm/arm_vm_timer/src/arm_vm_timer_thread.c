@@ -39,28 +39,27 @@ arm_vm_timer_handle_object_create_thread(thread_create_t thread_create)
 	return OK;
 }
 
-error_t
-arm_vm_timer_handle_object_activate_thread(thread_t *thread)
+bool
+arm_vm_timer_handle_vcpu_activate_thread(thread_t *thread)
 {
-	error_t ret = OK;
+	error_t ret;
 
-	if (vcpu_is_vcpu(thread)) {
-		ret = vic_bind_private_vcpu(&thread->virtual_timer_virq_src,
-					    thread, thread->virtual_timer_virq,
-					    VIRQ_TRIGGER_VIRTUAL_TIMER);
-		if (ret == OK) {
-			ret = vic_bind_private_vcpu(
-				&thread->physical_timer_virq_src, thread,
-				thread->physical_timer_virq,
-				VIRQ_TRIGGER_PHYSICAL_TIMER);
+	assert_debug(vcpu_is_vcpu(thread));
 
-			if (ret != OK) {
-				vic_unbind(&thread->virtual_timer_virq_src);
-			}
+	ret = vic_bind_private_vcpu(&thread->virtual_timer_virq_src, thread,
+				    thread->virtual_timer_virq,
+				    VIRQ_TRIGGER_VIRTUAL_TIMER);
+	if (ret == OK) {
+		ret = vic_bind_private_vcpu(&thread->physical_timer_virq_src,
+					    thread, thread->physical_timer_virq,
+					    VIRQ_TRIGGER_PHYSICAL_TIMER);
+
+		if (ret != OK) {
+			vic_unbind(&thread->virtual_timer_virq_src);
 		}
 	}
 
-	return ret;
+	return ret == OK;
 }
 
 void

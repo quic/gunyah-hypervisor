@@ -27,16 +27,18 @@ subscribe vcpu_disable_state()
 
 subscribe object_create_thread
 
-subscribe object_activate_thread
+subscribe vcpu_activate_thread(thread)
 	unwinder arm_vm_timer_handle_object_deactivate_thread(thread)
 
 subscribe object_deactivate_thread
 
 subscribe timer_action[TIMER_ACTION_VIRTUAL_TIMER]
-	handler arm_vm_timer_handle_timer_action(action_type, timer)
+	handler arm_vm_timer_handle_timer_action
+	require_preempt_disabled
 
 subscribe timer_action[TIMER_ACTION_PHYSICAL_TIMER]
-	handler arm_vm_timer_handle_timer_action(action_type, timer)
+	handler arm_vm_timer_handle_timer_action
+	require_preempt_disabled
 
 subscribe virq_check_pending[VIRQ_TRIGGER_VIRTUAL_TIMER]
 	handler arm_vm_timer_handle_virq_check_pending(trigger, source)

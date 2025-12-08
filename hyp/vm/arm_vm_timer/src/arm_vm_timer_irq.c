@@ -13,6 +13,7 @@
 #include <scheduler.h>
 #include <thread.h>
 #include <trace.h>
+#include <vcpu.h>
 #include <virq.h>
 
 #include "arm_vm_timer.h"
@@ -30,36 +31,23 @@ arm_vm_timer_inject_timer_virq(thread_t *thread, arm_vm_timer_type_t tt)
 	}
 }
 
-// Handle the timer queue expiry coming from the hyp arch timer
-static void
-arm_vm_timer_type_timer_action(thread_t *thread, arm_vm_timer_type_t tt)
-{
-	bool is_current = thread_get_self() == thread;
-
-	if (is_current && arm_vm_timer_is_irq_pending(tt)) {
-		arm_vm_timer_inject_timer_virq(thread, tt);
-	} else if (!is_current &&
-		   arm_vm_timer_is_irq_enabled_thread(thread, tt)) {
-		arm_vm_timer_inject_timer_virq(thread, tt);
-	} else {
-		TRACE(DEBUG, INFO, "Redundant VM hyp timeout");
-	}
-}
-
+// Handle the timer queue expiry coming from the hyp timer queue
 bool
 arm_vm_timer_handle_timer_action(timer_action_t action_type, timer_t *timer)
 {
+	thread_t *vcpu;
+
 	if (action_type == TIMER_ACTION_VIRTUAL_TIMER) {
-		arm_vm_timer_type_timer_action(
-			thread_container_of_virtual_timer(timer),
-			ARM_VM_TIMER_TYPE_VIRTUAL);
+		vcpu = thread_container_of_virtual_timer(timer);
 	} else if (action_type == TIMER_ACTION_PHYSICAL_TIMER) {
-		arm_vm_timer_type_timer_action(
-			thread_container_of_physical_timer(timer),
-			ARM_VM_TIMER_TYPE_PHYSICAL);
+		vcpu = thread_container_of_physical_timer(timer);
 	} else {
-		TRACE(DEBUG, INFO, "Spurious VM hyp timeout");
+		panic("Invalid timer");
 	}
+
+	scheduler_lock_nopreempt(vcpu);
+	vcpu_wakeup(vcpu);
+	scheduler_unlock_nopreempt(vcpu);
 
 	return true;
 }
