@@ -33,13 +33,9 @@ define sdei_ret enumeration(explicit) {
 	OUT_OF_RESOURCE = -10;
 };
 
-define sdei_standard_event enumeration(explicit) {
-	SOFTWARE_SIGNALED = 0x0;
-};
-
-define sdei_vendor_event enumeration(explicit) {
-	ERROR = 0x40000000;
-};
+define SDEI_STANDARD_EVENT_SOFTWARE_SIGNALED constant uint32 = 0x0;
+define SDEI_VENDOR_EVENT_ERROR constant uint32 = 0x40000000;
+define SDEI_VENDOR_EVENT_EL3_ERROR constant uint32 = 0x40000001;
 
 define sdei_event_number bitfield<32> {
 	23:0	event		uint32;
@@ -137,4 +133,5 @@ define sdei_error_reason public enumeration(explicit) {
 	UNKNOWN = 0;
 	SENT_BY_USER = 1;
 	VIRTUAL_WATCHDOG_BITE = 2;
+	SENT_BY_EL3 = 3;
 };

@@ -1,0 +1,22 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define SDEI_CLIENT_VERSION_MAJOR constant uint16 = 0x1;
+define SDEI_CLIENT_VERSION_MINOR constant uint16 = 0x0;
+
+define sdei_client_event structure {
+	event_num		uint32;
+	type			enumeration sdei_ev_type;
+};
+
+define sdei_client_event_info structure {
+	event_num		uint32;
+	pc			uint64;
+	pstate			uint64;
+	ticks			type ticks_t;
+};
+
+extend ipi_reason enumeration {
+	sdei_client_handle_event;
+};

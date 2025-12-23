@@ -1,0 +1,27 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module sdei_client
+
+subscribe boot_cold_init()
+	require_preempt_disabled
+
+subscribe boot_cpu_cold_init()
+	require_preempt_disabled
+
+subscribe boot_cpu_warm_init()
+	require_preempt_disabled
+
+subscribe boot_cpu_start()
+	require_preempt_disabled
+
+subscribe power_cpu_offline()
+	require_preempt_disabled
+
+subscribe power_cpu_suspend(may_poweroff)
+	unwinder sdei_client_unwind_handle_power_cpu_suspend(may_poweroff)
+	require_preempt_disabled
+
+subscribe ipi_received[IPI_REASON_SDEI_CLIENT_HANDLE_EVENT]()
+	require_preempt_disabled
