@@ -67,7 +67,7 @@ extend vcpu_option_flags bitfield {
 };
 
 extend ipi_reason enumeration {
-	sdei;
+	sdei_dispatcher_deliver_event;
 };
 
 extend scheduler_block enumeration {

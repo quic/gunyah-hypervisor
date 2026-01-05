@@ -223,7 +223,8 @@ sdei_try_deliver_event_to_vcpu(thread_t *vcpu, sdei_event_t *event)
 		vcpu_wakeup_self();
 	} else {
 		scheduler_lock_nopreempt(vcpu);
-		ipi_one(IPI_REASON_SDEI, scheduler_get_active_affinity(vcpu));
+		ipi_one(IPI_REASON_SDEI_DISPATCHER_DELIVER_EVENT,
+			scheduler_get_active_affinity(vcpu));
 		vcpu_wakeup(vcpu);
 		scheduler_unlock_nopreempt(vcpu);
 	}
@@ -1302,7 +1303,8 @@ sdei_dispatcher_handle_thread_exit_to_user_final(thread_t	      *current,
 		switch (reason) {
 		case THREAD_ENTRY_REASON_NONE:
 		case THREAD_ENTRY_REASON_HYPERCALL:
-			ipi_one(IPI_REASON_SDEI, cpulocal_get_index());
+			ipi_one(IPI_REASON_SDEI_DISPATCHER_DELIVER_EVENT,
+				cpulocal_get_index());
 			break;
 		case THREAD_ENTRY_REASON_EXCEPTION:
 		case THREAD_ENTRY_REASON_INTERRUPT:

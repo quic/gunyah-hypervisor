@@ -25,7 +25,7 @@ subscribe thread_exit_to_user_final
 	priority first
 	require_preempt_disabled
 
-subscribe ipi_received[IPI_REASON_SDEI]()
+subscribe ipi_received[IPI_REASON_SDEI_DISPATCHER_DELIVER_EVENT]()
 	require_preempt_disabled
 
 subscribe vcpu_trap_wfi()
