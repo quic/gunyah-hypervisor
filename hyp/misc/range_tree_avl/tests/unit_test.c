@@ -500,6 +500,65 @@ test_parallel_lookup_during_left_and_right_rotation(void)
 	TEST_END();
 }
 
+static void
+test_split_at_invalid_point(void)
+{
+	TEST_BEGIN("split_at_invalid_point");
+
+	range_tree_t tree;
+	error_t	     err = range_tree_init(&tree, NULL);
+	TEST_ASSERT(err == OK, "Range tree init should succeed");
+
+	range_tree_node_t node	    = { 0 };
+	range_tree_node_t new_lower = { 0 };
+	range_tree_node_t new_upper = { 0 };
+
+	const size_t base = 0x1000;
+	const size_t size = 0x10;
+
+	range_tree_lock(&tree);
+	err = range_tree_insert(&tree, &node, base, size);
+	range_tree_unlock(&tree);
+	TEST_ASSERT(err == OK, "Node insert should succeed");
+
+	const struct param {
+		size_t bad_split_point;
+		char  *msg;
+	} params[] = {
+		{ .bad_split_point = base,
+		  .msg		   = "Split at start should fail" },
+		{ .bad_split_point = base + size,
+		  .msg		   = "Split at end should fail" },
+		{ .bad_split_point = base - 1,
+		  .msg		   = "Split before start should fail" },
+		{ .bad_split_point = base + size + 1,
+		  .msg		   = "Split after end should fail" },
+	};
+
+	for (size_t i = 0; i < util_array_size(params); ++i) {
+		range_tree_lock(&tree);
+		err = range_tree_split_node(&tree, &node, &new_lower,
+					    &new_upper,
+					    params[i].bad_split_point);
+		range_tree_unlock(&tree);
+		TEST_ASSERT(err == ERROR_ARGUMENT_INVALID, params[i].msg);
+		TEST_ASSERT(node.base == base,
+			    "Node base unchanged after failed split");
+		TEST_ASSERT(node.size == size,
+			    "Node size unchanged after failed split");
+		TEST_ASSERT(new_lower.base == 0,
+			    "New lower node base unchanged after failed split");
+		TEST_ASSERT(new_lower.size == 0,
+			    "New lower node size unchanged after failed split");
+		TEST_ASSERT(new_upper.base == 0,
+			    "New upper node base unchanged after failed split");
+		TEST_ASSERT(new_upper.size == 0,
+			    "New upper node size unchanged after failed split");
+	}
+
+	TEST_END();
+}
+
 int
 main(void)
 {
@@ -508,6 +567,7 @@ main(void)
 	test_rotation_counters_increment();
 	test_parallel_lookup_during_left_or_right_rotation();
 	test_parallel_lookup_during_left_and_right_rotation();
+	test_split_at_invalid_point();
 
 	printf("=== Asserts Summary ===\n");
 	printf("Asserts passed: %zu\n", asserts_passed);

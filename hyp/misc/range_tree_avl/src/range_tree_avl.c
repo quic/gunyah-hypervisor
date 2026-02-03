@@ -604,13 +604,21 @@ range_tree_split_node(range_tree_t *tree, range_tree_node_t *node,
 		      range_tree_node_t *new_lower,
 		      range_tree_node_t *new_upper, size_t split_point)
 {
+	error_t ret = OK;
+
+	if ((split_point <= node->base) ||
+	    (split_point >= (node->base + node->size))) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out;
+	}
 	(void)tree;
 	(void)node;
 	(void)new_lower;
 	(void)new_upper;
 	(void)split_point;
 	// TODO: Implement.
-	return OK;
+out:
+	return ret;
 }
 
 static range_tree_node_t *
