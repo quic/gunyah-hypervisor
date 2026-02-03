@@ -80,6 +80,22 @@ range_tree_lookup_result_t
 range_tree_lookup_locked(range_tree_t *tree, size_t base, size_t max_size)
 	REQUIRE_SPINLOCK(tree -> write_lock) REQUIRE_RCU_READ;
 
+// Atomically split an existing node in the range tree.
+//
+// Original node: [base, base + size)
+// Post split:
+// New lower node: [base, split_point)
+// New upper node: [split_point, base + size)
+//
+// Caller must provide the new lower and upper node structures to fill in. The
+// original node is removed from the tree. The original node must not be freed
+// or reused before an RCU grace period has elapsed.
+error_t
+range_tree_split_node(range_tree_t *tree, range_tree_node_t *node,
+		      range_tree_node_t *new_lower,
+		      range_tree_node_t *new_upper, size_t split_point)
+	REQUIRE_SPINLOCK(tree -> write_lock);
+
 // Range tree iterator.
 //
 // Returns the range with the lowest base address that is not less than the

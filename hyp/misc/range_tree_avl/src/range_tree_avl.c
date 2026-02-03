@@ -599,6 +599,20 @@ range_tree_lookup_locked(range_tree_t *tree, size_t base, size_t max_size)
 	return res.r;
 }
 
+error_t
+range_tree_split_node(range_tree_t *tree, range_tree_node_t *node,
+		      range_tree_node_t *new_lower,
+		      range_tree_node_t *new_upper, size_t split_point)
+{
+	(void)tree;
+	(void)node;
+	(void)new_lower;
+	(void)new_upper;
+	(void)split_point;
+	// TODO: Implement.
+	return OK;
+}
+
 static range_tree_node_t *
 range_tree_next_subtree_node(range_tree_node_t *root, size_t start)
 {
