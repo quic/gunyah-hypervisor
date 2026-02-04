@@ -58,6 +58,7 @@ class TestCase:
     destroy_op = 4
     check_op = 5
     next_node_op = 6
+    split_op = 7
 
     def __init__(self, debug=False):
         self.top = 1 << 64
@@ -85,6 +86,8 @@ class TestCase:
             self.gen_check_op,
             self.gen_next_node_found_op,
             self.gen_next_node_missing_op,
+            self.gen_split_op,
+            self.gen_split_invalid_op,
         ]
 
     def format_counts(self, title, counter):
@@ -111,6 +114,9 @@ class TestCase:
         self.allocations.insert(pos, r)
         self.node_bitmap = self.node_bitmap & ~(1 << msb)
         r.node_index = msb
+
+    def free_node_count(self):
+        return self.node_bitmap.bit_count()
 
     def free_range(self, r, pos):
         assert r.node_index is not None
@@ -225,6 +231,59 @@ class TestCase:
         self.test_ops.put("# next_node_missing")
         self.test_ops.put(
             f"{self.next_node_op:d} {addr:#x} -1")
+
+    def gen_split_op(self):
+        if not self.allocations:
+            raise StateException("Nothing to split")
+        if self.free_node_count() < 2:
+            raise StateException("Not enough free node IDs for split")
+        # Find range that's large enough to split
+        splittable = [r for r in self.allocations if r.size > 1]
+        if not splittable:
+            raise StateException("No range large enough to split")
+        pos = self.allocations.index(random.choice(splittable))
+        r = self.allocations[pos]
+        # Randomly choose a valid split point
+        split_point = random.randrange(r.base + 1, r.base + r.size)
+        # Create new range for second part and insert after existing range
+        new_lower_r = Range(r.base, split_point - 1)
+        self.alloc_range(new_lower_r, pos + 1)
+        new_upper_r = Range(split_point, r.end)
+        self.alloc_range(new_upper_r, pos + 2)
+        self.test_ops.put("# split")
+        self.test_ops.put(
+            f"{self.split_op:d} {r.node_index:d} {new_lower_r.node_index:d} "
+            f"{new_upper_r.node_index:d} {split_point:#x} 1")
+        self.free_range(r, pos)
+
+    def gen_split_invalid_op(self):
+        if not self.allocations:
+            raise StateException("Nothing to split")
+        if self.free_node_count() < 2:
+            raise StateException("Not enough free node IDs for split")
+        r = random.choice(self.allocations)
+        bad_split_points = [
+            r.base,
+            r.base + r.size,
+        ]
+        if r.base > 0:
+            bad_split_points.append(r.base - 1)
+        if r.base + r.size < self.top:
+            bad_split_points.append(r.base + r.size + 1)
+        bad_split_point = random.choice(bad_split_points)
+        # Get lower node index
+        msb = self.node_bitmap.bit_length() - 1
+        if msb < 0:
+            raise StateException("Node ID bitmap is empty")
+        # Get upper node index
+        remaining = self.node_bitmap & ~(1 << msb)
+        if remaining == 0:
+            raise StateException("Not enough free node IDs for split_invalid")
+        next_msb = remaining.bit_length() - 1
+        self.test_ops.put("# split_invalid")
+        self.test_ops.put(
+            f"{self.split_op:d} {r.node_index:d} {msb:d} {next_msb:d} "
+            f"{bad_split_point:#x} 0")
 
     def gen_step_ops(self):
         op_fn = random.choice(self.step_ops)

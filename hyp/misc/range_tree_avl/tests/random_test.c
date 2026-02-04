@@ -35,6 +35,7 @@ typedef enum action {
 	DEINIT	  = 4,
 	CHECK	  = 5,
 	NEXT_NODE = 6,
+	SPLIT	  = 7,
 } action_t;
 
 typedef enum status {
@@ -65,6 +66,9 @@ run_lookup(const char *args);
 
 bool
 run_next_node(const char *args);
+
+bool
+run_split(const char *args);
 
 bool
 run_deinit(const char *args);
@@ -115,6 +119,10 @@ action_name(action_t a)
 
 	case NEXT_NODE:
 		name = "next_node";
+		break;
+
+	case SPLIT:
+		name = "split";
 		break;
 
 	default:
@@ -273,6 +281,76 @@ run_next_node(const char *args)
 }
 
 bool
+run_split(const char *args)
+{
+	action_t action;
+	uint32_t node_index, new_lower_index, new_upper_index, expect_success;
+	size_t	 split_point;
+
+	sscanf(args, "%u %u %u %u %zx %u", &action, &node_index,
+	       &new_lower_index, &new_upper_index, &split_point,
+	       &expect_success);
+
+	assert(node_index < node_count);
+	assert(new_lower_index < node_count);
+
+	assert(new_upper_index < node_count);
+	assert(node_index != new_lower_index);
+
+	range_tree_node_t *node	     = &node_array[node_index];
+	range_tree_node_t *new_lower = &node_array[new_lower_index];
+	range_tree_node_t *new_upper = &node_array[new_upper_index];
+
+	const size_t node_base = node->base;
+	const size_t node_size = node->size;
+
+	range_tree_lock(&tree);
+	error_t err = range_tree_split_node(&tree, node, new_lower, new_upper,
+					    split_point);
+
+	range_tree_unlock(&tree);
+
+	if (err != OK) {
+		if (expect_success) {
+			printf("split failed: node_idx(%u) split_point(%#zx) -> err(%d)\n",
+			       node_index, split_point, err);
+		}
+		return !expect_success;
+	}
+	if (!expect_success) {
+		printf("split succeeded unexpectedly: node_idx(%u) split_point(%#zx)\n",
+		       node_index, split_point);
+		return false;
+	}
+
+	if (new_lower->base != node_base) {
+		printf("split validation failed: new_lower base is %#zx, expected %#zx\n",
+		       new_lower->base, node_base);
+		return false;
+	}
+	const size_t expected_new_lower_size = split_point - node_base;
+	if (new_lower->size != expected_new_lower_size) {
+		printf("split validation failed: new_lower size is %#zx, expected %#zx\n",
+		       new_lower->size, expected_new_lower_size);
+		return false;
+	}
+	if (new_upper->base != split_point) {
+		printf("split validation failed: new_upper base is %#zx, expected %#zx\n",
+		       new_upper->base, split_point);
+		return false;
+	}
+	const size_t expected_new_upper_size =
+		node_base + node_size - split_point;
+	if (new_upper->size != expected_new_upper_size) {
+		printf("split validation failed: new_upper size is %#zx, expected %#zx\n",
+		       new_upper->size, expected_new_upper_size);
+		return false;
+	}
+
+	return true;
+}
+
+bool
 run_check(const char *args)
 {
 	action_t action;
@@ -417,6 +495,10 @@ main(int argc, char *argv[])
 
 		case NEXT_NODE:
 			ret = run_next_node(buf);
+			break;
+
+		case SPLIT:
+			ret = run_split(buf);
 			break;
 
 		default:

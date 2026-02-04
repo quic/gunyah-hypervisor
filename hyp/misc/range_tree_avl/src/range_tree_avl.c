@@ -599,24 +599,187 @@ range_tree_lookup_locked(range_tree_t *tree, size_t base, size_t max_size)
 	return res.r;
 }
 
+static bool_result_t
+range_tree_propagate_balance_change(range_tree_t	       *tree,
+				    range_tree_node_t *_Atomic *subtree,
+				    range_tree_node_t	       *node,
+				    bool   node_height_increased,
+				    int8_t balance_delta)
+{
+	assert((balance_delta >= -1) && (balance_delta <= 1));
+	bool_result_t height_increased;
+
+	range_tree_node_t *subtree_root = atomic_load_consume(subtree);
+
+	if (subtree_root == NULL) {
+		// Node is not present in the tree.
+		height_increased = bool_result_error(ERROR_ADDR_INVALID);
+	} else if ((node->base + node->size - 1U) < subtree_root->base) {
+		// Node is entirely to the left of the subtree root
+		bool_result_t left_height_increased =
+			range_tree_propagate_balance_change(
+				tree, &subtree_root->left, node,
+				node_height_increased, balance_delta);
+		if (left_height_increased.e != OK) {
+			// Balance change failed; propagate the error.
+			height_increased = left_height_increased;
+		} else if (left_height_increased.r &&
+			   (subtree_root->balance <= 0)) {
+			// This subtree was right-heavy and is now balanced, or
+			// was balanced and is now left-heavy. Its total height
+			// increased if it is no longer balanced.
+			subtree_root->balance++;
+			height_increased =
+				bool_result_ok(subtree_root->balance != 0);
+		} else if (left_height_increased.r) {
+			// This subtree was left-heavy and now has balance 2;
+			// it needs to be rebalanced to the right.
+			const bool height_reduced =
+				range_tree_rebalance_rightwards(tree, subtree,
+								subtree_root);
+			// If the rebalance did not reduce the height, then
+			// propagate height increase to caller.
+			height_increased = bool_result_ok(!height_reduced);
+		} else {
+			// Child's height was not increased; balance unchanged
+			height_increased = bool_result_ok(false);
+		}
+	} else if (node->base >
+		   (subtree_root->base + subtree_root->size - 1U)) {
+		// Node is entirely to the right of the subtree root
+		bool_result_t right_height_increased =
+			range_tree_propagate_balance_change(
+				tree, &subtree_root->right, node,
+				node_height_increased, balance_delta);
+		if (right_height_increased.e != OK) {
+			// Balance change failed; propagate the error.
+			height_increased = right_height_increased;
+		} else if (right_height_increased.r &&
+			   (subtree_root->balance >= 0)) {
+			// This subtree was left-heavy and is now balanced, or
+			// was balanced and is now right-heavy. Its total height
+			// increased if it is no longer balanced.
+			subtree_root->balance--;
+			height_increased =
+				bool_result_ok(subtree_root->balance != 0);
+		} else if (right_height_increased.r) {
+			// This subtree was right-heavy and now has balance -2;
+			// it needs to be rebalanced to the left.
+			const bool height_reduced =
+				range_tree_rebalance_leftwards(tree, subtree,
+							       subtree_root);
+			// If the rebalance did not reduce the height, then
+			// propagate height increase to caller.
+			height_increased = bool_result_ok(!height_reduced);
+		} else {
+			// Child's height was not increased; balance unchanged
+			height_increased = bool_result_ok(false);
+		}
+	} else if (subtree_root != node) {
+		// Node is not present in the tree.
+		height_increased = bool_result_error(ERROR_BUSY);
+	} else {
+		// Found the node. Update its balance and set whether it's
+		// height increased.
+		const int8_t new_balance =
+			subtree_root->balance + balance_delta;
+		if (new_balance > 1) {
+			// If the new balance is too left heavy (2), we have to
+			// rebalance rightwards and it must decrease the height,
+			// which means the node's balance will be unchanged.
+			const bool height_reduced =
+				range_tree_rebalance_rightwards(tree, subtree,
+								subtree_root);
+			assert(height_reduced);
+			height_increased = bool_result_ok(false);
+		} else if (new_balance < -1) {
+			// If the new balance is too right heavy (-2), we have
+			// to rebalance leftwards and it must decrease the
+			// height, which means the node's balance will be
+			// unchanged.
+			const bool height_reduced =
+				range_tree_rebalance_leftwards(tree, subtree,
+							       subtree_root);
+			assert(height_reduced);
+			height_increased = bool_result_ok(false);
+		} else {
+			subtree_root->balance = new_balance;
+			height_increased =
+				bool_result_ok(node_height_increased);
+		}
+	}
+	return height_increased;
+}
+
 error_t
 range_tree_split_node(range_tree_t *tree, range_tree_node_t *node,
 		      range_tree_node_t *new_lower,
 		      range_tree_node_t *new_upper, size_t split_point)
 {
-	error_t ret = OK;
+	error_t ret;
 
 	if ((split_point <= node->base) ||
 	    (split_point >= (node->base + node->size))) {
 		ret = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
-	(void)tree;
-	(void)node;
-	(void)new_lower;
-	(void)new_upper;
-	(void)split_point;
-	// TODO: Implement.
+	const size_t lower_size = split_point - node->base;
+	const size_t upper_size = node->size - lower_size;
+
+	*new_lower = (range_tree_node_t){
+		.base	 = node->base,
+		.size	 = lower_size,
+		.left	 = NULL,
+		.right	 = NULL,
+		.balance = 0,
+
+	};
+	*new_upper = (range_tree_node_t){
+		.base	 = split_point,
+		.size	 = upper_size,
+		.left	 = NULL,
+		.right	 = NULL,
+		.balance = 0,
+
+	};
+	const bool_result_t left_height_increased =
+		range_tree_insert_node(tree, &node->left, new_lower);
+	assert(left_height_increased.e == OK);
+	const bool_result_t right_height_increased =
+		range_tree_insert_node(tree, &node->right, new_upper);
+	assert(right_height_increased.e == OK);
+	const bool left_increased  = left_height_increased.r;
+	const bool right_increased = right_height_increased.r;
+	if (left_increased || right_increased) {
+		bool   node_height_increased;
+		int8_t balance_delta;
+		if (left_increased && !right_increased) {
+			// If only left height increased, then the node's height
+			// will only increase if it was balanced (0) or left
+			// heavy (1).
+			node_height_increased = (node->balance >= 0);
+			balance_delta	      = 1;
+		} else if (right_increased && !left_increased) {
+			// If only right height increased, then the node's
+			// height will only increase if it was balanced (0) or
+			// right heavy (-1).
+			node_height_increased = (node->balance <= 0);
+			balance_delta	      = -1;
+		} else {
+			// If both the left and right heights increased, then
+			// the node's height increased.
+			node_height_increased = true;
+			balance_delta	      = 0;
+		}
+		const bool_result_t res = range_tree_propagate_balance_change(
+			tree, &tree->root, node, node_height_increased,
+			balance_delta);
+		assert(res.e == OK);
+	}
+	const bool_result_t res =
+		range_tree_remove_node(tree, &tree->root, node);
+	assert(res.e == OK);
+	ret = OK;
 out:
 	return ret;
 }

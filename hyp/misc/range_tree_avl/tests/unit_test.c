@@ -21,6 +21,7 @@
 #include <range_tree.h>
 #include <util.h>
 
+#include "helpers.h"
 #include "plookups.h"
 #include "stub.h"
 
@@ -55,8 +56,9 @@
 		}                                                              \
 	} while (0)
 
-#define NR_MAX_NODES	0xFFFFF
-#define NR_BASE_OFFSETS 3
+#define NR_MAX_NODES	 0xFFFFF
+#define NR_BASE_OFFSETS	 3
+#define NR_INSERT_PARAMS 20
 
 typedef struct plookups_fail_counts {
 	size_t nr_base_failures;
@@ -559,6 +561,311 @@ test_split_at_invalid_point(void)
 	TEST_END();
 }
 
+static void
+test_split_at_valid_point(void)
+{
+	TEST_BEGIN("split_at_valid_point");
+
+	const size_t base = 0x1000;
+	const size_t size = 0x10;
+
+	const struct param {
+		const struct insert_param {
+			size_t base;
+			size_t size;
+		} inserts[NR_INSERT_PARAMS];
+
+		size_t nr_inserts;
+		size_t insert_idx_to_split;
+		size_t split_point;
+		char  *msg;
+	} params[] = {
+		// Simple tests
+		{ .msg		       = "Split after start should succeed",
+		  .inserts	       = { { .base = base, .size = size } },
+		  .nr_inserts	       = 1,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = base + 1 },
+		{ .msg		       = "Split before end should succeed",
+		  .inserts	       = { { .base = base, .size = size } },
+		  .nr_inserts	       = 1,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = base + size - 1 },
+		// Cases where left and right subtrees both increase in height
+		{ .msg = "Split left leaf in left skewed tree (both heights grow)",
+		  .inserts	       = { { .base = 4, .size = 2 },
+					   { .base = 2, .size = 2 } },
+		  .nr_inserts	       = 2,
+		  .insert_idx_to_split = 1,
+		  .split_point	       = 3 },
+		{ .msg = "Split right leaf in right skewed tree (both heights grow)",
+		  .inserts	       = { { .base = 2, .size = 2 },
+					   { .base = 4, .size = 2 } },
+		  .nr_inserts	       = 2,
+		  .insert_idx_to_split = 1,
+		  .split_point	       = 5 },
+		{ .msg	   = "Split root in balanced tree (both heights grow)",
+		  .inserts = { { .base = 2, .size = 2 },
+			       { .base = 6, .size = 2 },
+			       { .base = 4, .size = 2 } },
+		  .nr_inserts	       = 3,
+		  .insert_idx_to_split = 2,
+		  .split_point	       = 5 },
+		// Cases where only left subtree increases in height
+		{ .msg = "Split root in right skewed tree with left inner branch (left only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 106, .size = 2 },
+					   { .base = 96, .size = 2 },
+					   { .base = 102, .size = 2 } },
+		  .nr_inserts	       = 4,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split root in balanced tree with left depth bias (left only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 92, .size = 2 },
+					   { .base = 96, .size = 2 },
+					   { .base = 106, .size = 2 } },
+		  .nr_inserts	       = 6,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split root in left skewed deeper tree (left only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 92, .size = 2 },
+					   { .base = 96, .size = 2 },
+					   { .base = 106, .size = 2 },
+					   { .base = 90, .size = 2 },
+					   { .base = 98, .size = 2 } },
+		  .nr_inserts	       = 8,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		// Cases where only right subtree increases in height
+		{ .msg = "Split root in left skewed tree with right inner branch (right only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 96, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 98, .size = 2 } },
+		  .nr_inserts	       = 4,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split root in balanced tree with right depth bias (right only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 92, .size = 2 },
+					   { .base = 102, .size = 2 },
+					   { .base = 106, .size = 2 } },
+		  .nr_inserts	       = 6,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split root in right skewed deeper tree (right only grow)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 106, .size = 2 },
+					   { .base = 92, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 108, .size = 2 },
+					   { .base = 102, .size = 2 },
+					   { .base = 110, .size = 2 } },
+		  .nr_inserts	       = 8,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		// Cases that test range_tree_propagate_balance_change()
+		{ .msg = "Split root in left skewed deeper tree (force new balance plus 2)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 92, .size = 2 },
+					   { .base = 106, .size = 2 },
+					   { .base = 88, .size = 2 },
+					   { .base = 96, .size = 2 },
+					   { .base = 102, .size = 2 },
+					   { .base = 86, .size = 2 },
+					   { .base = 90, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 98, .size = 2 } },
+		  .nr_inserts	       = 10,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split root in right skewed deeper tree (force new balance minus 2)",
+		  .inserts	       = { { .base = 100, .size = 2 },
+					   { .base = 94, .size = 2 },
+					   { .base = 108, .size = 2 },
+					   { .base = 98, .size = 2 },
+					   { .base = 104, .size = 2 },
+					   { .base = 112, .size = 2 },
+					   { .base = 102, .size = 2 },
+					   { .base = 106, .size = 2 },
+					   { .base = 110, .size = 2 },
+					   { .base = 114, .size = 2 } },
+		  .nr_inserts	       = 10,
+		  .insert_idx_to_split = 0,
+		  .split_point	       = 101 },
+		{ .msg = "Split left subtree node in balanced node tree (left recursion grows)",
+		  .inserts	       = { { .base = 20, .size = 2 },
+					   { .base = 10, .size = 2 },
+					   { .base = 30, .size = 2 } },
+		  .nr_inserts	       = 3,
+		  .insert_idx_to_split = 1,
+		  .split_point	       = 11 },
+		{ .msg = "Split right subtree node in balanced node tree (right recursion grows)",
+		  .inserts	       = { { .base = 20, .size = 2 },
+					   { .base = 10, .size = 2 },
+					   { .base = 30, .size = 2 } },
+		  .nr_inserts	       = 3,
+		  .insert_idx_to_split = 2,
+		  .split_point	       = 31 },
+		{ .msg = "Split right subtree node with inner branch (right recursion no growth)",
+		  .inserts	       = { { .base = 20, .size = 2 },
+					   { .base = 10, .size = 2 },
+					   { .base = 30, .size = 2 },
+					   { .base = 5, .size = 2 },
+					   { .base = 15, .size = 2 },
+					   { .base = 36, .size = 2 },
+					   { .base = 26, .size = 2 },
+					   { .base = 32, .size = 2 } },
+		  .nr_inserts	       = 8,
+		  .insert_idx_to_split = 2,
+		  .split_point	       = 31 },
+		{ .msg = "Split left subtree node with inner branch (left recursion no growth)",
+		  .inserts	       = { { .base = 20, .size = 2 },
+					   { .base = 30, .size = 2 },
+					   { .base = 10, .size = 2 },
+					   { .base = 35, .size = 2 },
+					   { .base = 25, .size = 2 },
+					   { .base = 4, .size = 2 },
+					   { .base = 14, .size = 2 },
+					   { .base = 8, .size = 2 } },
+		  .nr_inserts	       = 8,
+		  .insert_idx_to_split = 2,
+		  .split_point	       = 11 },
+		{ .msg = "Split internal left subtree node in populated balanced tree (mixed propagation)",
+		  .inserts	       = { { .base = 50, .size = 2 },
+					   { .base = 40, .size = 2 },
+					   { .base = 60, .size = 2 },
+					   { .base = 30, .size = 2 },
+					   { .base = 44, .size = 2 },
+					   { .base = 56, .size = 2 },
+					   { .base = 70, .size = 2 },
+					   { .base = 20, .size = 2 },
+					   { .base = 32, .size = 2 },
+					   { .base = 42, .size = 2 },
+					   { .base = 46, .size = 2 },
+					   { .base = 54, .size = 2 },
+					   { .base = 58, .size = 2 },
+					   { .base = 80, .size = 2 },
+					   { .base = 22, .size = 2 } },
+		  .nr_inserts	       = 15,
+		  .insert_idx_to_split = 1,
+		  .split_point	       = 41 },
+	};
+
+	for (size_t p = 0; p < util_array_size(params); ++p) {
+		// Verify test parameters are valid
+		TEST_ASSERT(
+			params[p].nr_inserts <= NR_INSERT_PARAMS,
+			"Num inserts should not exceed insert param array size");
+		const size_t node_to_split_idx = params[p].insert_idx_to_split;
+		const size_t node_to_split_base =
+			params[p].inserts[node_to_split_idx].base;
+		const size_t node_to_split_size =
+			params[p].inserts[node_to_split_idx].size;
+		TEST_ASSERT(((params[p].split_point > node_to_split_base) &&
+			     (params[p].split_point <
+			      (node_to_split_base + node_to_split_size))),
+			    "Split point should be within last insert's range");
+
+		printf("PARAMS: nr_inserts=%zu, msg=%s\n", params[p].nr_inserts,
+		       params[p].msg);
+
+		range_tree_t tree;
+		error_t	     err = range_tree_init(&tree, NULL);
+		TEST_ASSERT(err == OK, "Range tree init should succeed");
+
+		range_tree_node_t insert_nodes[NR_INSERT_PARAMS];
+		range_tree_lock(&tree);
+		for (int i = 0; i < params[p].nr_inserts; ++i) {
+			const struct insert_param ip = params[p].inserts[i];
+			err = range_tree_insert(&tree, &insert_nodes[i],
+						ip.base, ip.size);
+			TEST_ASSERT(err == OK, "Insert node should succeed");
+		}
+		range_tree_unlock(&tree);
+
+		range_tree_node_t new_lower = { 0 };
+		range_tree_node_t new_upper = { 0 };
+		range_tree_lock(&tree);
+		range_tree_node_t *node_to_split =
+			&insert_nodes[params[p].insert_idx_to_split];
+		err = range_tree_split_node(&tree, node_to_split, &new_lower,
+					    &new_upper, params[p].split_point);
+		range_tree_unlock(&tree);
+		TEST_ASSERT(err == OK, params[p].msg);
+		TEST_ASSERT(node_to_split->base == node_to_split_base,
+			    "Node base should not change after split");
+		TEST_ASSERT(node_to_split->size == node_to_split_size,
+			    "Node size should not change after split");
+		const size_t expected_lower_size =
+			params[p].split_point - node_to_split_base;
+		const size_t expected_upper_size =
+			node_to_split_size - expected_lower_size;
+		TEST_ASSERT(new_lower.base == node_to_split_base,
+			    "New lower node base should change after split");
+		TEST_ASSERT(new_lower.size == expected_lower_size,
+			    "New lower node size should change after split");
+		TEST_ASSERT(new_upper.base == params[p].split_point,
+			    "New upper node base should change after split");
+		TEST_ASSERT(new_upper.size == expected_upper_size,
+			    "New upper node size should change after split");
+
+		rcu_read_start();
+		range_tree_lookup_result_t res = range_tree_lookup(
+			&tree, node_to_split_base, expected_lower_size);
+		rcu_read_finish();
+		TEST_ASSERT(res.node != NULL, "Lower lookup should not fail");
+		TEST_ASSERT(res.node->base == node_to_split_base,
+			    "Lower node base should be returned");
+		TEST_ASSERT(res.node->size == expected_lower_size,
+			    "Lower node size should be returned");
+		TEST_ASSERT(res.size == expected_lower_size,
+			    "Lower lookup size should be returned");
+
+		rcu_read_start();
+		res = range_tree_lookup(&tree, params[p].split_point,
+					expected_upper_size);
+		rcu_read_finish();
+		TEST_ASSERT(res.node != NULL, "Upper lookup should not fail");
+		TEST_ASSERT(res.node->base == params[p].split_point,
+			    "Upper node base should be returned");
+		TEST_ASSERT(res.node->size == expected_upper_size,
+			    "Upper node size should be returned");
+		TEST_ASSERT(res.size == expected_upper_size,
+			    "Upper lookup size should be returned");
+
+		rcu_read_start();
+		res = range_tree_lookup(&tree, node_to_split_base,
+					node_to_split_size);
+		rcu_read_finish();
+		TEST_ASSERT(res.node != NULL, "Lookup should not fail");
+		TEST_ASSERT(res.node->base == node_to_split_base,
+			    "Lower base should be returned");
+		TEST_ASSERT(res.node->size == expected_lower_size,
+			    "Lower node size should be returned");
+		TEST_ASSERT(res.size == expected_lower_size,
+			    "Lower lookup size should be returned");
+
+		uint32_t	visited_count = 0U;
+		uint32_result_t check_r =
+			check_subtree(tree.root, &visited_count);
+		TEST_ASSERT(check_r.e == OK, "Tree should be balanced");
+		TEST_ASSERT(visited_count == params[p].nr_inserts + 1,
+			    "Visited count should equal num nodes post split");
+	}
+
+	TEST_END();
+}
+
 int
 main(void)
 {
@@ -568,6 +875,7 @@ main(void)
 	test_parallel_lookup_during_left_or_right_rotation();
 	test_parallel_lookup_during_left_and_right_rotation();
 	test_split_at_invalid_point();
+	test_split_at_valid_point();
 
 	printf("=== Asserts Summary ===\n");
 	printf("Asserts passed: %zu\n", asserts_passed);

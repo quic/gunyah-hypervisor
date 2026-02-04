@@ -33,7 +33,7 @@
 
 #define ROUND_UP_SZ(sz) ((sz + CUR_PG_SZ - 1) & (~CUR_MASK))
 
-#define MAX_NR_SPINLOCKS 4
+#define MAX_NR_SPINLOCKS 8
 
 pthread_spinlock_t pthread_spinlocks[MAX_NR_SPINLOCKS];
 spinlock_t	  *gunyah_spinlocks[MAX_NR_SPINLOCKS];
