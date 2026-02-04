@@ -148,7 +148,7 @@ class TestCase:
             raise StateException("Nothing to look up")
         pos = random.randrange(0, len(self.allocations))
         r = self.allocations[pos]
-        addr = random.randrange(r.base, r.end)
+        addr = random.randrange(r.base, r.end + 1)
         size = r.end - addr + 1
         self.test_ops.put("# lookup_found")
         self.test_ops.put(
