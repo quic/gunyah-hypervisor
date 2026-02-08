@@ -532,13 +532,52 @@ out:
 void
 pci_host_handle_object_deactivate_pci_host(pci_host_t *pci_host)
 {
-	(void)pci_host;
+	error_t	     err;
+	partition_t *hyp_partition = partition_get_private();
+
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		if (memextent_is_mapped(fd->memextent, pci_host->addrspace,
+					true)) {
+			err = memextent_unmap(fd->memextent,
+					      pci_host->addrspace, fd->vmaddr,
+					      addrspace_map_flags_default());
+			assert(err == OK);
+			vdevice_detach_vmaddr(&fd->mem_aperture_vdevice);
+		}
+	LIST_FOREACH_CONTAINER_END
+
+	pgtable_hyp_start();
+	pgtable_hyp_unmap(hyp_partition, pci_host->cam_vaddr,
+			  pci_host->cam_size, pci_host->cam_size);
+	pgtable_hyp_commit();
+
+	if (memextent_is_mapped(pci_host->memextent, pci_host->addrspace,
+				true)) {
+		err = memextent_unmap(pci_host->memextent, pci_host->addrspace,
+				      pci_host->cam_base,
+				      addrspace_map_flags_default());
+		assert(err == OK);
+	}
+	vdevice_detach_vmaddr(&pci_host->cam_vdevice);
 }
 
 void
 pci_host_handle_object_cleanup_pci_host(pci_host_t *pci_host)
 {
-	(void)pci_host;
+	LIST_FOREACH_CONTAINER_BEGIN(pci_host_aperture_data_t,
+				     &pci_host->aperture_list,
+				     pci_host_aperture_data, list_node, fd)
+		object_put_memextent(fd->memextent);
+		(void)list_delete_node(&pci_host->aperture_list,
+				       &fd->list_node);
+		partition_free(pci_host->header.partition, fd,
+			       sizeof(pci_host_aperture_data_t));
+	LIST_FOREACH_CONTAINER_END
+
+	object_put_addrspace(pci_host->addrspace);
+	object_put_memextent(pci_host->memextent);
 }
 
 error_t
