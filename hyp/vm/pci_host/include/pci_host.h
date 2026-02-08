@@ -12,8 +12,9 @@
 #define PCI_HOST_EXT_CAP_OFFSET_END   0xFFFU
 
 bool
-pci_host_search_function(pci_host_t	      *pci_host,
-			 const pci_function_t *pci_function);
+pci_host_search_function(pci_host_t		   *pci_host,
+			 const pci_function_t	   *pci_function,
+			 pci_host_function_data_t **data);
 
 bool
 pci_host_search_inactive_function(pci_host_t *pci_host)
@@ -36,6 +37,12 @@ pci_function_passthrough(pci_function_t *pci_function);
 error_t
 pci_function_add_capability(pci_function_t	    *pci_function,
 			    pci_function_cap_data_t *cap_data);
+
+void
+pci_function_cleanup_bars(const pci_function_t *pci_function);
+
+void
+pci_function_destroy_capabilities(const pci_function_t *pci_function);
 
 error_t
 pci_host_transition_scanning_state(pci_host_t *pci_host)

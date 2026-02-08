@@ -424,7 +424,7 @@ hypercall_pci_function_configure(cap_id_t		     pci_function_cap,
 
 	if ((pci_host->state == PCI_HOST_LOCKDOWN_STATE_SCANNING) ||
 	    (!pci_host->lockdown)) {
-		if (pci_host_search_function(pci_host, pci_function)) {
+		if (pci_host_search_function(pci_host, pci_function, NULL)) {
 			ret = ERROR_BUSY;
 			goto out_pci_host_ref;
 		}
@@ -441,7 +441,7 @@ out_pci_host_ref:
 	spinlock_release_nopreempt(&pci_host->header.lock);
 	object_put_pci_host(pci_host);
 	if ((ret != OK) && (d != NULL)) {
-		partition_free(partition, d, sizeof(pci_host_aperture_data_t));
+		partition_free(partition, d, sizeof(pci_host_function_data_t));
 	}
 out_pci_function_ref:
 	spinlock_release(&pci_function->header.lock);

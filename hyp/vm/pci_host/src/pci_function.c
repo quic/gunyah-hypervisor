@@ -16,6 +16,7 @@
 #include <log.h>
 #include <memextent.h>
 #include <panic.h>
+#include <partition.h>
 #include <trace.h>
 #include <util.h>
 
@@ -487,4 +488,41 @@ pci_function_add_capability(pci_function_t	    *pci_function,
 	}
 out:
 	return err;
+}
+
+void
+pci_function_cleanup_bars(const pci_function_t *pci_function)
+{
+	vpci_function_t *fn = pci_function->pci_vdevice.functions[0];
+
+	for (index_t bar_idx = 0U; bar_idx < util_array_size(fn->bars);
+	     bar_idx++) {
+		vpci_bar_data_t *bar = &fn->bars[bar_idx];
+
+		if (bar->size_bits == 0U) {
+			// BAR is unimplemented, skip it
+			continue;
+		}
+		(void)memextent_unmap_all(bar->memextent);
+	}
+}
+
+void
+pci_function_destroy_capabilities(const pci_function_t *pci_function)
+{
+	vpci_function_t *fn = pci_function->pci_vdevice.functions[0];
+
+	if (fn->capabilities != NULL) {
+		vpci_capability_data_t *node = fn->capabilities;
+		vpci_capability_data_t *next;
+		while (node != NULL) {
+			next = node->next;
+			pci_function_cap_data_t *cap_data =
+				pci_function_cap_data_container_of_base(node);
+			partition_free(pci_function->header.partition, cap_data,
+				       sizeof(pci_function_cap_data_t));
+
+			node = next;
+		}
+	}
 }

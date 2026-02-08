@@ -40,8 +40,9 @@
 #include "pci_host.h"
 
 bool
-pci_host_search_function(pci_host_t	      *pci_host,
-			 const pci_function_t *pci_function)
+pci_host_search_function(pci_host_t		   *pci_host,
+			 const pci_function_t	   *pci_function,
+			 pci_host_function_data_t **data)
 {
 	bool found = false;
 
@@ -52,6 +53,9 @@ pci_host_search_function(pci_host_t	      *pci_host,
 					      pci_function->id)) {
 			// Function already exists in the pci_host
 			found = true;
+			if (data != NULL) {
+				*data = fd;
+			}
 			break;
 		}
 	LIST_FOREACH_CONTAINER_END
@@ -555,11 +559,28 @@ pci_host_handle_object_activate_pci_function(pci_function_t *pci_function)
 void
 pci_host_handle_object_deactivate_pci_function(pci_function_t *pci_function)
 {
-	(void)pci_function;
+	pci_function_cleanup_bars(pci_function);
 }
 
 void
 pci_host_handle_object_cleanup_pci_function(pci_function_t *pci_function)
 {
-	(void)pci_function;
+	pci_host_t		 *pci_host;
+	pci_host_function_data_t *function_data = NULL;
+
+	pci_host = pci_function->pci_host;
+
+	(void)pci_host_search_function(pci_host, pci_function, &function_data);
+
+	assert(function_data != NULL);
+
+	vpci_unbind_device(&pci_function->pci_vdevice);
+	pci_function_destroy_capabilities(pci_function);
+	pci_function_cleanup_bars(pci_function);
+	object_put_pci_function(function_data->function);
+	(void)list_delete_node(&pci_host->function_list,
+			       &function_data->list_node);
+	partition_free(pci_function->header.partition, function_data,
+		       sizeof(pci_host_function_data_t));
+	object_put_pci_host(pci_function->pci_host);
 }
