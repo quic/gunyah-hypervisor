@@ -361,10 +361,9 @@ vpci_handle_vic_bind_virq(cap_id_t irq_obj_cap, vic_t *vic, index_t index,
 {
 	error_t	  err;
 	cspace_t *cspace = cspace_get_self();
-	(void)index;
 
-	vpci_ptr_result_t vpci_r =
-		cspace_lookup_vpci(cspace, irq_obj_cap, CAP_RIGHTS_VPCI_BIND);
+	vpci_ptr_result_t vpci_r = cspace_lookup_vpci_any(cspace, irq_obj_cap,
+							  CAP_RIGHTS_VPCI_BIND);
 
 	if (compiler_unexpected(vpci_r.e != OK)) {
 		err = vpci_r.e;
@@ -393,10 +392,9 @@ vpci_handle_vic_unbind_virq(cap_id_t irq_obj_cap, index_t index)
 {
 	error_t	  err;
 	cspace_t *cspace = cspace_get_self();
-	(void)index;
 
-	vpci_ptr_result_t vpci_r =
-		cspace_lookup_vpci(cspace, irq_obj_cap, CAP_RIGHTS_VPCI_BIND);
+	vpci_ptr_result_t vpci_r = cspace_lookup_vpci_any(cspace, irq_obj_cap,
+							  CAP_RIGHTS_VPCI_BIND);
 
 	if (compiler_unexpected(vpci_r.e != OK)) {
 		err = vpci_r.e;
