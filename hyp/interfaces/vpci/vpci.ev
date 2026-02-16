@@ -89,3 +89,12 @@ selector_event vpci_irq_check_pending
 	selector type: vpci_function_type_t
 	param function: vpci_function_t *
 	return: bool = false
+
+// Check if the command register needs special handling.
+//
+// This event shall leverage an event if the vpci_function needs a special
+// handling, e.g. in case the function is passthrough
+selector_event vpci_config_command_write
+	selector type: vpci_function_type_t
+	param function: vpci_function_t *
+	return: void

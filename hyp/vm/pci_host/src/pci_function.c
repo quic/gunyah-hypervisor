@@ -20,6 +20,7 @@
 #include <trace.h>
 #include <util.h>
 
+#include "event_handlers.h"
 #include "pci_host.h"
 
 #define ECAM_MAX_PCIE_BUS  256U
@@ -400,6 +401,22 @@ pci_host_function_prepare(uintptr_t ecam_base, size_t ecam_size,
 	err = pci_function_enumerate_bars(hdr, pci_function);
 out:
 	return err;
+}
+
+void
+pci_function_sync_command(vpci_function_t *function)
+{
+	pci_function_t	    *pci_function;
+	pci_config_header_t *hdr;
+
+	pci_function = pci_function_container_of_fn0(function);
+	if (pci_function != NULL) {
+		hdr = (pci_config_header_t *)pci_function->base_addr;
+		atomic_store_relaxed(&hdr->command, function->command);
+	} else {
+		TRACE_AND_LOG(DEBUG, WARN,
+			      "VPCI FUNCTION: passthrough function is NULL");
+	}
 }
 
 error_t

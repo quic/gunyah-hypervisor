@@ -62,3 +62,6 @@ subscribe vpci_config_write[VPCI_FUNCTION_TYPE_PHYSICAL]
 	// This should be release_rcu_read.
 	// FIXME: QC Gunyah issue #252
 	require_rcu_read
+
+subscribe vpci_config_command_write[VPCI_FUNCTION_TYPE_PASSTHROUGH]
+	handler pci_function_sync_command(function)

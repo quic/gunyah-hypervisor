@@ -544,6 +544,12 @@ vpci_function_header_write(vpci_function_t *function, size_t offset,
 		}
 
 		function->command = new_command;
+
+		// Check if this needs to be reflected in the physical function
+		// so trigger the command write event
+		trigger_vpci_config_command_write_event(function->type,
+							function);
+
 		spinlock_release(&device->mapping_lock);
 
 		while (need_map) {
