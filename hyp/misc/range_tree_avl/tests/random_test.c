@@ -47,8 +47,9 @@ static range_tree_t	  tree;
 static uint32_t		  node_count;
 static range_tree_node_t *node_array;
 
-static bool debug = false;
-static bool dump  = false;
+static bool debug	     = false;
+static bool dump	     = false;
+static bool parallel_lookups = false;
 // easy debug
 static size_t line_cnt = 0;
 
@@ -76,7 +77,7 @@ run_deinit(const char *args);
 static void
 help(char *app_name)
 {
-	printf("Usage: %s -f input\n", basename(app_name));
+	printf("Usage: %s -f input [-v] [-d] [-p]\n", basename(app_name));
 	printf("Run test case from input file\n\n");
 
 	return;
@@ -410,7 +411,7 @@ main(int argc, char *argv[])
 	bool	     pgtable_initialised = false;
 	bool	     ret;
 
-	while ((opt = getopt(argc, argv, "f:hvd")) != -1) {
+	while ((opt = getopt(argc, argv, "f:hvdp")) != -1) {
 		switch (opt) {
 		case 'f':
 			fn = optarg;
@@ -420,6 +421,9 @@ main(int argc, char *argv[])
 			break;
 		case 'd':
 			dump = true;
+			break;
+		case 'p':
+			parallel_lookups = true;
 			break;
 		default:
 			help(argv[0]);
