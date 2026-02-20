@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include <assert.h>
-
 #define timer_t hyp_timer_t
 #include <hyptypes.h>
 #undef timer_t
@@ -15,6 +13,8 @@
 #include <stdlib.h>
 #undef register_t
 
+#include <string.h>
+
 #include <hypconstants.h>
 
 #include <getopt.h>
@@ -24,7 +24,10 @@
 #include <util.h>
 
 #include "helpers.h"
+#include "plookups.h"
 #include "stub.h"
+
+#define NR_SPLIT_FAIL_COUNTERS 2
 
 // INTERFACE
 typedef enum action {
@@ -43,6 +46,20 @@ typedef enum status {
 	SUCCESS,
 } status_t;
 
+typedef struct plookups_split_fail_counts {
+	size_t nr_base_failures;
+	size_t nr_size_failures;
+	size_t nr_node_size_failures;
+	size_t nr_null_failures;
+} plookups_split_fail_counts_t;
+
+typedef struct plookups_split_args {
+	size_t			     orig_base;
+	size_t			     orig_size;
+	size_t			     split_point;
+	plookups_split_fail_counts_t counters[NR_SPLIT_FAIL_COUNTERS];
+} plookups_split_args_t;
+
 static range_tree_t	  tree;
 static uint32_t		  node_count;
 static range_tree_node_t *node_array;
@@ -52,6 +69,9 @@ static bool dump	     = false;
 static bool parallel_lookups = false;
 // easy debug
 static size_t line_cnt = 0;
+
+static plookups_state_t	     split_state;
+static plookups_split_args_t split_args;
 
 bool
 run_init(const char *args);
@@ -73,6 +93,191 @@ run_split(const char *args);
 
 bool
 run_deinit(const char *args);
+
+static void *
+plookup_split_thread_func(void *arg)
+{
+	// During a main thread split operation, this thread repeatedly looks up
+	// the "lower" [base, split_point) and "upper" [split_point, base +
+	// size) portion of the original pre-split range, which should always
+	// return sane results.
+	plookups_state_t      *state	 = arg;
+	plookups_split_args_t *args	 = state->args;
+	size_t		       iteration = 0;
+	while (atomic_load_acquire(&state->thread_exists)) {
+		lock(&state->mutex);
+		while (state->thread_asleep) {
+			wait(&state->cond, &state->mutex);
+			iteration = 0;
+		}
+		// Immediately check thread is supposed to exist because it
+		// could be the destroy function waking us up.
+		if (!atomic_load_acquire(&state->thread_exists)) {
+			unlock(&state->mutex);
+			break;
+		}
+		++iteration;
+		const size_t lower_idx = 0;
+		const size_t upper_idx = 1;
+		// Lookup and validate "lower" [base, split_point) range
+		size_t lookup_base = args->orig_base;
+		size_t lookup_size = args->split_point - args->orig_base;
+		rcu_read_start();
+		range_tree_lookup_result_t ret =
+			range_tree_lookup(&tree, lookup_base, lookup_size);
+		rcu_read_finish();
+		if (ret.node) {
+			if (ret.node->base != lookup_base) {
+				printf("\nparallel lookup during split failed for lower portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad base(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->base);
+				++args->counters[lower_idx].nr_base_failures;
+			}
+			if (ret.size != lookup_size) {
+				printf("\nparallel lookup during split failed for lower portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad size(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration, ret.size);
+				++args->counters[lower_idx].nr_size_failures;
+			}
+			// Node's size could be either the pre-split or
+			// post-split size.
+			if ((ret.node->size != lookup_size) &&
+			    (ret.node->size != args->orig_size)) {
+				printf("\nparallel lookup during split failed for lower portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad node size(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->size);
+				++args->counters[lower_idx]
+					  .nr_node_size_failures;
+			}
+		} else {
+			printf("\nparallel lookup during split failed for lower portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> NULL\n",
+			       lookup_base, lookup_size, args->split_point,
+			       iteration);
+			++args->counters[lower_idx].nr_null_failures;
+		}
+		lookup_base = args->split_point;
+		lookup_size =
+			args->orig_base + args->orig_size - args->split_point;
+		// Lookup and validate "upper" [split_point, base + size) range
+		rcu_read_start();
+		ret = range_tree_lookup(&tree, lookup_base, lookup_size);
+		rcu_read_finish();
+		if (ret.node) {
+			// Node's base could be either the pre-split original
+			// node's base or the post-split new node's base.
+			if ((ret.node->base != args->orig_base) &&
+			    (ret.node->base != lookup_base)) {
+				printf("\nparallel lookup during split failed for upper portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad base(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->base);
+				++args->counters[upper_idx].nr_base_failures;
+			}
+			if (ret.size != lookup_size) {
+				printf("\nparallel lookup during split failed for upper portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad size(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->size);
+				++args->counters[upper_idx].nr_size_failures;
+			}
+			// If found node is the post-split new node, the node's
+			// size should also be the new node's size.
+			if (((ret.node->base == lookup_base) &&
+			     (ret.node->size != lookup_size))) {
+				printf("\nparallel lookup during split failed for upper portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad node size(%#zx), new base(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->size, ret.node->base);
+				++args->counters[upper_idx]
+					  .nr_node_size_failures;
+			}
+			// If found node is the pre-split original node, the
+			// node's size should be the original node's pre-split
+			// size.
+			if (((ret.node->base == args->orig_base) &&
+			     (ret.node->size != args->orig_size))) {
+				printf("\nparallel lookup during split failed for upper portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> bad node size(%#zx), original base(%#zx)\n",
+				       lookup_base, lookup_size,
+				       args->split_point, iteration,
+				       ret.node->size, ret.node->base);
+				++args->counters[upper_idx]
+					  .nr_node_size_failures;
+			}
+		} else {
+			printf("\nparallel lookup during split failed for upper portion: base(%#zx), size(%#zx), split_point(%#zx), iteration(%zu) -> NULL\n",
+			       lookup_base, lookup_size, args->split_point,
+			       iteration);
+			++args->counters[upper_idx].nr_null_failures;
+		}
+		unlock(&state->mutex);
+	}
+	return NULL;
+}
+
+static void
+start_plookups(void)
+{
+	assert(parallel_lookups);
+	plookups_create_thread(&split_state, &split_args,
+			       plookup_split_thread_func);
+}
+
+static void
+stop_plookups(void)
+{
+	assert(parallel_lookups);
+	plookups_destroy_thread(&split_state);
+}
+
+static bool
+has_split_plookups_passed(plookups_split_args_t *args)
+{
+	// Checks failure counter array contains only zeros.
+	static const plookups_split_fail_counts_t
+		zero_counters[NR_SPLIT_FAIL_COUNTERS] = { 0 };
+	return memcmp(&args->counters, zero_counters, sizeof(args->counters)) ==
+	       0;
+}
+
+static bool
+has_plookups_passed(void)
+{
+	assert(parallel_lookups);
+	return has_split_plookups_passed(split_state.args);
+}
+
+static void
+print_split_plookups_results(plookups_split_args_t *args)
+{
+	const char *part_names[NR_SPLIT_FAIL_COUNTERS] = { "lower", "upper" };
+	printf("\nparallel lookup results for split operation:\n");
+	size_t total_failures = 0;
+	for (size_t i = 0; i < NR_SPLIT_FAIL_COUNTERS; ++i) {
+		printf("\t%s lookup failures:\n", part_names[i]);
+		printf("\t\tBase mismatches:      %zu\n",
+		       args->counters[i].nr_base_failures);
+		printf("\t\tSize mismatches:      %zu\n",
+		       args->counters[i].nr_size_failures);
+		printf("\t\tNode size mismatches: %zu\n",
+		       args->counters[i].nr_node_size_failures);
+		printf("\t\tNULL results:         %zu\n",
+		       args->counters[i].nr_null_failures);
+		total_failures += args->counters[i].nr_base_failures +
+				  args->counters[i].nr_size_failures +
+				  args->counters[i].nr_node_size_failures +
+				  args->counters[i].nr_null_failures;
+	}
+	printf("\ttotal failures: %zu\n", total_failures);
+}
+
+static void
+print_plookups_results(void)
+{
+	assert(parallel_lookups);
+	print_split_plookups_results(split_state.args);
+}
 
 static void
 help(char *app_name)
@@ -448,6 +653,10 @@ main(int argc, char *argv[])
 
 	bool show_progress = isatty(STDOUT_FILENO);
 
+	if (parallel_lookups) {
+		start_plookups();
+	}
+
 	// load specific input from input file
 	for (line_cnt = 1; NULL != fgets(buf, buf_size, fp); line_cnt++) {
 		// Progress indication
@@ -527,11 +736,22 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (ret) {
-		puts("PASSED");
-		return 0;
-	} else {
-		puts("FAILED");
-		return -1;
+	bool plookups_passed = true;
+	if (parallel_lookups) {
+		stop_plookups();
+		plookups_passed = has_plookups_passed();
+		if (plookups_passed) {
+			puts("parallel lookups: PASSED");
+		} else {
+			print_plookups_results();
+			puts("parallel lookups: FAILED");
+		}
 	}
+
+	if (ret) {
+		puts("single thread: PASSED");
+	} else {
+		puts("single thread: FAILED");
+	}
+	return (ret && plookups_passed) ? 0 : -1;
 }
