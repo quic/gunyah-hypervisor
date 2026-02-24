@@ -5,6 +5,7 @@
 #set loop_counts = set()
 #set loop_cores = dict()
 #set unaffected_cores = dict()
+#set bpiall_cores = dict()
 #set unhandled_cores = dict()
 #set hwworkaround_cores = dict()
 #set target_cpu_ids = $ARCH_CORE_IDS.split(',')
@@ -19,7 +20,7 @@
 #silent loop_counts.add($loops)
 #silent loop_cores[$cpu_id] = $loops
 #elif self.varExists($_bpiall)
-#silent unhandled_cores[$cpu_id] = 1
+#silent bpiall_cores[$cpu_id] = 1
 #elif self.varExists($_hwwrk)
 #silent hwworkaround_cores[$cpu_id] = 1
 #elif self.varExists($_nospec)
@@ -54,6 +55,9 @@ extern uintptr_t vcpu_aarch64_vectors_tramp_clrbhb;
 #for loop_count in sorted(loop_counts)
 extern uintptr_t vcpu_aarch64_vectors_tramp_bhb_loop_${loop_count};
 #end for
+#if len(bpiall_cores)
+extern uintptr_t vcpu_aarch64_vectors_tramp_bpiall;
+#end if
 
 void
 vcpu_arch_handle_boot_cpu_cold_init(cpu_index_t cpu)
@@ -94,6 +98,17 @@ vcpu_arch_handle_boot_cpu_cold_init(cpu_index_t cpu)
 			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
 				(uintptr_t)&vcpu_aarch64_vectors;
 			break;
+#end if
+#if len(bpiall_cores)
+#for cpu_id in sorted(bpiall_cores):
+		case CORE_ID_${cpu_id}:
+#end for
+			// Spectre v2 BPIALL workaround: temporarily drops to AArch32 EL1
+			// to execute BPIALL (BTB invalidation) before EL2 code runs.
+			CPULOCAL_BY_INDEX(vcpu_aarch64_vectors, cpu) =
+				(uintptr_t)&vcpu_aarch64_vectors_tramp_bpiall;
+			break;
+
 #end if
 #if len(unhandled_cores):
 #for cpu_id in sorted(unhandled_cores):

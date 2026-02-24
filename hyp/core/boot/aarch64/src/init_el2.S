@@ -81,6 +81,10 @@ function aarch64_init, section=nosection
 	// Apply ELF relocations
 	bl	boot_rel_fixup
 
+	// Store bpiall_wa_code PA to be used later
+	.weak	vcpu_bpiall_wa_init_pa
+	bl	vcpu_bpiall_wa_init_pa
+
 	// Initialize and enable the MMU
 	mov	x2, 1
 	bl	aarch64_init_address_space
