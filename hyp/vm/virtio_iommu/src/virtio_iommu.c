@@ -327,8 +327,8 @@ virtio_iommu_handle_virtio_device_config_read(virtio_t *virtio, size_t offset,
 	// All supported properties are 32bit for now.
 	// Split them out if we need others.
 	if (access_size != sizeof(uint32_t)) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: Only 32bit config accesses supported");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: Only 32bit config accesses supported");
 		ret = uint32_result_error(ERROR_UNIMPLEMENTED);
 		goto out;
 	}
@@ -351,9 +351,9 @@ virtio_iommu_handle_virtio_device_config_read(virtio_t *virtio, size_t offset,
 		break;
 	default:
 		ret = uint32_result_error(ERROR_UNIMPLEMENTED);
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: virtio_device_config_read failed {:d} offset = {:d}",
-		    __LINE__, offset);
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: virtio_device_config_read failed {:d} offset = {:d}",
+		      __LINE__, offset);
 		break;
 	}
 

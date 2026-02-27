@@ -136,9 +136,9 @@ do_invalidate_scope_type_domain(virtio_iommu_t			*virtio_iommu,
 					     virtio_iommu_endpoint,
 					     domain_list_node, elem)
 			// PASID flag not valid for DOMAIN scope, ignore
-			LOG(DEBUG, INFO,
-			    "virtio_iommu:  smmuv3_cfgi_cd_all {:#x}",
-			    elem->tree_node.base);
+			TRACE(DEBUG, INFO,
+			      "virtio_iommu:  smmuv3_cfgi_cd_all {:#x}",
+			      elem->tree_node.base);
 			rcu_read_start();
 			smmuv3_cfgi_cd_all(
 				elem->range,
@@ -240,9 +240,9 @@ virtio_iommu_process_attach(virtio_iommu_t		    *virtio_iommu,
 	// Calling Attach on an already attached device, to move it, is
 	// best effort. We can require the client to detach first.
 
-	LOG(DEBUG, INFO, "virtio_iommu {:#x}: ATTACH d={:#x} e={:#x} f={:#x}",
-	    (register_t)virtio_iommu, req->domain, req->endpoint,
-	    virtio_iommu_req_attach_flags_raw(req->flags));
+	TRACE(DEBUG, INFO, "virtio_iommu {:#x}: ATTACH d={:#x} e={:#x} f={:#x}",
+	      (register_t)virtio_iommu, req->domain, req->endpoint,
+	      virtio_iommu_req_attach_flags_raw(req->flags));
 
 	// TODO:
 	// - With ATTACH_TABLE this ATTACH call can still be used to
@@ -250,7 +250,7 @@ virtio_iommu_process_attach(virtio_iommu_t		    *virtio_iommu,
 	// - All other configs should use the ATTACH_TABLE to setup a
 	// context
 	if (virtio_iommu_req_attach_flags_get_bypass(&req->flags)) {
-		LOG(DEBUG, INFO, "virtio_iommu: TODO: Attach Bypass");
+		TRACE(DEBUG, INFO, "virtio_iommu: TODO: Attach Bypass");
 	}
 
 	// TODO - Stream attach Bypass
@@ -273,10 +273,10 @@ virtio_iommu_process_attach_table(virtio_iommu_t *virtio_iommu,
 				  const virtio_iommu_req_attach_table_t *req)
 	REQUIRE_SPINLOCK(virtio_iommu -> lock)
 {
-	LOG(DEBUG, INFO,
-	    "virtio_iommu {:#x}: ATTACH_TABLE 1 d={:#x} e={:#x} ste0={:#x} ste1={:#x}",
-	    (register_t)virtio_iommu, req->domain, req->endpoint, req->ste0,
-	    req->ste1);
+	TRACE(DEBUG, INFO,
+	      "virtio_iommu {:#x}: ATTACH_TABLE 1 d={:#x} e={:#x} ste0={:#x} ste1={:#x}",
+	      (register_t)virtio_iommu, req->domain, req->endpoint, req->ste0,
+	      req->ste1);
 	uint32_t	    guest_domain_id = req->domain;
 	smmu_v3_stream_id_t stream_id	    = req->endpoint;
 
@@ -286,8 +286,8 @@ virtio_iommu_process_attach_table(virtio_iommu_t *virtio_iommu,
 	smmuv3_stream_range_t *range =
 		virtio_iommu_find_range(virtio_iommu, stream_id);
 	if (range == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: endpoint is not valid for this iommu instance");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: endpoint is not valid for this iommu instance");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_NOENT;
 		goto out;
 	}
@@ -382,9 +382,9 @@ virtio_iommu_process_attach_table(virtio_iommu_t *virtio_iommu,
 		// virtio-iommu instance
 		virtio_iommu->num_streams++;
 	} else if (endpoint == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: too many streams num={:d} max={:d}",
-		    virtio_iommu->num_streams, virtio_iommu->max_streams);
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: too many streams num={:d} max={:d}",
+		      virtio_iommu->num_streams, virtio_iommu->max_streams);
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_NOMEM;
 		goto fail_alloc_endpoint;
 	} else {
@@ -498,8 +498,9 @@ virtio_iommu_process_detach(virtio_iommu_t		    *virtio_iommu,
 {
 	virtio_iommu_req_status_t virtio_err;
 
-	LOG(DEBUG, INFO, "virtio_iommu: process_request DETACH d={:#x} e={:#x}",
-	    req->domain, req->endpoint);
+	TRACE(DEBUG, INFO,
+	      "virtio_iommu: process_request DETACH d={:#x} e={:#x}",
+	      req->domain, req->endpoint);
 	uint32_t	    guest_domain_id = req->domain;
 	smmu_v3_stream_id_t stream_id	    = req->endpoint;
 
@@ -507,8 +508,8 @@ virtio_iommu_process_detach(virtio_iommu_t		    *virtio_iommu,
 	smmuv3_stream_range_t *range =
 		virtio_iommu_find_range(virtio_iommu, stream_id);
 	if (range == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: endpoint is not valid for this iommu instance");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: endpoint is not valid for this iommu instance");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_NOENT;
 		goto out;
 	}
@@ -516,8 +517,8 @@ virtio_iommu_process_detach(virtio_iommu_t		    *virtio_iommu,
 	virtio_iommu_endpoint_t *endpoint =
 		virtio_iommu_find_endpoint(virtio_iommu, range, stream_id);
 	if (endpoint == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: stream ID is not attached to any domain");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: stream ID is not attached to any domain");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_INVAL;
 		goto out;
 	}
@@ -525,8 +526,8 @@ virtio_iommu_process_detach(virtio_iommu_t		    *virtio_iommu,
 	virtio_iommu_domain_t *domain = endpoint->domain;
 	assert(domain != NULL);
 	if (domain->guest_domain_id != guest_domain_id) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: detach given the wrong domain ID");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: detach given the wrong domain ID");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_INVAL;
 		goto out;
 	}
@@ -536,7 +537,7 @@ virtio_iommu_process_detach(virtio_iommu_t		    *virtio_iommu,
 	// Make sure to wait for invalidations after detach
 	*do_sync = true;
 
-	LOG(DEBUG, INFO, "virtio_iommu: Detached sid={:#x}", stream_id);
+	TRACE(DEBUG, INFO, "virtio_iommu: Detached sid={:#x}", stream_id);
 	virtio_err = VIRTIO_IOMMU_REQ_STATUS_OK;
 out:
 	rcu_read_finish();
@@ -553,15 +554,15 @@ virtio_iommu_process_probe(virtio_iommu_t		  *virtio_iommu,
 	virtio_iommu_reply_probe_t ret = { 0 };
 	virtio_iommu_req_status_t  virtio_err;
 
-	LOG(DEBUG, INFO, "virtio_iommu: process_request PROBE e={:#x}",
-	    req->endpoint);
+	TRACE(DEBUG, INFO, "virtio_iommu: process_request PROBE e={:#x}",
+	      req->endpoint);
 
 	rcu_read_start();
 	smmuv3_stream_range_t *range =
 		virtio_iommu_find_range(virtio_iommu, req->endpoint);
 	if (range == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: endpoint is not valid for this iommu instance");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: endpoint is not valid for this iommu instance");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_NOENT;
 		goto out;
 	}
@@ -584,15 +585,15 @@ virtio_iommu_process_probe(virtio_iommu_t		  *virtio_iommu,
 	error_t err = virtio_iommu_setup_hw_probe_idrs(virtio_iommu,
 						       req->endpoint, &idrs);
 	if (err != OK) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: Probe failed to get IDRs, err={:d}",
-		    (register_t)err);
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: Probe failed to get IDRs, err={:d}",
+		      (register_t)err);
 		// Return device error?
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_DEVERR;
 		goto out;
 	}
 
-	LOG(DEBUG, INFO, "virtio_iommu: IDR0={:#x}", idrs.idr0);
+	TRACE(DEBUG, INFO, "virtio_iommu: IDR0={:#x}", idrs.idr0);
 	virtio_err	  = VIRTIO_IOMMU_REQ_STATUS_OK;
 	ret.hw_arm_smmuv3 = idrs;
 out:
@@ -610,21 +611,22 @@ virtio_iommu_process_invalidate(virtio_iommu_t *virtio_iommu,
 {
 	virtio_iommu_req_status_t virtio_err;
 
-	LOG(DEBUG, INFO,
-	    "virtio_iommu: process_request INVALIDATE 1 d={:#x} scope={:#x} caches={:#x} flags={:#x}",
-	    req->domain, virtio_iommu_invalidate_scope_get_type(&req->scope),
-	    virtio_iommu_invalidate_caches_raw(req->caches),
-	    virtio_iommu_invalidate_flags_raw(req->flags));
+	TRACE(DEBUG, INFO,
+	      "virtio_iommu: process_request INVALIDATE 1 d={:#x} scope={:#x} caches={:#x} flags={:#x}",
+	      req->domain, virtio_iommu_invalidate_scope_get_type(&req->scope),
+	      virtio_iommu_invalidate_caches_raw(req->caches),
+	      virtio_iommu_invalidate_flags_raw(req->flags));
 
-	LOG(DEBUG, INFO,
-	    "virtio_iommu: process_request INVALIDATE 2 pasid={:#x} id={:#x} addr={:#x} nr={:d} sz={:d}",
-	    req->pasid, req->asid, req->address, req->nr_pages, req->page_size);
+	TRACE(DEBUG, INFO,
+	      "virtio_iommu: process_request INVALIDATE 2 pasid={:#x} id={:#x} addr={:#x} nr={:d} sz={:d}",
+	      req->pasid, req->asid, req->address, req->nr_pages,
+	      req->page_size);
 
 	virtio_iommu_invalidate_scope_type_t scope =
 		virtio_iommu_invalidate_scope_get_type(&req->scope);
 	if ((scope != VIRTIO_IOMMU_INVALIDATE_SCOPE_TYPE_DOMAIN) &&
 	    (scope != VIRTIO_IOMMU_INVALIDATE_SCOPE_TYPE_ADDRESS)) {
-		LOG(DEBUG, INFO, "virtio_iommu: Unsupported Scope type");
+		TRACE(DEBUG, INFO, "virtio_iommu: Unsupported Scope type");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_INVAL;
 		goto out;
 	}
@@ -633,8 +635,8 @@ virtio_iommu_process_invalidate(virtio_iommu_t *virtio_iommu,
 	virtio_iommu_domain_t *iommu_domain =
 		virtio_iommu_find_domain(virtio_iommu, req->domain);
 	if (iommu_domain == NULL) {
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: Inv could not find guest domain id");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: Inv could not find guest domain id");
 		virtio_err = VIRTIO_IOMMU_REQ_STATUS_INVAL;
 		goto out;
 	}
@@ -659,21 +661,21 @@ virtio_iommu_process_invalidate(virtio_iommu_t *virtio_iommu,
 		// Check sizes against the Mask we provide in the probe.
 		// This should be based on the Hardware support.
 		if (req->nr_pages == 0U) {
-			LOG(DEBUG, INFO, "virtio_iommu: Bad nr_pages");
+			TRACE(DEBUG, INFO, "virtio_iommu: Bad nr_pages");
 			err = ERROR_ARGUMENT_INVALID;
 			break;
 		}
 
 		// Check these against actual advertised page sizes
 		if (util_bit(req->page_size) != VIRTIO_IOMMU_SMMU_MAP_SIZE) {
-			LOG(DEBUG, INFO, "virtio_iommu: Bad page_size");
+			TRACE(DEBUG, INFO, "virtio_iommu: Bad page_size");
 			err = ERROR_ARGUMENT_INVALID;
 			break;
 		}
 
 		if (!virtio_iommu_invalidate_caches_get_tlb(&req->caches)) {
-			LOG(DEBUG, INFO,
-			    "virtio_iommu: Inv Address expected Caches TLB set");
+			TRACE(DEBUG, INFO,
+			      "virtio_iommu: Inv Address expected Caches TLB set");
 			err = ERROR_ARGUMENT_INVALID;
 			break;
 		}
@@ -691,14 +693,14 @@ virtio_iommu_process_invalidate(virtio_iommu_t *virtio_iommu,
 		// TODO:
 		// Work through the combinations
 		// address, nr_pages, page_size fields should be ignored
-		LOG(DEBUG, INFO,
-		    "virtio_iommu: Inv Scope PASID not yet suported");
+		TRACE(DEBUG, INFO,
+		      "virtio_iommu: Inv Scope PASID not yet suported");
 		err = ERROR_UNIMPLEMENTED;
 		break;
 
 	default:
-		LOG(DEBUG, INFO, "virtio_iommu: Invalid inv scope type={:d}",
-		    scope);
+		TRACE(DEBUG, INFO, "virtio_iommu: Invalid inv scope type={:d}",
+		      scope);
 		err = ERROR_ARGUMENT_INVALID;
 		break;
 	}
@@ -818,8 +820,8 @@ virtio_iommu_process_request(virtio_iommu_t		  *virtio_iommu,
 		break;
 	case VIRTIO_IOMMU_REQ_TYPE_NONE:
 	default:
-		LOG(DEBUG, INFO, "virtio_iommu: Unknown request type={:d}",
-		    req_type);
+		TRACE(DEBUG, INFO, "virtio_iommu: Unknown request type={:d}",
+		      req_type);
 		break;
 	}
 
@@ -830,7 +832,8 @@ out:
 void
 virtio_iommu_disable_all_streams(virtio_iommu_t *virtio_iommu)
 {
-	LOG(DEBUG, INFO, "virtio_iommu: Disable all IOMMU device streams");
+	TRACE_AND_LOG(DEBUG, INFO,
+		      "virtio_iommu: Disable all IOMMU device streams");
 
 	smmuv3_stream_range_t *range;
 	rcu_read_start();
@@ -920,9 +923,9 @@ out:
 
 		error_t err = virtio_queue_ready(&virtio_iommu->virtio, qnum);
 		if (err != OK) {
-			LOG(DEBUG, INFO,
-			    "virtio_iommu: Failed to send virtio_queue_ready qnum={:d}",
-			    qnum);
+			TRACE(DEBUG, INFO,
+			      "virtio_iommu: Failed to send virtio_queue_ready qnum={:d}",
+			      qnum);
 		}
 	}
 }
@@ -953,8 +956,8 @@ virtio_iommu_process_queue_notification(virtio_iommu_t *virtio_iommu,
 			      avail_sz, false, false)
 			      .e;
 	if (err != OK) {
-		LOG(DEBUG, INFO, "user access fail {:d} err={:d}}", __LINE__,
-		    (register_t)err);
+		TRACE(DEBUG, INFO, "user access fail {:d} err={:d}}", __LINE__,
+		      (register_t)err);
 		goto out;
 	}
 
@@ -1035,8 +1038,8 @@ virtio_iommu_send_queue_notification(virtio_iommu_t		*virtio_iommu,
 					     avail_sz, false, false)
 		      .e;
 	if (err != OK) {
-		LOG(DEBUG, INFO, "user access fail {:d} err={:d}}", __LINE__,
-		    (register_t)err);
+		TRACE(DEBUG, INFO, "user access fail {:d} err={:d}}", __LINE__,
+		      (register_t)err);
 		goto out;
 	}
 
@@ -1060,7 +1063,7 @@ virtio_iommu_send_queue_notification(virtio_iommu_t		*virtio_iommu,
 	if (idx_from == idx_to) {
 		// No free buffers. Drop event for now. We can also choose to
 		// wait for a buffer to become available.
-		LOG(DEBUG, INFO, "virtio_iommu: no free buf, dropped event");
+		TRACE(DEBUG, INFO, "virtio_iommu: no free buf, dropped event");
 		goto out;
 	}
 	const index_t			first_desc_idx = avail.ring[idx_from];
@@ -1069,7 +1072,7 @@ virtio_iommu_send_queue_notification(virtio_iommu_t		*virtio_iommu,
 
 	// Check the buf is big enough and writeable
 	if (chain.reply_space < sizeof(virtio_iommu_fault_t)) {
-		LOG(DEBUG, INFO, "virtio_iommu: bad buf, dropped event");
+		TRACE(DEBUG, INFO, "virtio_iommu: bad buf, dropped event");
 		goto out;
 	}
 
@@ -1092,9 +1095,9 @@ virtio_iommu_send_queue_notification(virtio_iommu_t		*virtio_iommu,
 	if (send_notif) {
 		err = virtio_queue_ready(&virtio_iommu->virtio, qnum);
 		if (err != OK) {
-			LOG(DEBUG, INFO,
-			    "virtio_iommu: Failed to send virtio_queue_ready qnum={:d}",
-			    qnum);
+			TRACE(DEBUG, INFO,
+			      "virtio_iommu: Failed to send virtio_queue_ready qnum={:d}",
+			      qnum);
 		}
 	}
 
@@ -1118,8 +1121,9 @@ virtio_iommu_handle_smmuv3_stage1_event(const smmuv3_stream_range_t *range,
 
 	spinlock_acquire(&virtio_iommu->lock);
 
-	LOG(DEBUG, INFO,
-	    "virtio_iommu_handle_smmuv3_fault: Raise event to Guest");
+	TRACE(DEBUG, INFO,
+	      "virtio_iommu_handle_smmuv3_fault: Raise event to Guest {:#x}",
+	      smmu_v3_event_base_get_event(&event->base));
 
 	// For the moment we only raise Translation Events with the
 	// Client. Everything else is unexpected.

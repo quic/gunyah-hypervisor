@@ -392,7 +392,7 @@ static void
 smmu_v3_ste_dump(smmu_v3_stream_id_t stream_id)
 	REQUIRE_SPINLOCK(smmu_v3.stream_table_lock)
 {
-	LOG(DEBUG, INFO, "> ste_dump: stream_id={:#x}", stream_id);
+	TRACE(DEBUG, INFO, "> ste_dump: stream_id={:#x}", stream_id);
 
 	uint32_t ste_l1slot = stream_id >> smmu_v3.stream_table.split;
 	smmu_v3_stream_table_lvl1_entry_t *lvl1_meta =
@@ -401,24 +401,24 @@ smmu_v3_ste_dump(smmu_v3_stream_id_t stream_id)
 		&((smmu_v3_stream_table_lvl1_desc_t
 			   *)(smmu_v3.stream_table.table))[ste_l1slot];
 
-	LOG(DEBUG, INFO,
-	    "> ste_dump: lvl1_meta span={:#x} l2_vaddr={:#x} l2_phys={:#x} l2_size={:#x}",
-	    lvl1_meta->span, lvl1_meta->l2_vaddr, lvl1_meta->l2_phys,
-	    lvl1_meta->l2_size);
-	LOG(DEBUG, INFO, "> ste_dump: HW span={:#x} l2_ptr={:#x}",
-	    smmu_v3_stream_table_lvl1_desc_get_Span(table_l1_slot),
-	    smmu_v3_stream_table_lvl1_desc_get_L2Ptr(table_l1_slot)
-		    << SMMU_V3_STREAM_TABLE_LVL1_DESC_L2PTR_SHIFT);
+	TRACE(DEBUG, INFO,
+	      "> ste_dump: lvl1_meta span={:#x} l2_vaddr={:#x} l2_phys={:#x} l2_size={:#x}",
+	      lvl1_meta->span, lvl1_meta->l2_vaddr, lvl1_meta->l2_phys,
+	      lvl1_meta->l2_size);
+	TRACE(DEBUG, INFO, "> ste_dump: HW span={:#x} l2_ptr={:#x}",
+	      smmu_v3_stream_table_lvl1_desc_get_Span(table_l1_slot),
+	      smmu_v3_stream_table_lvl1_desc_get_L2Ptr(table_l1_slot)
+		      << SMMU_V3_STREAM_TABLE_LVL1_DESC_L2PTR_SHIFT);
 
 	smmu_v3_stream_table_entry_ptr_result_t ste_r =
 		smmuv3_get_ste_slot(stream_id);
 	if (ste_r.e == OK) {
-		LOG(DEBUG, INFO,
-		    "> ste_dump: HW ptr={:#x} ste[0]={:#x} ste[1]={:#x}",
-		    (register_t)ste_r.r, (register_t)ste_r.r->bf[0],
-		    (register_t)ste_r.r->bf[1]);
-		LOG(DEBUG, INFO, "> ste_dump: HW CD={:#x}",
-		    (register_t)ste_r.r->bf[0]);
+		TRACE(DEBUG, INFO,
+		      "> ste_dump: HW ptr={:#x} ste[0]={:#x} ste[1]={:#x}",
+		      (register_t)ste_r.r, (register_t)ste_r.r->bf[0],
+		      (register_t)ste_r.r->bf[1]);
+		TRACE(DEBUG, INFO, "> ste_dump: HW CD={:#x}",
+		      (register_t)ste_r.r->bf[0]);
 	}
 }
 
@@ -474,14 +474,14 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 
 	switch (id) {
 	case SMMU_V3_EVENT_ID_C_BAD_STREAMID: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report C_BAD_STREAMID");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report C_BAD_STREAMID");
 		smmu_v3_event_c_bad_streamid_t *entry = &data->c_bad_streamid;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: C_BAD_STREAMID ssv={:d} ssid={:#x} sid={:#x}",
-		    smmu_v3_event_c_bad_streamid_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_c_bad_streamid_get_SubstreamID(entry),
-		    stream_id);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: C_BAD_STREAMID ssv={:d} ssid={:#x} sid={:#x}",
+		      smmu_v3_event_c_bad_streamid_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_c_bad_streamid_get_SubstreamID(entry),
+		      stream_id);
 
 #if defined(SMMU_V3_DISABLE_INDIVIDUAL_BAD_STREAMS) &&                         \
 	SMMU_V3_DISABLE_INDIVIDUAL_BAD_STREAMS
@@ -491,12 +491,13 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 		if (err != OK) {
 			panic("smmuv3: Failed to disable Stream");
 		} else {
-			LOG(DEBUG, INFO,
-			    "smmuv3: Disabled Stream ssv={:d} ssid={:#x} sid={:#x}",
-			    smmu_v3_event_c_bad_streamid_get_SSV(entry) ? 1U
-									: 0U,
-			    smmu_v3_event_c_bad_streamid_get_SubstreamID(entry),
-			    stream_id);
+			TRACE(DEBUG, INFO,
+			      "smmuv3: Disabled Stream ssv={:d} ssid={:#x} sid={:#x}",
+			      smmu_v3_event_c_bad_streamid_get_SSV(entry) ? 1U
+									  : 0U,
+			      smmu_v3_event_c_bad_streamid_get_SubstreamID(
+				      entry),
+			      stream_id);
 			handled = true;
 		}
 #else
@@ -505,31 +506,32 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 		break;
 	}
 	case SMMU_V3_EVENT_ID_F_STE_FETCH: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report F_STE_FETCH");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report F_STE_FETCH");
 		smmu_v3_event_f_ste_fetch_t *entry = &data->f_ste_fetch;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_STE_FETCH_1 ssv={:d} ssid={:#x} sid={:#x}",
-		    smmu_v3_event_f_ste_fetch_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_f_ste_fetch_get_SubstreamID(entry),
-		    stream_id);
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_STE_FETCH_2 r={:x} gpcf={:d} addr={:#x}",
-		    smmu_v3_event_f_ste_fetch_get_Reason(entry),
-		    smmu_v3_event_f_ste_fetch_get_GPCF(entry) ? 1U : 0U,
-		    smmu_v3_event_f_ste_fetch_get_FetchAddr(entry) << 3);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_STE_FETCH_1 ssv={:d} ssid={:#x} sid={:#x}",
+		      smmu_v3_event_f_ste_fetch_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_f_ste_fetch_get_SubstreamID(entry),
+		      stream_id);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_STE_FETCH_2 r={:x} gpcf={:d} addr={:#x}",
+		      smmu_v3_event_f_ste_fetch_get_Reason(entry),
+		      smmu_v3_event_f_ste_fetch_get_GPCF(entry) ? 1U : 0U,
+		      smmu_v3_event_f_ste_fetch_get_FetchAddr(entry) << 3);
 
 		handled = false;
 		break;
 	}
 	case SMMU_V3_EVENT_ID_C_BAD_STE: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report C_BAD_STE");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report C_BAD_STE");
 		smmu_v3_event_c_bad_ste_t *entry = &data->c_bad_ste;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: C_BAD_STE ssv={:d} ssid={:#x} sid={:#x}",
-		    smmu_v3_event_c_bad_ste_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_c_bad_ste_get_SubstreamID(entry), stream_id);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: C_BAD_STE ssv={:d} ssid={:#x} sid={:#x}",
+		      smmu_v3_event_c_bad_ste_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_c_bad_ste_get_SubstreamID(entry),
+		      stream_id);
 
 		smmu_v3_stream_id_t sid = stream_id;
 
@@ -557,9 +559,9 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 				if (err != OK) {
 					panic("smmuv3: Failed to disable Stream");
 				} else {
-					LOG(DEBUG, INFO,
-					    "smmuv3: Disabled Stream sid={:#x}",
-					    sid);
+					TRACE(DEBUG, INFO,
+					      "smmuv3: Disabled Stream sid={:#x}",
+					      sid);
 					handled = true;
 				}
 			} else {
@@ -581,71 +583,73 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 		break;
 	}
 	case SMMU_V3_EVENT_ID_F_CD_FETCH: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report F_CD_FETCH");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report F_CD_FETCH");
 		smmu_v3_event_f_cd_fetch_t *entry = &data->f_cd_fetch;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_CD_FETCH_1 ssv={:d} ssid={:#x} sid={:#x}",
-		    smmu_v3_event_f_cd_fetch_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_f_cd_fetch_get_SubstreamID(entry), stream_id);
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_CD_FETCH_2 r={:x} gpcf={:d} addr={:#x}",
-		    smmu_v3_event_f_cd_fetch_get_Reason(entry),
-		    smmu_v3_event_f_cd_fetch_get_GPCF(entry) ? 1U : 0U,
-		    smmu_v3_event_f_cd_fetch_get_FetchAddr(entry) << 3);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_CD_FETCH_1 ssv={:d} ssid={:#x} sid={:#x}",
+		      smmu_v3_event_f_cd_fetch_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_f_cd_fetch_get_SubstreamID(entry),
+		      stream_id);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_CD_FETCH_2 r={:x} gpcf={:d} addr={:#x}",
+		      smmu_v3_event_f_cd_fetch_get_Reason(entry),
+		      smmu_v3_event_f_cd_fetch_get_GPCF(entry) ? 1U : 0U,
+		      smmu_v3_event_f_cd_fetch_get_FetchAddr(entry) << 3);
 
 		handled = false;
 		break;
 	}
 	case SMMU_V3_EVENT_ID_C_BAD_CD: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report C_BAD_CD");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report C_BAD_CD");
 		smmu_v3_event_c_bad_cd_t *entry = &data->c_bad_cd;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: C_BAD_CD ssv={:d} ssid={:#x} sid={:#x}",
-		    smmu_v3_event_c_bad_cd_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_c_bad_cd_get_SubstreamID(entry), stream_id);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: C_BAD_CD ssv={:d} ssid={:#x} sid={:#x}",
+		      smmu_v3_event_c_bad_cd_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_c_bad_cd_get_SubstreamID(entry), stream_id);
 
 		handled = false;
 		break;
 	}
 	case SMMU_V3_EVENT_ID_F_WALK_EABT: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report F_WALK_EABT");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report F_WALK_EABT");
 		smmu_v3_event_f_walk_eabt_t *entry = &data->f_walk_eabt;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_WALK_EABT_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
-		    smmu_v3_event_f_walk_eabt_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_f_walk_eabt_get_SubstreamID(entry), stream_id,
-		    smmu_v3_event_f_walk_eabt_get_S2(entry) ? 1U : 0U,
-		    smmu_v3_event_f_walk_eabt_get_CLASS(entry));
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_WALK_EABT_2 r={:x} gpcf={:d} iaddr={:#x} faddr={:#x}",
-		    smmu_v3_event_f_walk_eabt_get_Reason(entry),
-		    smmu_v3_event_f_walk_eabt_get_GPCF(entry) ? 1U : 0U,
-		    smmu_v3_event_f_walk_eabt_get_InputAddr(entry),
-		    smmu_v3_event_f_walk_eabt_get_FetchAddr(entry) << 3);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_WALK_EABT_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
+		      smmu_v3_event_f_walk_eabt_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_f_walk_eabt_get_SubstreamID(entry),
+		      stream_id,
+		      smmu_v3_event_f_walk_eabt_get_S2(entry) ? 1U : 0U,
+		      smmu_v3_event_f_walk_eabt_get_CLASS(entry));
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_WALK_EABT_2 r={:x} gpcf={:d} iaddr={:#x} faddr={:#x}",
+		      smmu_v3_event_f_walk_eabt_get_Reason(entry),
+		      smmu_v3_event_f_walk_eabt_get_GPCF(entry) ? 1U : 0U,
+		      smmu_v3_event_f_walk_eabt_get_InputAddr(entry),
+		      smmu_v3_event_f_walk_eabt_get_FetchAddr(entry) << 3);
 
 		handled = false;
 		break;
 	}
 	case SMMU_V3_EVENT_ID_F_TRANSLATION: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report F_TRANSLATION");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report F_TRANSLATION");
 		smmu_v3_event_f_translation_t *entry = &data->f_translation;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_TRANSLATION_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
-		    smmu_v3_event_f_translation_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_f_translation_get_SubstreamID(entry),
-		    stream_id,
-		    smmu_v3_event_f_translation_get_S2(entry) ? 1U : 0U,
-		    smmu_v3_event_f_translation_get_CLASS(entry));
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_TRANSLATION_2 Stall={:d} StallTag={:#x} iaddr={:#x} ipa={:#x}",
-		    smmu_v3_event_f_translation_get_Stall(entry) ? 1U : 0U,
-		    smmu_v3_event_f_translation_get_StallTag(entry),
-		    smmu_v3_event_f_translation_get_InputAddr(entry),
-		    smmu_v3_event_f_translation_get_FetchAddr(entry) << 3);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_TRANSLATION_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
+		      smmu_v3_event_f_translation_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_f_translation_get_SubstreamID(entry),
+		      stream_id,
+		      smmu_v3_event_f_translation_get_S2(entry) ? 1U : 0U,
+		      smmu_v3_event_f_translation_get_CLASS(entry));
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_TRANSLATION_2 Stall={:d} StallTag={:#x} iaddr={:#x} ipa={:#x}",
+		      smmu_v3_event_f_translation_get_Stall(entry) ? 1U : 0U,
+		      smmu_v3_event_f_translation_get_StallTag(entry),
+		      smmu_v3_event_f_translation_get_InputAddr(entry),
+		      smmu_v3_event_f_translation_get_FetchAddr(entry) << 3);
 
 		// Either this is a stage 2 fault, or it is a stage 1 fault that
 		// couldn't be handled by the VIOMMU. Either way, we need to
@@ -664,28 +668,28 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 		break;
 	}
 	case SMMU_V3_EVENT_ID_F_PERMISSION: {
-		LOG(DEBUG, INFO, "smmuv3: eventq_report F_PERMISSION");
+		TRACE(DEBUG, INFO, "smmuv3: eventq_report F_PERMISSION");
 		smmu_v3_event_f_permission_t *entry = &data->f_permission;
 
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_PERMISSION_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
-		    smmu_v3_event_f_permission_get_SSV(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_SubstreamID(entry),
-		    stream_id,
-		    smmu_v3_event_f_permission_get_S2(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_CLASS(entry));
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_PERMISSION_2 Stall={:d} StallTag={:#x} iaddr={:#x} ipa={:#x}",
-		    smmu_v3_event_f_permission_get_Stall(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_StallTag(entry),
-		    smmu_v3_event_f_permission_get_InputAddr(entry),
-		    smmu_v3_event_f_permission_get_FetchAddr(entry) << 3);
-		LOG(DEBUG, INFO,
-		    "smmuv3: F_PERMISSION_3 PnU={:d} InD={:d} RnW={:d} TTRnW={:d}",
-		    smmu_v3_event_f_permission_get_PnU(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_InD(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_RnW(entry) ? 1U : 0U,
-		    smmu_v3_event_f_permission_get_TTRnW(entry) ? 1U : 0U);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_PERMISSION_1 ssv={:d} ssid={:#x} sid={:#x} s2={:d} class=0x{:x}",
+		      smmu_v3_event_f_permission_get_SSV(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_SubstreamID(entry),
+		      stream_id,
+		      smmu_v3_event_f_permission_get_S2(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_CLASS(entry));
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_PERMISSION_2 Stall={:d} StallTag={:#x} iaddr={:#x} ipa={:#x}",
+		      smmu_v3_event_f_permission_get_Stall(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_StallTag(entry),
+		      smmu_v3_event_f_permission_get_InputAddr(entry),
+		      smmu_v3_event_f_permission_get_FetchAddr(entry) << 3);
+		TRACE(DEBUG, INFO,
+		      "smmuv3: F_PERMISSION_3 PnU={:d} InD={:d} RnW={:d} TTRnW={:d}",
+		      smmu_v3_event_f_permission_get_PnU(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_InD(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_RnW(entry) ? 1U : 0U,
+		      smmu_v3_event_f_permission_get_TTRnW(entry) ? 1U : 0U);
 
 		// Either this is a stage 2 fault, or it is a stage 1 fault that
 		// couldn't be handled by the VIOMMU. Either way, we need to
@@ -710,16 +714,13 @@ smmuv3_eventq_report(smmu_v3_event_t *data)
 	case SMMU_V3_EVENT_ID_E_PAGE_REQUEST:
 	case SMMU_V3_EVENT_ID_F_VMS_FETCH:
 	default:
-		LOG(DEBUG, INFO, "smmuv3: eventq_report unknown event={:#x}",
-		    (register_t)id);
 		handled = false;
 		break;
 	}
 
 out:
 	if (!handled) {
-		TRACE(ERROR, WARN, "smmuv3: eventq_report unhandled event",
-		      (register_t)id);
+		TRACE(ERROR, WARN, "smmuv3: eventq_report unhandled event");
 		for (index_t i = 0U; i < util_array_size(data->base.bf); i++) {
 			TRACE(ERROR, WARN, "    event[{:d}] = {:#x}", i,
 			      data->base.bf[i]);
@@ -800,54 +801,54 @@ smmuv3_process_gerror(void) REQUIRE_PREEMPT_DISABLED
 	// We could have multiple errors at once.
 	if (SMMU_V3_GERROR_get_CMDQ_ERR(&active)) {
 		SMMU_V3_GERROR_set_CMDQ_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - CMDQ_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - CMDQ_ERR");
 	}
 	if (SMMU_V3_GERROR_get_EVENTQ_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_EVENTQ_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - EVENTQ_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - EVENTQ_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_PRIQ_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_PRIQ_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - PRIQ_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - PRIQ_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_MSI_CMDQ_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_MSI_CMDQ_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - MSI_CMDQ_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - MSI_CMDQ_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_MSI_EVENTQ_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_MSI_EVENTQ_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - MSI_EVENTQ_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - MSI_EVENTQ_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_MSI_PRIQ_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_MSI_PRIQ_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - MSI_PRIQ_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - MSI_PRIQ_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_MSI_GERROR_ABT_ERR(&active)) {
 		SMMU_V3_GERROR_set_MSI_GERROR_ABT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - MSI_GERROR_ABT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - MSI_GERROR_ABT_ERR");
 	}
 	if (SMMU_V3_GERROR_get_SFM_ERR(&active)) {
 		SMMU_V3_GERROR_set_SFM_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - SFM_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - SFM_ERR");
 	}
 	if (SMMU_V3_GERROR_get_CMDQP_ERR(&active)) {
 		SMMU_V3_GERROR_set_CMDQP_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - CMDQP_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - CMDQP_ERR");
 	}
 	if (SMMU_V3_GERROR_get_DPT_ERR(&active)) {
 		SMMU_V3_GERROR_set_DPT_ERR(&active, false);
-		LOG(DEBUG, INFO, "smmuv3: GERROR - DPT_ERR");
+		TRACE(DEBUG, INFO, "smmuv3: GERROR - DPT_ERR");
 	}
 	if (!SMMU_V3_GERROR_is_clean(active)) {
-		LOG(DEBUG, INFO, "smmuv3: Unknown global error {:#x}",
-		    SMMU_V3_GERROR_raw(active));
+		TRACE(DEBUG, INFO, "smmuv3: Unknown global error {:#x}",
+		      SMMU_V3_GERROR_raw(active));
 	}
 }
 
 bool
 smmuv3_handle_irq_received_tcu_cmdsync(void)
 {
-	LOG(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_CMDSYNC");
+	TRACE(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_CMDSYNC");
 
 	return true;
 }
@@ -855,7 +856,7 @@ smmuv3_handle_irq_received_tcu_cmdsync(void)
 bool NOINLINE
 smmuv3_handle_irq_received_tcu_eventq(void)
 {
-	LOG(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_EVENTQ");
+	TRACE(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_EVENTQ");
 	smmuv3_process_eventq();
 
 	return true;
@@ -864,7 +865,7 @@ smmuv3_handle_irq_received_tcu_eventq(void)
 void
 smmuv3_handle_irq_received_tcu_global(void)
 {
-	LOG(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_GLOBAL");
+	TRACE(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_GLOBAL");
 	smmuv3_process_gerror();
 	// For the moment we do not attempt to resolve these, just panic
 	panic("smmuv3: Unresolved global error");
@@ -873,7 +874,7 @@ smmuv3_handle_irq_received_tcu_global(void)
 bool
 smmuv3_handle_irq_received_tcu_pmu(void)
 {
-	LOG(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_PMU");
+	TRACE(DEBUG, INFO, "smmuv3: HWIRQ_ACTION_SMMU_V3_TCU_PMU");
 
 	return true;
 }
@@ -1124,9 +1125,10 @@ smmuv3_enqueue_cmd_wait(smmu_v3_instance_t *smmu, count_t head)
 		SMMU_V3_GERROR_t active =
 			SMMU_V3_GERROR_difference(gerror, gerrorn);
 		if (SMMU_V3_GERROR_get_CMDQ_ERR(&active)) {
-			LOG(DEBUG, INFO, "smmuv3: poll CONS RD={:#x} ERR={:#x}",
-			    SMMU_V3_CMDQ_CONS_get_RD(&cons),
-			    SMMU_V3_CMDQ_CONS_get_ERR(&cons));
+			TRACE_AND_LOG(DEBUG, INFO,
+				      "smmuv3: poll CONS RD={:#x} ERR={:#x}",
+				      SMMU_V3_CMDQ_CONS_get_RD(&cons),
+				      SMMU_V3_CMDQ_CONS_get_ERR(&cons));
 			// Deal with this in a better way.
 			// We should attempt to resolve CMDQ errors.
 			// For now we panic.
@@ -1164,9 +1166,9 @@ smmuv3_enqueue_cmd(smmu_v3_cmd_t cmd, bool wait)
 	if (SMMU_V3_GERROR_get_CMDQ_ERR(&active)) {
 		SMMU_V3_CMDQ_CONS_t cons = atomic_load_relaxed(
 			&smmu_v3.regs->smmu_page0.cmdq_cons);
-		LOG(DEBUG, INFO, "smmuv3: CONS RD={:#x} ERR={:#x}",
-		    SMMU_V3_CMDQ_CONS_get_RD(&cons),
-		    SMMU_V3_CMDQ_CONS_get_ERR(&cons));
+		TRACE_AND_LOG(DEBUG, INFO, "smmuv3: CONS RD={:#x} ERR={:#x}",
+			      SMMU_V3_CMDQ_CONS_get_RD(&cons),
+			      SMMU_V3_CMDQ_CONS_get_ERR(&cons));
 		// Deal with this in a better way.
 		// We should attempt to resolve CMDQ errors.
 		// For now we panic.
@@ -1574,7 +1576,7 @@ smmuv3_bind_stream_range(smmuv3_t *smmu, viommu_t *viommu,
 	void_ptr_result_t ptr_r = partition_alloc(
 		viommu->partition, sizeof(*range), alignof(*range));
 	if (ptr_r.e != OK) {
-		LOG(DEBUG, INFO, "smmuv3: Unable to allocate SID range");
+		TRACE(DEBUG, INFO, "smmuv3: Unable to allocate SID range");
 		ret = smmuv3_stream_range_ptr_result_error(ptr_r.e);
 		goto fail_alloc;
 	}
@@ -1600,8 +1602,9 @@ smmuv3_bind_stream_range(smmuv3_t *smmu, viommu_t *viommu,
 	// need Stage2 invalidates.
 	// FIXME: QC Gunyah issue #275
 	if (err == ERROR_UNIMPLEMENTED) {
-		LOG(DEBUG, INFO,
-		    "WARNING: S2 TLB invalidates are NOT broadcast to the SMMU");
+		TRACE_AND_LOG(
+			DEBUG, INFO,
+			"WARNING: S2 TLB invalidates are NOT broadcast to the SMMU");
 		err = OK;
 	}
 #endif
@@ -1847,8 +1850,8 @@ smmuv3_alloc_ste_slot(smmu_v3_stream_id_t stream_id)
 		void_ptr_result_t ptr_r = partition_alloc(
 			partition_get_private(), ste_lvl2_size, ste_lvl2_size);
 		if (ptr_r.e != OK) {
-			LOG(DEBUG, INFO,
-			    "smmuv3: Unable to allocate STE array");
+			TRACE_AND_LOG(DEBUG, INFO,
+				      "smmuv3: Unable to allocate STE array");
 			ret = smmu_v3_stream_table_entry_ptr_result_error(
 				ERROR_NOMEM);
 			goto out;
@@ -1942,8 +1945,8 @@ smmuv3_disable_stream_event_recording(smmu_v3_stream_id_t stream_id)
 	smmu_v3_stream_table_entry_ptr_result_t ste_r =
 		smmuv3_get_ste_slot(stream_id);
 	if (ste_r.e != OK) {
-		LOG(DEBUG, INFO,
-		    "smmuv3: disable_stream_event_recording could not find STE");
+		TRACE(DEBUG, INFO,
+		      "smmuv3: disable_stream_event_recording could not find STE");
 		goto out;
 	}
 
@@ -1983,8 +1986,8 @@ smmuv3_disable_stream(smmu_v3_stream_id_t stream_id)
 		ste_r = smmuv3_alloc_ste_slot(stream_id);
 		if (ste_r.e != OK) {
 			ret = ste_r.e;
-			LOG(DEBUG, INFO,
-			    "smmuv3: disable_stream could not allocate STE");
+			TRACE(DEBUG, INFO,
+			      "smmuv3: disable_stream could not allocate STE");
 			goto out;
 		}
 	}
@@ -2061,8 +2064,9 @@ smmuv3_attach_stream(smmuv3_stream_range_t	  *range,
 	if (ste_r.e != OK) {
 		ste_r = smmuv3_alloc_ste_slot(stream_id);
 		if (ste_r.e != OK) {
-			LOG(DEBUG, INFO,
-			    "smmuv3: attach_stream could not allocate STE");
+			TRACE_AND_LOG(
+				DEBUG, INFO,
+				"smmuv3: attach_stream could not allocate STE");
 			ret = ste_r.e;
 			goto out_unlock;
 		}
@@ -2187,9 +2191,8 @@ smmuv3_detach_stream(smmuv3_stream_range_t *range,
 	smmu_v3_stream_table_entry_ptr_result_t ste_r =
 		smmuv3_get_ste_slot(stream_id);
 	if (ste_r.e != OK) {
-		TRACE_AND_LOG(DEBUG, INFO,
-			      "smmuv3_detach_stream: no slot (sid {:#x})",
-			      stream_id);
+		TRACE(DEBUG, INFO, "smmuv3_detach_stream: no slot (sid {:#x})",
+		      stream_id);
 		goto out_unlock;
 	}
 
@@ -2233,9 +2236,9 @@ smmuv3_handle_boot_hypervisor_start(void)
 	SMMU_V3_AIDR_t aidr =
 		atomic_load_relaxed(&smmu_v3.regs->smmu_page0.aidr);
 	smmuv3_regs_unlock();
-	LOG(DEBUG, INFO, "smmuv3: Found SMMUv3.{:d}",
-	    SMMU_V3_AIDR_get_ArchMinorRev(&aidr));
-	LOG(DEBUG, INFO, "smmuv3: Pass-through to PVM");
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Found SMMUv3.{:d}",
+		      SMMU_V3_AIDR_get_ArchMinorRev(&aidr));
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Pass-through to PVM");
 	return;
 
 #else // SMMU_V3_PASSTHROUGH
@@ -2244,8 +2247,8 @@ smmuv3_handle_boot_hypervisor_start(void)
 	SMMU_V3_AIDR_t aidr =
 		atomic_load_relaxed(&smmu_v3.regs->smmu_page0.aidr);
 	smmuv3_regs_unlock();
-	LOG(DEBUG, INFO, "smmuv3: Found SMMUv3.{:d}",
-	    SMMU_V3_AIDR_get_ArchMinorRev(&aidr));
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Found SMMUv3.{:d}",
+		      SMMU_V3_AIDR_get_ArchMinorRev(&aidr));
 
 	SMMU_V3_CR0_t  cr0;
 	SMMU_V3_CR0_t  cr0ack;
@@ -2280,7 +2283,7 @@ smmuv3_handle_boot_hypervisor_start(void)
 	do {
 		cr0ack = atomic_load_relaxed(&smmu_v3.regs->smmu_page0.cr0ack);
 	} while (!SMMU_V3_CR0_is_equal(cr0, cr0ack));
-	LOG(DEBUG, INFO, "smmuv3: Enabled");
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Enabled");
 	smmuv3_regs_unlock();
 
 #else // SMMU_V3_ENABLE
@@ -2295,10 +2298,10 @@ smmuv3_handle_boot_hypervisor_start(void)
 	SMMU_V3_GBPA_set_PRIVCFG(&gbpa, false);
 	SMMU_V3_GBPA_set_INSTCFG(&gbpa, false);
 #if defined(SMMU_V3_GLOBAL_BYPASS) && SMMU_V3_GLOBAL_BYPASS
-	LOG(DEBUG, INFO, "smmuv3: Enable global bypass");
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Enable global bypass");
 	SMMU_V3_GBPA_set_ABORT(&gbpa, false);
 #else
-	LOG(DEBUG, INFO, "smmuv3: Enable global abort");
+	TRACE_AND_LOG(DEBUG, INFO, "smmuv3: Enable global abort");
 	SMMU_V3_GBPA_set_ABORT(&gbpa, true);
 #endif
 	// Set update flag to check for completion
