@@ -161,6 +161,10 @@ virtio_pci_handle_vpci_config_read(vpci_function_t	  *function,
 		ret = vpci_pcie_config_read(
 			vpci_pcie_data_container_of_base(capability), offset,
 			access_size);
+	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PM) {
+		// Power Management
+		// The vcpi power state is hardcoded. Just return the defaults
+		ret = vpci_pm_config_read(offset, access_size);
 	} else if (capability->cap_id != (uint8_t)PCI_CAPABILITY_ID_VENDOR) {
 		// Unknown capability
 		ret = register_result_error(ERROR_UNIMPLEMENTED);
@@ -260,6 +264,9 @@ virtio_pci_handle_vpci_config_write(vpci_function_t	   *function,
 		err = vpci_pcie_config_write(
 			vpci_pcie_data_container_of_base(capability), offset,
 			access_size, data);
+	} else if (capability->cap_id == (uint8_t)PCI_CAPABILITY_ID_PM) {
+		// Ignore all writes
+		err = OK;
 	} else if (capability->cap_id != (uint8_t)PCI_CAPABILITY_ID_VENDOR) {
 		// Unknown capability
 		err = ERROR_UNIMPLEMENTED;

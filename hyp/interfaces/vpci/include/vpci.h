@@ -256,3 +256,8 @@ vpci_pcie_ext_config_write(vpci_pcie_data_t *pcie_data, size_t offset,
 // See vpci_error() above for the mapping from error_t to PCIe error types.
 void
 vpci_pcie_error(vpci_function_t *reporter, error_t error);
+
+// Handle Power Management Capability Structure reads
+// Writes are ignored
+register_result_t
+vpci_pm_config_read(size_t offset, size_t access_size);

@@ -78,6 +78,7 @@ define pci_function_status bitfield<16>(set_ops) {
 };
 
 define pci_capability_id enumeration(explicit) {
+	pm = 0x1;
 	msi = 0x05;
 	vendor = 0x09;
 	pcie = 0x10;
@@ -100,6 +101,39 @@ define pci_capability structure {
 define pci_vendor_capability structure {
 	base @ 0		structure pci_capability;
 	size @ 2		uint8;
+};
+
+define pci_pm_capability structure {
+	header @ 0		structure pci_capability;
+	pmc @ 2			bitfield pci_pm_pmc;
+	pmcsr @ 4		bitfield pci_pm_pmcsr;
+	reserved @ 6		uint8;
+	data @ 7		bitfield pci_pm_data;
+};
+
+define pci_pm_pmc bitfield<16>(const) {
+	2:0		version			uint8	= 0x03;
+	3		pme_clock		bool	= 0;
+	4		immediate_readiness	bool	= 1;
+	5		device_specific_init	bool	= 0;
+	8:6		aux_current		uint8	= 0;
+	9		d1_support		bool	= 0;
+	10		d2_support		bool	= 0;
+	15:11		pme_support		uint8	= 0;
+};
+
+define pci_pm_pmcsr bitfield<16>(const) {
+	1:0		power_state	uint8;
+	3		no_soft_reset	bool = 1; // This is the only bit we care about
+	8		pme_en		bool = 0;
+	12:9		data_select	uint8; // Ignore these
+	14:13		data_scale	uint8; // Ignore these
+	15		pme_status	bool = 0;
+	others				unknown = 0;
+};
+
+define pci_pm_data bitfield<8>(const) {
+	others				unknown = 0; // Ignore
 };
 
 define pci_msix_capability structure {

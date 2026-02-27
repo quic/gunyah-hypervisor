@@ -298,3 +298,66 @@ vpci_pcie_error(vpci_function_t *reporter, error_t error)
 out:
 	return;
 }
+
+static register_t
+vpci_pm_config_read_one(size_t offset, size_t *access_size)
+{
+	register_t val;
+
+	// The vcpi power state it hardcoded. Just return the defaults
+
+	switch (offset) {
+	case util_offset_case_range(pci_pm_capability_t, pmc): {
+		val	     = pci_pm_pmc_raw(pci_pm_pmc_default());
+		*access_size = util_sizeof_member(pci_pm_capability_t, pmc);
+		break;
+	}
+	case util_offset_case_range(pci_pm_capability_t, pmcsr):
+		val	     = pci_pm_pmcsr_raw(pci_pm_pmcsr_default());
+		*access_size = util_sizeof_member(pci_pm_capability_t, pmcsr);
+		break;
+	default:
+		// All other registers are not used and are RAZ/WI.
+		val	     = 0U;
+		*access_size = 1U;
+		break;
+	}
+
+	// Handle partial accesses (note all fields are size-aligned)
+	size_t mask = *access_size - 1U;
+	if ((offset & mask) != 0U) {
+		val >>= util_width(uint8_t) * (offset & mask);
+		*access_size = (0U - offset) & mask;
+	}
+
+	return val;
+}
+
+register_result_t
+vpci_pm_config_read(size_t offset, size_t access_size)
+{
+	register_t read_val  = 0U;
+	size_t	   read_size = 0U;
+
+	while (read_size < access_size) {
+		size_t read_offset = offset + read_size;
+		size_t accessed_size;
+
+		// The vcpi power state it hardcoded. Just return the defaults
+		register_t accessed_val =
+			vpci_pm_config_read_one(read_offset, &accessed_size);
+
+		// Handle partial accesses (note all fields are size-aligned)
+		size_t mask = accessed_size - 1U;
+		if ((read_offset & mask) != 0U) {
+			accessed_val >>=
+				util_width(uint8_t) * (read_offset & mask);
+			accessed_size = (0U - read_offset) & mask;
+		}
+
+		read_val |= accessed_val << (util_width(uint8_t) * read_size);
+		read_size += accessed_size;
+	}
+
+	return register_result_ok(read_val);
+}

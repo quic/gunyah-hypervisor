@@ -16,6 +16,7 @@ define virtio_pci structure {
 	cap_isr_cfg		structure virtio_pci_cap_data;
 	cap_device_cfg		structure virtio_pci_cap_data;
 	cap_pci_cfg		structure virtio_pci_cap_data;
+	cap_pm_cfg		structure vpci_capability_data;
 
 	dev_feat_sel		type index_t(atomic);
 	drv_feat_sel		type index_t(atomic);

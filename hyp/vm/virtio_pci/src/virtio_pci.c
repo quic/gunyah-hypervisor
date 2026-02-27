@@ -215,6 +215,14 @@ virtio_pci_handle_virtio_startup(virtio_t *virtio)
 		err = vpci_msix_init(virtio->partition, &pci->msix_data);
 	}
 
+	pci->cap_pm_cfg.next   = cap_list;
+	pci->cap_pm_cfg.cap_id = (uint8_t)PCI_CAPABILITY_ID_PM;
+	pci->cap_pm_cfg.size   = (uint8_t)sizeof(pci_pm_capability_t);
+	pci->cap_pm_cfg.offset = cap_offset;
+
+	cap_offset += pci->cap_pm_cfg.size;
+	cap_list = &pci->cap_pm_cfg;
+
 	(void)cap_offset;
 	pci->fn0.capabilities = cap_list;
 
