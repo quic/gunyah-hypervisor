@@ -83,6 +83,10 @@ virtio_pci_cap_read_one(vpci_function_t	      *function,
 		ret = register_result_ok(cap_data->bar_length);
 		*access_size =
 			util_sizeof_member(virtio_pci_capability_t, bar_length);
+	} else if (offset < sizeof(virtio_pci_capability_t)) {
+		// handle undefined bytes
+		ret	     = register_result_ok(0U);
+		*access_size = 1U;
 	} else if ((cap_data->type == VIRTIO_PCI_CAP_TYPE_NOTIFY_CFG) &&
 		   (offset == offsetof(virtio_pci_notify_capability_t,
 				       notify_off_multiplier))) {
