@@ -69,7 +69,6 @@ SECTIONS
 	image_pkg_start = PLATFORM_ROOTVM_PKG_START_BASE;
 #else
 	image_pkg_start = . - image_virt_start + image_phys_start;
-#endif
 
 #if !defined(PLATFORM_ROOTVM_ELF_SIZE)
 #define PLATFORM_ROOTVM_ELF_SIZE 0x80000
@@ -77,6 +76,7 @@ SECTIONS
 
 	/* Reserve space for the package ELF file */
 	. = . + PLATFORM_ROOTVM_ELF_SIZE;
+#endif
 
 	/* align RW sections to the next 2MB page */
 	. = ALIGN(0x200000);
