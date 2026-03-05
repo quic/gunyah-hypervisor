@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+ARCH=$(shell uname -m)
 CC=clang
 
 GENERAL_INCLUDES=-I../../../interfaces/range_tree/include
@@ -24,15 +25,22 @@ GENERAL_DEFS+=-DHOST_TEST
 GENERAL_DEFS+=-DHYP_STANDALONE_TEST
 GENERAL_DEFS+=-DVERBOSE=1
 
-CFLAGS+=--target=x86_64-linux-gnu
-CFLAGS+=-m64 -mcx16 -std=gnu18 -O1 -g
+ifeq ($(ARCH),x86_64)
+	CFLAGS+=--target=x86_64-linux-gnu
+	CFLAGS+=-m64 -mcx16
+else ifeq ($(ARCH),aarch64)
+	CFLAGS+=--target=aarch64-linux-gnu
+else
+	$(error Unsupported architecture: $(ARCH))
+endif
+CFLAGS+=-std=gnu18 -O1 -g
 CFLAGS+=-Wall -Werror -Wno-gcc-compat -Wno-gnu-alignof-expression
 CFLAGS+=-ffunction-sections -fdata-sections
 CFLAGS+=-fsanitize=address -fno-omit-frame-pointer
 CFLAGS+=$(GENERAL_INCLUDES)
 CFLAGS+=$(GENERAL_DEFS)
 
-LDFLAGS=-lstdc++
+LDFLAGS=-lstdc++ -lpthread
 
 ROOTSRC=../src/range_tree_avl.c ./stub.c \
 	$(GUNYAH_BUILD)/autogen/core/base/src/accessors.c \
@@ -43,11 +51,20 @@ RANDOM_TEST=rt
 RAN_SUBSRC=./random_test.c
 RAN_SUBOBJ=$(RAN_SUBSRC:%.c=%.o)
 
+UNIT_TEST=ut
+UNIT_SUBSRC=./unit_test.c
+UNIT_SUBOBJ=$(UNIT_SUBSRC:%.c=%.o)
+
+all: $(RANDOM_TEST) $(UNIT_TEST)
+
 $(RANDOM_TEST):$(ROOTOBJ) $(RAN_SUBOBJ)
 	$(CC) $(CFLAGS) ${LDFLAGS} $(ROOTOBJ) $(RAN_SUBOBJ) -o $@
+
+$(UNIT_TEST):$(ROOTOBJ) $(UNIT_SUBOBJ)
+	$(CC) $(CFLAGS) ${LDFLAGS} $(ROOTOBJ) $(UNIT_SUBOBJ) -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o $(BIN) $(ROOTOBJ) $(SUBOBJ) ${RANDOM_TEST}
+	rm -f *.o $(BIN) $(ROOTOBJ) $(SUBOBJ) ${RANDOM_TEST} ${UNIT_TEST}
