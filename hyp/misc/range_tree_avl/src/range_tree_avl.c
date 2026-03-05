@@ -91,9 +91,10 @@ range_tree_destroy(range_tree_t *tree, range_tree_node_type_t node_type)
 }
 
 static void
-range_tree_rotate_right(range_tree_node_t *_Atomic *subtree,
+range_tree_rotate_right(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
 			range_tree_node_t *root, range_tree_node_t *left)
 {
+	atomic_fetch_add_explicit(&tree->nr_rotations, 1, memory_order_relaxed);
 	// The order is important here: we want to make sure that all nodes
 	// remain visible to concurrent readers.
 	//
@@ -114,9 +115,10 @@ range_tree_rotate_right(range_tree_node_t *_Atomic *subtree,
 }
 
 static void
-range_tree_rotate_left(range_tree_node_t *_Atomic *subtree,
+range_tree_rotate_left(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
 		       range_tree_node_t *root, range_tree_node_t *right)
 {
+	atomic_fetch_add_explicit(&tree->nr_rotations, 1, memory_order_relaxed);
 	// Order is important. See comments in range_tree_rotate_right().
 	range_tree_node_t *centre = atomic_load_consume(&right->left);
 	atomic_store_relaxed(&right->left, root);
@@ -125,7 +127,8 @@ range_tree_rotate_left(range_tree_node_t *_Atomic *subtree,
 }
 
 static bool
-range_tree_rebalance_leftwards(range_tree_node_t *_Atomic *subtree,
+range_tree_rebalance_leftwards(range_tree_t		  *tree,
+			       range_tree_node_t *_Atomic *subtree,
 			       range_tree_node_t	  *root)
 {
 	bool height_decreased;
@@ -134,7 +137,7 @@ range_tree_rebalance_leftwards(range_tree_node_t *_Atomic *subtree,
 	assert(right != NULL);
 
 	if (right->balance <= 0) {
-		range_tree_rotate_left(subtree, root, right);
+		range_tree_rotate_left(tree, subtree, root, right);
 
 		root->balance = -1 - right->balance;
 		right->balance++;
@@ -143,8 +146,8 @@ range_tree_rebalance_leftwards(range_tree_node_t *_Atomic *subtree,
 		range_tree_node_t *centre = atomic_load_consume(&right->left);
 		assert(centre != NULL);
 
-		range_tree_rotate_right(&root->right, right, centre);
-		range_tree_rotate_left(subtree, root, centre);
+		range_tree_rotate_right(tree, &root->right, right, centre);
+		range_tree_rotate_left(tree, subtree, root, centre);
 
 		root->balance	 = (centre->balance < 0) ? 1 : 0;
 		right->balance	 = (centre->balance > 0) ? -1 : 0;
@@ -156,7 +159,8 @@ range_tree_rebalance_leftwards(range_tree_node_t *_Atomic *subtree,
 }
 
 static bool
-range_tree_rebalance_rightwards(range_tree_node_t *_Atomic *subtree,
+range_tree_rebalance_rightwards(range_tree_t		   *tree,
+				range_tree_node_t *_Atomic *subtree,
 				range_tree_node_t	   *root)
 {
 	bool height_decreased;
@@ -165,7 +169,7 @@ range_tree_rebalance_rightwards(range_tree_node_t *_Atomic *subtree,
 	assert(left != NULL);
 
 	if (left->balance >= 0) {
-		range_tree_rotate_right(subtree, root, left);
+		range_tree_rotate_right(tree, subtree, root, left);
 
 		root->balance = 1 - left->balance;
 		left->balance--;
@@ -174,8 +178,8 @@ range_tree_rebalance_rightwards(range_tree_node_t *_Atomic *subtree,
 		range_tree_node_t *centre = atomic_load_consume(&left->right);
 		assert(centre != NULL);
 
-		range_tree_rotate_left(&root->left, left, centre);
-		range_tree_rotate_right(subtree, root, centre);
+		range_tree_rotate_left(tree, &root->left, left, centre);
+		range_tree_rotate_right(tree, subtree, root, centre);
 
 		root->balance	 = (centre->balance > 0) ? -1 : 0;
 		left->balance	 = (centre->balance < 0) ? 1 : 0;
@@ -187,8 +191,8 @@ range_tree_rebalance_rightwards(range_tree_node_t *_Atomic *subtree,
 }
 
 static bool_result_t
-range_tree_insert_node(range_tree_node_t *_Atomic *subtree,
-		       range_tree_node_t	  *node)
+range_tree_insert_node(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
+		       range_tree_node_t *node)
 {
 	bool_result_t height_increased;
 
@@ -204,7 +208,7 @@ range_tree_insert_node(range_tree_node_t *_Atomic *subtree,
 	} else if ((node->base + node->size - 1U) < subtree_root->base) {
 		// Node is entirely to the left of the subtree root
 		bool_result_t left_height_increased =
-			range_tree_insert_node(&subtree_root->left, node);
+			range_tree_insert_node(tree, &subtree_root->left, node);
 		if (left_height_increased.e != OK) {
 			// Insertion failed; propagate the error.
 			height_increased = left_height_increased;
@@ -222,7 +226,7 @@ range_tree_insert_node(range_tree_node_t *_Atomic *subtree,
 			// subtree will always be balanced, and its height will
 			// always decrease, balancing out the earlier increase.
 			bool height_reduced = range_tree_rebalance_rightwards(
-				subtree, subtree_root);
+				tree, subtree, subtree_root);
 			assert(height_reduced);
 			height_increased = bool_result_ok(false);
 		} else {
@@ -232,8 +236,8 @@ range_tree_insert_node(range_tree_node_t *_Atomic *subtree,
 	} else if (node->base >
 		   (subtree_root->base + subtree_root->size - 1U)) {
 		// Node is entirely to the right of the subtree root
-		bool_result_t right_height_increased =
-			range_tree_insert_node(&subtree_root->right, node);
+		bool_result_t right_height_increased = range_tree_insert_node(
+			tree, &subtree_root->right, node);
 		if (right_height_increased.e != OK) {
 			// Insertion failed; propagate the error.
 			height_increased = right_height_increased;
@@ -251,7 +255,7 @@ range_tree_insert_node(range_tree_node_t *_Atomic *subtree,
 			// subtree will always be balanced, and its height will
 			// always decrease, balancing out the earlier increase.
 			bool height_reduced = range_tree_rebalance_leftwards(
-				subtree, subtree_root);
+				tree, subtree, subtree_root);
 			assert(height_reduced);
 			height_increased = bool_result_ok(false);
 		} else {
@@ -285,13 +289,14 @@ range_tree_insert(range_tree_t *tree, range_tree_node_t *node, size_t base,
 		.balance = 0,
 	};
 
-	ret = range_tree_insert_node(&tree->root, node).e;
+	ret = range_tree_insert_node(tree, &tree->root, node).e;
 out:
 	return ret;
 }
 
 static bool
-range_tree_replace_with_successor(range_tree_node_t *_Atomic *subtree,
+range_tree_replace_with_successor(range_tree_t		     *tree,
+				  range_tree_node_t *_Atomic *subtree,
 				  range_tree_node_t	     *left,
 				  range_tree_node_t	     *right,
 				  range_tree_node_t *_Atomic *parent_left,
@@ -304,7 +309,7 @@ range_tree_replace_with_successor(range_tree_node_t *_Atomic *subtree,
 	if (succ_left != NULL) {
 		// We haven't found the successor yet; keep moving left.
 		bool left_height_reduced = range_tree_replace_with_successor(
-			subtree, left, right, &node->left, succ_left);
+			tree, subtree, left, right, &node->left, succ_left);
 
 		// If the parent is the deleted node, we need to reload it
 		// from the subtree root and rebalance its right child;
@@ -326,7 +331,7 @@ range_tree_replace_with_successor(range_tree_node_t *_Atomic *subtree,
 			// This node was right-heavy and now has balance 2; it
 			// needs to be rebalanced.
 			height_reduced = range_tree_rebalance_leftwards(
-				new_subtree, node);
+				tree, new_subtree, node);
 		} else {
 			// The height has not changed.
 			height_reduced = false;
@@ -364,7 +369,8 @@ range_tree_replace_with_successor(range_tree_node_t *_Atomic *subtree,
 }
 
 static bool
-range_tree_remove_subtree_root(range_tree_node_t *_Atomic *subtree,
+range_tree_remove_subtree_root(range_tree_t		  *tree,
+			       range_tree_node_t *_Atomic *subtree,
 			       range_tree_node_t	  *root)
 {
 	bool height_reduced;
@@ -385,7 +391,7 @@ range_tree_remove_subtree_root(range_tree_node_t *_Atomic *subtree,
 		// It is the leftmost node of the right subtree, so start the
 		// search with the right child.
 		bool right_height_reduced = range_tree_replace_with_successor(
-			subtree, left, right, NULL, right);
+			tree, subtree, left, right, NULL, right);
 
 		// When the successor was found, the right subtree may have
 		// reduced in height. If so, we may need to rebalance. In any
@@ -402,8 +408,8 @@ range_tree_remove_subtree_root(range_tree_node_t *_Atomic *subtree,
 		} else if (right_height_reduced) {
 			// This node was right-heavy and now has balance -2; it
 			// needs to be rebalanced.
-			height_reduced =
-				range_tree_rebalance_rightwards(subtree, node);
+			height_reduced = range_tree_rebalance_rightwards(
+				tree, subtree, node);
 		} else {
 			// The height has not changed.
 			height_reduced = false;
@@ -414,8 +420,8 @@ range_tree_remove_subtree_root(range_tree_node_t *_Atomic *subtree,
 }
 
 static bool_result_t
-range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
-		       range_tree_node_t	  *removed_node)
+range_tree_remove_node(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
+		       range_tree_node_t *removed_node)
 {
 	bool_result_t height_reduced;
 
@@ -428,7 +434,7 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 		   subtree_root->base) {
 		// Node is entirely to the left of the subtree root
 		bool_result_t left_height_reduced = range_tree_remove_node(
-			&subtree_root->left, removed_node);
+			tree, &subtree_root->left, removed_node);
 		if (left_height_reduced.e != OK) {
 			height_reduced = left_height_reduced;
 		} else if (left_height_reduced.r &&
@@ -444,7 +450,7 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 			// it needs to be rebalanced. The resulting tree will
 			// reduce in height.
 			height_reduced = bool_result_ok(
-				range_tree_rebalance_leftwards(subtree,
+				range_tree_rebalance_leftwards(tree, subtree,
 							       subtree_root));
 		} else {
 			// Child's height was not reduced; balance unchanged
@@ -454,7 +460,7 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 		   (subtree_root->base + subtree_root->size - 1U)) {
 		// Node is entirely to the right of the subtree root
 		bool_result_t right_height_reduced = range_tree_remove_node(
-			&subtree_root->right, removed_node);
+			tree, &subtree_root->right, removed_node);
 		if (right_height_reduced.e != OK) {
 			height_reduced = right_height_reduced;
 		} else if (right_height_reduced.r &&
@@ -470,7 +476,7 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 			// needs to be rebalanced. The resulting tree will
 			// reduce in height.
 			height_reduced = bool_result_ok(
-				range_tree_rebalance_rightwards(subtree,
+				range_tree_rebalance_rightwards(tree, subtree,
 								subtree_root));
 		} else {
 			// Child's height was not reduced; balance unchanged
@@ -481,8 +487,8 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 		height_reduced = bool_result_error(ERROR_BUSY);
 	} else {
 		// Found the node. Remove it and re-attach its children.
-		height_reduced = bool_result_ok(
-			range_tree_remove_subtree_root(subtree, removed_node));
+		height_reduced = bool_result_ok(range_tree_remove_subtree_root(
+			tree, subtree, removed_node));
 	}
 
 	return height_reduced;
@@ -491,7 +497,7 @@ range_tree_remove_node(range_tree_node_t *_Atomic *subtree,
 error_t
 range_tree_remove(range_tree_t *tree, range_tree_node_t *node)
 {
-	return range_tree_remove_node(&tree->root, node).e;
+	return range_tree_remove_node(tree, &tree->root, node).e;
 }
 
 range_tree_lookup_result_t
