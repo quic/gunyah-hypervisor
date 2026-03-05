@@ -4,6 +4,7 @@
 
 define range_tree structure {
 	write_lock	structure spinlock;
+	nr_rotations	uint64(atomic);
 };
 
 define range_tree_node structure {

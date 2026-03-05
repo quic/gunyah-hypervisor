@@ -31,6 +31,7 @@ range_tree_init(range_tree_t *tree, partition_t *partition)
 	(void)partition;
 	atomic_init(&tree->root, NULL);
 	spinlock_init(&tree->write_lock);
+	atomic_init(&tree->nr_rotations, 0);
 	return OK;
 }
 
