@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -35,6 +35,9 @@ memcpy(void *restrict s1, const void *restrict s2, size_t n);
 #if defined(HYP_STANDALONE_TEST)
 extern void *
 memmove(void *s1, const void *s2, size_t n);
+
+extern int
+memcmp(const void *s1, const void *s2, size_t n);
 #endif
 
 // Secure memmove, requires valid src and dst buffers, and dst_sz >= n

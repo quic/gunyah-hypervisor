@@ -59,12 +59,12 @@ panic(const char *msg)
 }
 
 void
-rcu_read_start(void)
+rcu_read_start(void) LOCK_IMPL
 {
 }
 
 void
-rcu_read_finish(void)
+rcu_read_finish(void) LOCK_IMPL
 {
 }
 

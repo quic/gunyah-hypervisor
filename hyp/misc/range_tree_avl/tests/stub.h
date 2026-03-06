@@ -8,4 +8,10 @@
 void
 panic(const char *msg);
 
+void
+rcu_read_start(void) ACQUIRE_RCU_READ;
+
+void
+rcu_read_finish(void) RELEASE_RCU_READ;
+
 #endif // STUB_H
