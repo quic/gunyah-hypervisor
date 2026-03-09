@@ -5,6 +5,7 @@
 #include <hypconstants.h>
 
 #include <asm/asm_defs.inc>
+#include <asm/cpu.h>
 
 #include "vectors_el2.inc"
 
@@ -48,6 +49,16 @@
 function aarch64_init, section=nosection
 	// Disable debug, aborts and interrupts.
 	msr	DAIFSet, 0xf
+
+	// Ensure the value of CPU_DCZVA_BITS is correct
+	// We need to this before any C code is executed, because the compiler
+	// might call memset() for any struct/array initialisation and our
+	// implementation of memset() relies on CPU_DCZVA_BITS being correct.
+	mrs	x20, DCZID_EL0
+	and	x20, x20, DCZID_EL0_BS_MASK
+	// DCZID.BS is in words
+	cmp	x20, #CPU_DCZVA_BITS - 2
+	b.ne	LOCAL(dczid_bs_fail)
 
 	// Save the seed
 	adrl	x20, hypervisor_prng_seed
@@ -139,6 +150,10 @@ function aarch64_init, section=nosection
 
 	mov	w0, w20
 	b	boot_cold_init
+
+LOCAL(dczid_bs_fail):
+	wfe
+	b	LOCAL(dczid_bs_fail)
 function_end aarch64_init
 
 // Cold-boot a secondary CPU
