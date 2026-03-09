@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -6,6 +6,11 @@
 #include <asm/cpu.h>
 #include <asm/panic.inc>
 
+// The generated jump tables work for CPU_DCZVA_BITS < 10; bigger values result
+// in invalid offsets in the STP instructions.
+#if CPU_DCZVA_BITS > 9
+#error "CPU_DCZVA_BITS values bigger than 9 are not supported"
+#endif
 
 #if defined(ARCH_ARM_FEAT_BTI)
 // Two instructions per jump
