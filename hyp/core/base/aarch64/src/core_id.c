@@ -30,6 +30,7 @@ get_core_id(uint16_t partnum, uint8_t variant, uint8_t revision)
 		{ .part_num = 0xD0CU, .core_id = CORE_ID_NEOVERSE_N1 },
 		{ .part_num = 0xD0DU, .core_id = CORE_ID_CORTEX_A77 },
 		{ .part_num = 0xD0EU, .core_id = CORE_ID_CORTEX_A76AE },
+		{ .part_num = 0xD0FU, .core_id = CORE_ID_ARM_AEM },
 		{ .part_num = 0xD40U, .core_id = CORE_ID_NEOVERSE_V1 },
 		{ .part_num = 0xD41U, .core_id = CORE_ID_CORTEX_A78 },
 		{ .part_num = 0xD42U, .core_id = CORE_ID_CORTEX_A78AE },

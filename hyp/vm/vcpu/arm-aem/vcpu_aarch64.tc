@@ -1,0 +1,6 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Extend vcpu_el1_registers struct here if required for cpu/family specific
+// EL1/0 registers, and add context switch handling.

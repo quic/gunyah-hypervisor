@@ -78,8 +78,11 @@ arch_module cortex-a-v9 vm/vete
 arch_module cortex-a-v9 vm/vtrbe
 arch_module gic-600-lpi vm/vgic_its_v3
 arch_module gic-700-vlpi vm/vgic_its_v4
+arch_module gic-arm-aem vm/vgic_its_v3
 arch_module neoverse-v1 vm/arm_vm_amu
 arch_module neoverse-v1 vm/vetm_null
+arch_module arm-aem vm/arm_vm_amu
+arch_module arm-aem vm/vetm_null
 arch_module oryon-ncc-gen1 vm/arm_vm_amu
 arch_module oryon-ncc-gen1 vm/vetm_null
 arch_module smmuv3 vm/virtio_iommu

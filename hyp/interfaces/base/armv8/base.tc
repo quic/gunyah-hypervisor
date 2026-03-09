@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -28,4 +28,5 @@ extend core_id enumeration {
 	CORTEX_A720;
 	CORTEX_X4;
 	QEMU;
+	ARM_AEM;
 };

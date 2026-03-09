@@ -1,0 +1,8 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arch
+
+subscribe boot_cpu_warm_init
+	handler arch_arm_aem_handle_boot_cpu_warm_init
