@@ -1590,9 +1590,8 @@ smmuv3_bind_stream_range(smmuv3_t *smmu, viommu_t *viommu,
 	// Ensure that S2 TLB invalidates are broadcast to the SMMU
 	err = pgtable_vm_enable_coherent_iommu(&viommu->addrspace->vm_pgtable);
 
-#if defined(PLATFORM_FVP_RDV1_NO_TLBIOS_SUPPORT) &&                            \
-	PLATFORM_FVP_RDV1_NO_TLBIOS_SUPPORT
-	// The FVP test platform does not support this TLB maintenance feature.
+#if defined(PLATFORM_FVP_NO_TLBIOS_SUPPORT) && PLATFORM_FVP_NO_TLBIOS_SUPPORT
+	// The FVP test platforms do not support this TLB maintenance feature.
 	// It is OK in this case as it is only used for testing and is not
 	// running any Guest VMs at the moment. We could have other platforms
 	// with similar limitations, so should address this. A hook should be
