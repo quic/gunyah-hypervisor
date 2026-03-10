@@ -385,6 +385,12 @@ pgtable_vm_ext(pgtable_vm_t *pgtable, vmaddr_t virtual_address, size_t size,
 	       pgtable_entry_types_t entry_types, ext_func_t func, void *data);
 #endif // defined(HOST_TEST)
 
+static void
+dsb(bool outer_shareable);
+
+static void
+vm_tlbi_vmalle1(bool outer_shareable);
+
 static bool
 pgtable_dvm_enabled(pgtable_vm_t *pgtable)
 {
@@ -417,6 +423,28 @@ pgtable_vm_disable_coherent_iommu(pgtable_vm_t *vm_pgtable)
 	count_t old_count = atomic_fetch_sub_explicit(&vm_pgtable->dvm_enable,
 						      1U, memory_order_relaxed);
 	assert_safety(old_count >= 1U);
+
+	// If this count goes to zero, do one last outer shareable flush of the
+	// VM stage 1 TLB to ensure there are no stale entries as the VM might
+	// be shutting down or rebooting.
+	if (old_count == 1U) {
+		preempt_disable();
+		pgtable_vm_start(vm_pgtable);
+
+		// Ensure that the IOMMUs are no longer permitting any accesses
+		// that might refill their TLBs.
+		dsb(true);
+
+		// Invalidate any remaining entries in the IOMMU TLBs.
+		vm_tlbi_vmalle1(true);
+
+		// Ensure that the IOMMU TLBs are completely invalid prior to
+		// any future reuse of the VMID.
+		dsb(true);
+		vm_pgtable->control.s1_inval_needed = false;
+		pgtable_vm_commit(vm_pgtable, true);
+		preempt_enable();
+	}
 #else
 	(void)vm_pgtable;
 #endif
