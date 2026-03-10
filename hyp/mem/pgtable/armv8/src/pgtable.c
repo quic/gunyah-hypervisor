@@ -166,9 +166,17 @@ static const pgtable_level_info_t info_4k_granules[PGTABLE_LEVEL_NUM] = {
 	  .table_mask			      = segment_mask(47U, 12),
 	  .block_and_page_output_address_mask = segment_mask(47U, 30),
 	  .is_offset			      = false,
-	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+// Disabling 1GB mappings in Stage-2 disables their use
+// in EL2 Stage-1 as well.
+// This is acceptable since EL2 S1 1GB entries are rare.
+#if defined(PGTABLE_ARMV8_DISABLE_S2_1GB) && PGTABLE_ARMV8_DISABLE_S2_1GB
+	  .allowed_types = pgtable_entry_types_cast(
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
+#else
+	  .allowed_types = pgtable_entry_types_cast(
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+#endif
 	  .addr_size		= util_bit(30),
 	  .entry_cnt		= (count_t)util_bit(9),
 	  .level		= PGTABLE_LEVEL_1,
