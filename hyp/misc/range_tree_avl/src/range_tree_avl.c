@@ -94,23 +94,41 @@ static void
 range_tree_rotate_right(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
 			range_tree_node_t *root, range_tree_node_t *left)
 {
-	atomic_fetch_add_explicit(&tree->nr_rotations, 1, memory_order_relaxed);
-	// The order is important here: we want to make sure that all nodes
-	// remain visible to concurrent readers.
+	// The order is important here: we want to make sure that lookups of
+	// present nodes that fail due to a rotation will always observe an
+	// increment of the rotation counter.
 	//
 	// 1. Find the centre subtree, which will move from the right child of
 	//    the old left child to the left child of the new right child (which
 	//    is currently the root).
 	range_tree_node_t *centre = atomic_load_consume(&left->right);
-	// 2. Set up a loop between the root and left nodes when we detach the
-	//    centre subtree, so that any reader that is searching for the
-	//    centre subtree will become temporarily stuck in that loop.
+	// 2. Set the left child of the root to itself, so that any reader that
+	//    is searching for any left children of the root will become
+	//    temporarily stuck in that loop.
+	atomic_store_relaxed(&root->left, root);
+	// 3. Set the right child of the left node to the root.
 	atomic_store_relaxed(&left->right, root);
-	// 3. Move the left node to the root of the subtree. The loop is still
-	//    present, though readers entering it will now enter at the left
-	//    node instead of the old root.
+	// 4. Move the left node to the root of the subtree. Lookups that would
+	//    have loaded the root prior to this operation will now load the
+	//    left node. There must be release ordering between step 3 and this
+	//    operation to prevent lookups of the root incorrectly failing.
 	atomic_store_release(subtree, left);
-	// 4. Reattach the centre subtree.
+	// 5. Increment the rotation counter. There must be release ordering
+	//    between step 2 and this operation, which corresponds to the
+	//    acquire ordering between the start counter read and a node read
+	//    that could cause an incorrect NULL result in
+	//    range_tree_lookup_once().
+	(void)atomic_fetch_add_explicit(&tree->nr_rotations, 1,
+					memory_order_release);
+	// 6. Set the old root's left child to the centre subtree, which will
+	//    allow lookups stuck in the left child loop to resume. If this
+	//    resulted in a failed lookup, the rotation counter increment will
+	//    be observed by range_tree_lookup_once() and the lookup will be
+	//    retried. There must be release ordering between step 5 and this
+	//    operation, which corresponds to the acquire ordering between
+	//    loading the pointer that causes an incorrect NULL result and
+	//    reading the rotation counter at the end of the lookup iteration in
+	//    range_tree_lookup_once().
 	atomic_store_release(&root->left, centre);
 }
 
@@ -118,11 +136,13 @@ static void
 range_tree_rotate_left(range_tree_t *tree, range_tree_node_t *_Atomic *subtree,
 		       range_tree_node_t *root, range_tree_node_t *right)
 {
-	atomic_fetch_add_explicit(&tree->nr_rotations, 1, memory_order_relaxed);
 	// Order is important. See comments in range_tree_rotate_right().
 	range_tree_node_t *centre = atomic_load_consume(&right->left);
+	atomic_store_relaxed(&root->right, root);
 	atomic_store_relaxed(&right->left, root);
 	atomic_store_release(subtree, right);
+	(void)atomic_fetch_add_explicit(&tree->nr_rotations, 1,
+					memory_order_release);
 	atomic_store_release(&root->right, centre);
 }
 
@@ -500,34 +520,38 @@ range_tree_remove(range_tree_t *tree, range_tree_node_t *node)
 	return range_tree_remove_node(tree, &tree->root, node).e;
 }
 
-range_tree_lookup_result_t
-range_tree_lookup(range_tree_t *tree, size_t base, size_t max_size)
+static range_tree_lookup_result_result_t
+range_tree_lookup_once(range_tree_t *tree, size_t base, size_t max_size)
 {
-	range_tree_lookup_result_t ret;
-
+	range_tree_lookup_result_result_t ret =
+		(range_tree_lookup_result_result_t){ .e = OK };
 	// Clamp the max size to the whole address space above the base.
 	// Note that we can't return a size that actually covers the entire
 	// address space, so we must decrease the limit by 1 if the base is 0.
 	size_t size_limit = util_min(
 		max_size, (base == 0U) ? SIZE_MAX : (SIZE_MAX - base + 1U));
 
+	// Order of loads is important. See comments in
+	// range_tree_rotate_right().
+	const size_t nr_rotations_start =
+		atomic_load_acquire(&tree->nr_rotations);
 	range_tree_node_t *node = atomic_load_consume(&tree->root);
 
-	// This is called without holding the write lock, so we must use a
-	// loop to avoid unbounded recursion.
+	// This is called without holding the write lock, so we must use
+	// a loop to avoid unbounded recursion.
 	while (node != NULL) {
 		if (base < node->base) {
 			// Base is to the left of this node.
 			//
-			// Since overlap is not allowed in the tree, we can
-			// clamp the max size to the distance between the lookup
-			// base and this node's base.
+			// Since overlap is not allowed in the tree, we
+			// can clamp the max size to the distance
+			// between the lookup base and this node's base.
 			size_limit = util_min(size_limit, node->base - base);
 
-			node = atomic_load_consume(&node->left);
+			node = atomic_load_acquire(&node->left);
 		} else if (base <= (node->base + node->size - 1U)) {
 			// Base is within this node.
-			ret = (range_tree_lookup_result_t){
+			ret.r = (range_tree_lookup_result_t){
 				.node = node,
 				.size = util_min(size_limit,
 						 node->size -
@@ -536,17 +560,43 @@ range_tree_lookup(range_tree_t *tree, size_t base, size_t max_size)
 			goto out;
 		} else {
 			// Base is to the right of this node.
-			node = atomic_load_consume(&node->right);
+			node = atomic_load_acquire(&node->right);
 		}
 	}
 
-	ret = (range_tree_lookup_result_t){
+	if (nr_rotations_start != atomic_load_relaxed(&tree->nr_rotations)) {
+		ret.e = ERROR_BUSY;
+	}
+	ret.r = (range_tree_lookup_result_t){
 		.node = NULL,
 		.size = size_limit,
 	};
-
 out:
 	return ret;
+}
+
+range_tree_lookup_result_t
+range_tree_lookup(range_tree_t *tree, size_t base, size_t max_size)
+{
+	range_tree_lookup_result_result_t res =
+		range_tree_lookup_once(tree, base, max_size);
+	if (res.e == OK) {
+		goto out;
+	}
+	range_tree_lock(tree);
+	res.r = range_tree_lookup_locked(tree, base, max_size);
+	range_tree_unlock(tree);
+out:
+	return res.r;
+}
+
+range_tree_lookup_result_t
+range_tree_lookup_locked(range_tree_t *tree, size_t base, size_t max_size)
+{
+	const range_tree_lookup_result_result_t res =
+		range_tree_lookup_once(tree, base, max_size);
+	assert(res.e == OK);
+	return res.r;
 }
 
 static range_tree_node_t *

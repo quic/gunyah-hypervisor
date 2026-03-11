@@ -62,9 +62,23 @@ range_tree_remove(range_tree_t *tree, range_tree_node_t *node)
 //
 // This function returns the entry found at the given base, and returns the size
 // of this entry, which will be capped at max_size.
+//
+// This function will retry failed lookups that coincide with a tree rotation,
+// after acquiring the write lock to guarantee that no spurious failures occur
+// during the retry. Therefore, callers already holding the write lock must
+// use range_tree_lookup_locked() instead.
 range_tree_lookup_result_t
 range_tree_lookup(range_tree_t *tree, size_t base, size_t max_size)
-	REQUIRE_RCU_READ;
+	EXCLUDE_SPINLOCK(tree->write_lock) REQUIRE_RCU_READ;
+
+// Lookup a range in the range tree.
+//
+// This function returns the same as range_tree_lookup(), but does not retry
+// failed lookups, since concurrent tree rotations are not possible when the
+// caller holds the write lock.
+range_tree_lookup_result_t
+range_tree_lookup_locked(range_tree_t *tree, size_t base, size_t max_size)
+	REQUIRE_SPINLOCK(tree -> write_lock) REQUIRE_RCU_READ;
 
 // Range tree iterator.
 //

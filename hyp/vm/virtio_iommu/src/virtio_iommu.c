@@ -434,7 +434,7 @@ virtio_iommu_unbind_streams(virtio_iommu_t    *virtio_iommu,
 	// Lookup the range in the viommu tree first.
 	rcu_read_start();
 	range_tree_lookup_result_t lookup_r =
-		range_tree_lookup(viommu_ranges, stream_id_start, 1U);
+		range_tree_lookup_locked(viommu_ranges, stream_id_start, 1U);
 
 	range_tree_node_t *node = lookup_r.node;
 	if (node == NULL) {

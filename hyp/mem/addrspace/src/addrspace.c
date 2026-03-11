@@ -1035,8 +1035,8 @@ addrspace_add_fault_range(addrspace_t *addrspace, vmaddr_t base, size_t size,
 		// range and is of the same type; if so, we return an alternate
 		// error code so the caller knows its accesses will still work.
 		rcu_read_start();
-		range_tree_lookup_result_t range_r =
-			range_tree_lookup(&addrspace->fault_ranges, base, size);
+		range_tree_lookup_result_t range_r = range_tree_lookup_locked(
+			&addrspace->fault_ranges, base, size);
 		if ((range_r.node != NULL) && (range_r.size == size) &&
 		    (addrspace_range_container_of_range(range_r.node)
 			     ->is_vmmio == vmmio)) {
@@ -1082,8 +1082,8 @@ addrspace_remove_fault_range(addrspace_t *addrspace, vmaddr_t base, size_t size,
 	range_tree_lock(&addrspace->fault_ranges);
 	rcu_read_start();
 
-	range_tree_lookup_result_t range_r =
-		range_tree_lookup(&addrspace->fault_ranges, base, SIZE_MAX);
+	range_tree_lookup_result_t range_r = range_tree_lookup_locked(
+		&addrspace->fault_ranges, base, SIZE_MAX);
 
 	if ((range_r.node != NULL) && (range_r.size == size) &&
 	    (addrspace_range_container_of_range(range_r.node)->is_vmmio ==
