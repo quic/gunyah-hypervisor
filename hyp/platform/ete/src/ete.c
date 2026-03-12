@@ -35,7 +35,7 @@ CPULOCAL_DECLARE_STATIC(ete_context_t *, ete_contexts);
 CPULOCAL_DECLARE_STATIC(uint64_t, ete_claim_tag);
 
 void
-ete_handle_boot_cpu_cold_init(void)
+ete_handle_boot_cold_init(void)
 {
 	ID_AA64MMFR2_EL1_t mmfr2 = register_ID_AA64MMFR2_EL1_read();
 	if (ID_AA64MMFR2_EL1_get_E0PD(&mmfr2) == 0U) {
@@ -65,6 +65,38 @@ ete_handle_boot_cpu_cold_init(void)
 		goto out;
 	}
 
+	partition_t *hyp_partition = partition_get_private();
+	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
+		if (!platform_cpu_exists(i)) {
+			continue;
+		}
+
+		ete_context_t	 *ete_context;
+		void_ptr_result_t alloc_ret =
+			partition_alloc(hyp_partition, sizeof(*ete_context),
+					alignof(*ete_context));
+		if (alloc_ret.e != OK) {
+			panic("Unable to allocate memory for ETE contexts ");
+		}
+		ete_context = (ete_context_t *)alloc_ret.r;
+		CPULOCAL_BY_INDEX(ete_contexts, i) = ete_context;
+		(void)memset_s(ete_context, sizeof(ete_context_t), 0,
+			       sizeof(ete_context_t));
+	}
+
+out:
+	return;
+}
+
+void
+ete_handle_boot_cpu_cold_init(void)
+{
+	const global_options_t *global_options = globals_get_options();
+	if (!global_options_get_ete_present(global_options)) {
+		// ETE is not present, skip the rest of the function
+		goto out;
+	}
+
 	TRCIDR2_t trcidr2 = register_TRCIDR2_read_volatile();
 	TRCIDR4_t trcidr4 = register_TRCIDR4_read_volatile();
 	TRCIDR5_t trcidr5 = register_TRCIDR5_read_volatile();
@@ -87,25 +119,6 @@ ete_handle_boot_cpu_cold_init(void)
 	assert(TRCIDR5_get_NUMSEQSTATE(&trcidr5) == TRCIDR5_NUMSEQSTATE);
 	assert(TRCIDR5_get_NUMEXTINSEL(&trcidr5) == TRCIDR5_NUMEXTINSEL);
 	assert(TRCIDR5_get_NUMCNTR(&trcidr5) == TRCIDR5_NUMCNTR);
-
-	partition_t *hyp_partition = partition_get_private();
-	for (cpu_index_t i = 0U; i < PLATFORM_MAX_CORES; i++) {
-		if (!platform_cpu_exists(i)) {
-			continue;
-		}
-
-		ete_context_t	 *ete_context;
-		void_ptr_result_t alloc_ret =
-			partition_alloc(hyp_partition, sizeof(*ete_context),
-					alignof(*ete_context));
-		if (alloc_ret.e != OK) {
-			panic("Unable to allocate memory for ETE contexts ");
-		}
-		ete_context = (ete_context_t *)alloc_ret.r;
-		CPULOCAL_BY_INDEX(ete_contexts, i) = ete_context;
-		(void)memset_s(ete_context, sizeof(ete_context_t), 0,
-			       sizeof(ete_context_t));
-	}
 
 out:
 	return;

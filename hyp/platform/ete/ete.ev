@@ -1,7 +1,9 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
 module ete
+
+subscribe boot_cold_init()
 
 subscribe boot_cpu_cold_init()
