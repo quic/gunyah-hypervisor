@@ -53,8 +53,13 @@ vectors_dump_regs(kernel_trap_frame_full_t *frame)
 
 	TRACE_AND_LOG(ERROR, INFO, "SP_EL2 = {:#x}",
 		      SP_EL2_raw(frame->base.sp_el2));
+#if defined(ARCH_ARM_FEAT_PAuth)
+	TRACE_AND_LOG(ERROR, INFO, "ELR_EL2 = {:#x}",
+		      vectors_remove_pointer_auth(ELR_EL2_raw(frame->base.pc)));
+#else
 	TRACE_AND_LOG(ERROR, INFO, "ELR_EL2 = {:#x}",
 		      ELR_EL2_raw(frame->base.pc));
+#endif
 	TRACE_AND_LOG(ERROR, INFO, "SPSR_EL2 = {:#x}",
 		      SPSR_EL2_A64_raw(frame->base.spsr_el2));
 

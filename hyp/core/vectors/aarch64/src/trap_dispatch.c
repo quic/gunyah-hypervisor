@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -26,8 +26,8 @@
 #include "trap_dispatch.h"
 
 #if defined(ARCH_ARM_FEAT_PAuth)
-static inline uintptr_t
-remove_pointer_auth(uintptr_t addr)
+inline uintptr_t
+vectors_remove_pointer_auth(uintptr_t addr)
 {
 	__asm__("xpaci %0" : "+r"(addr));
 	return addr;
@@ -38,7 +38,8 @@ static inline uintptr_t
 vectors_get_return_address(kernel_trap_frame_t *frame)
 {
 #if defined(ARCH_ARM_FEAT_PAuth)
-	return remove_pointer_auth(ELR_EL2_get_ReturnAddress(&frame->pc));
+	return vectors_remove_pointer_auth(
+		ELR_EL2_get_ReturnAddress(&frame->pc));
 #else
 	return ELR_EL2_get_ReturnAddress(&frame->pc);
 #endif
@@ -83,7 +84,7 @@ vectors_exception_dispatch(kernel_trap_frame_full_t *frame)
 	esr_ec_t  ec  = ESR_EL2_get_EC(&esr);
 	uintptr_t pc  = ELR_EL2_get_ReturnAddress(&frame->base.pc);
 #if defined(ARCH_ARM_FEAT_PAuth)
-	pc = remove_pointer_auth(pc);
+	pc = vectors_remove_pointer_auth(pc);
 #endif
 #if defined(INTERFACE_TRACE_PROFILE)
 	TRACE_PROFILE(1, 0U, PROFILE_EL2_NESTED_ENTRY,
