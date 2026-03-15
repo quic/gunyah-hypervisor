@@ -664,6 +664,20 @@ define ID_AA64DFR0_EL1 bitfield<64> {
 	63:44		unknown=0;
 };
 
+define ID_AA64DFR1_EL1 bitfield<64> {
+	7:0		SYSPMMUID	uint8;
+	15:8		BRPs		uint8 = 0;
+	23:16		WRPs		uint8 = 0;
+	31:24		CTX_CMPs	uint8;
+	35:32		PMU		uint8;
+	39:36		PMICNTR		uint8;
+	43:40		ABLE		uint8;
+	47:44		ITE		uint8;
+	51:48		EBEP		uint8;
+	55:52		DPFZS		uint8;
+	63:56		ABL_CMPS	uint8;
+};
+
 define ID_AA64MMFR0_EL1 bitfield<64> {
 	3:0		PARange		enumeration tcr_ps;
 	7:4		ASIDBits	uint8;
