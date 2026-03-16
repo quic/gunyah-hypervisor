@@ -253,14 +253,17 @@ smmuv3_init_regs(void) REQUIRE_SMMUV3_REGS_LOCK
 	SMMU_V3_CR1_set_TABLE_SH(&cr1, SMMU_V3_CR1_SHAREABILITY_OUTER);
 	atomic_store_relaxed(&smmu_v3.regs->smmu_page0.cr1, cr1);
 
-	cr0 = atomic_load_relaxed(&smmu_v3.regs->smmu_page0.cr0);
 	// If ATS is supported put it in safe mode.
-	SMMU_V3_CR0_set_ATSCHK(&cr0, true);
-	atomic_store_relaxed(&smmu_v3.regs->smmu_page0.cr0, cr0);
-	// Wait for update to complete
-	do {
-		cr0ack = atomic_load_relaxed(&smmu_v3.regs->smmu_page0.cr0ack);
-	} while (!SMMU_V3_CR0_is_equal(cr0, cr0ack));
+	if (SMMU_V3_IDR0_get_ATS(&idr0)) {
+		cr0 = atomic_load_relaxed(&smmu_v3.regs->smmu_page0.cr0);
+		SMMU_V3_CR0_set_ATSCHK(&cr0, true);
+		atomic_store_relaxed(&smmu_v3.regs->smmu_page0.cr0, cr0);
+		// Wait for update to complete
+		do {
+			cr0ack = atomic_load_relaxed(
+				&smmu_v3.regs->smmu_page0.cr0ack);
+		} while (!SMMU_V3_CR0_is_equal(cr0, cr0ack));
+	}
 
 	gbpa = atomic_load_relaxed(&smmu_v3.regs->smmu_page0.gbpa);
 	SMMU_V3_GBPA_set_ABORT(&gbpa, true); // Abort incomming transactions
