@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
+
+#include <pthread.h>
 #undef register_t
 
 #include "mem_manager.h"
@@ -30,6 +32,12 @@
 #define CUR_PG_SZ (1 << CUR_SHIFT)
 
 #define ROUND_UP_SZ(sz) ((sz + CUR_PG_SZ - 1) & (~CUR_MASK))
+
+#define MAX_NR_SPINLOCKS 4
+
+pthread_spinlock_t pthread_spinlocks[MAX_NR_SPINLOCKS];
+spinlock_t	  *gunyah_spinlocks[MAX_NR_SPINLOCKS];
+size_t		   nr_spinlocks;
 
 #if !defined(NDEBUG)
 noreturn void
@@ -60,32 +68,78 @@ rcu_read_finish(void)
 {
 }
 
-void
-spinlock_init(spinlock_t *unused)
+static int
+spinlocks_find_index(spinlock_t *spinlocks[], size_t spinlocks_size,
+		     spinlock_t *target)
 {
-	(void)unused;
+	for (size_t i = 0; i < spinlocks_size; ++i) {
+		if (spinlocks[i] == target) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 void
-spinlock_acquire(spinlock_t *unused)
+spinlock_init(spinlock_t *spinlock)
 {
-	(void)unused;
+	if (spinlock == NULL) {
+		panic("NULL spinlock in init");
+	}
+	if (spinlocks_find_index(gunyah_spinlocks, MAX_NR_SPINLOCKS, spinlock) <
+	    0) {
+		if (nr_spinlocks >= MAX_NR_SPINLOCKS) {
+			panic("Insufficient number of stub spinlocks for testing - increase MAX_NR_SPINLOCKS");
+		}
+		gunyah_spinlocks[nr_spinlocks] = spinlock;
+		if (pthread_spin_init(&pthread_spinlocks[nr_spinlocks], 0) !=
+		    0) {
+			panic("Failed to initialize stub spinlock");
+		}
+		++nr_spinlocks;
+	}
 }
 
 void
-spinlock_acquire_nopreempt(spinlock_t *unused)
+spinlock_acquire(spinlock_t *spinlock)
 {
-	(void)unused;
+	if (spinlock == NULL) {
+		panic("NULL spinlock in acquire");
+	}
+	const int idx = spinlocks_find_index(gunyah_spinlocks, MAX_NR_SPINLOCKS,
+					     spinlock);
+	if (idx < 0 || idx >= MAX_NR_SPINLOCKS) {
+		panic("Invalid spinlock index in acquire");
+	}
+	if (pthread_spin_lock(&pthread_spinlocks[idx]) != 0) {
+		panic("Failed to acquire stub spinlock");
+	}
 }
 
 void
-spinlock_release(spinlock_t *unused)
+spinlock_acquire_nopreempt(spinlock_t *spinlock)
 {
-	(void)unused;
+	spinlock_acquire(spinlock);
 }
 
 void
-spinlock_release_nopreempt(spinlock_t *unused)
+spinlock_release(spinlock_t *spinlock)
 {
-	(void)unused;
+	if (spinlock == NULL) {
+		panic("NULL spinlock in release");
+	}
+	const int idx = spinlocks_find_index(gunyah_spinlocks, MAX_NR_SPINLOCKS,
+					     spinlock);
+	if (idx < 0 || idx >= MAX_NR_SPINLOCKS) {
+		panic("Invalid spinlock index in release");
+	}
+	if (pthread_spin_unlock(&pthread_spinlocks[idx]) != 0) {
+		panic("Failed to release stub spinlock");
+	}
+}
+
+void
+spinlock_release_nopreempt(spinlock_t *spinlock)
+{
+	spinlock_release(spinlock);
 }
