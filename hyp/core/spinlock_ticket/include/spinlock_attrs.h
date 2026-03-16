@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -9,6 +9,7 @@
 #define release_spinlock(lock)                                                 \
 	release_preempt_disabled;                                              \
 	release_lock(lock)
+#define exclude_spinlock(lock) exclude_lock(lock)
 #else
 #define ACQUIRE_SPINLOCK(lock)	  ACQUIRE_LOCK(lock) ACQUIRE_PREEMPT_DISABLED
 #define ACQUIRE_SPINLOCK_NP(lock) ACQUIRE_LOCK(lock) REQUIRE_PREEMPT_DISABLED

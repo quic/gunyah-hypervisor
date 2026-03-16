@@ -30,3 +30,4 @@ subscribe scheduler_set_affinity_prepare(thread, prev_cpu, next_cpu)
 subscribe thread_killed
 	// Vote to pCPU in case that the core will be powered off or has been
 	// powered off
+	exclude_scheduler_lock(thread)

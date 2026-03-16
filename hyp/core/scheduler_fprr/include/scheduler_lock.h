@@ -1,9 +1,10 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
 #ifdef __EVENTS_DSL__
 #define require_scheduler_lock(t) require_spinlock(t->scheduler_lock)
+#define exclude_scheduler_lock(t) exclude_spinlock(t->scheduler_lock)
 #else
 #define ACQUIRE_SCHEDULER_LOCK(thread)                                         \
 	ACQUIRE_SPINLOCK((thread)->scheduler_lock)
