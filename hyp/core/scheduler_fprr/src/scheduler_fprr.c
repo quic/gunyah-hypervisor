@@ -1026,7 +1026,7 @@ scheduler_block(thread_t *thread, scheduler_block_t block)
 	      thread->scheduler_block_bits[0]);
 
 	assert_spinlock_held(&thread->scheduler_lock);
-	assert(block <= SCHEDULER_BLOCK__MAX);
+	assert_safety(block <= SCHEDULER_BLOCK__MAX);
 
 	if (!bitmap_isset(thread->scheduler_block_bits, (index_t)block)) {
 		trigger_scheduler_blocked_event(thread, block,
@@ -1044,7 +1044,7 @@ void
 scheduler_block_init(thread_t *thread, scheduler_block_t block)
 {
 	assert(!sched_state_get_init(&thread->scheduler_state));
-	assert(block <= SCHEDULER_BLOCK__MAX);
+	assert_safety(block <= SCHEDULER_BLOCK__MAX);
 	bitmap_set(thread->scheduler_block_bits, (index_t)block);
 }
 
@@ -1053,7 +1053,7 @@ scheduler_unblock(thread_t *thread, scheduler_block_t block)
 	REQUIRE_LOCK(thread -> scheduler_lock)
 {
 	assert_spinlock_held(&thread->scheduler_lock);
-	assert(block <= SCHEDULER_BLOCK__MAX);
+	assert_safety(block <= SCHEDULER_BLOCK__MAX);
 	bool was_blocked = !can_be_scheduled(thread);
 	bool block_was_set =
 		bitmap_isset(thread->scheduler_block_bits, (index_t)block);
