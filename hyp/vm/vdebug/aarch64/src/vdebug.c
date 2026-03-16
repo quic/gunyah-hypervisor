@@ -24,15 +24,30 @@ static asm_ordering_dummy_t vdebug_asm_order;
 void
 vdebug_handle_boot_cpu_cold_init(void)
 {
-	ID_AA64DFR0_EL1_t aa64dfr = register_ID_AA64DFR0_EL1_read();
+	ID_AA64DFR0_EL1_t aa64dfr0 = register_ID_AA64DFR0_EL1_read();
+	ID_AA64DFR1_EL1_t aa64dfr1 = register_ID_AA64DFR1_EL1_read();
 
 	// Debug version must be between ARMv8.0 (6) and ARMv8.4 (9)
-	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr) >= 6U);
-	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr) <= 9U);
+	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr0) >= 6U);
+	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr0) <= 9U);
+
+	uint8_t num_brps, num_wrps;
+
+	if (ID_AA64DFR1_EL1_get_BRPs(&aa64dfr1) == 0U) {
+		num_brps = ID_AA64DFR0_EL1_get_BRPs(&aa64dfr0) + 1U;
+	} else {
+		num_brps = ID_AA64DFR1_EL1_get_BRPs(&aa64dfr1) + 1U;
+	}
+
+	if (ID_AA64DFR1_EL1_get_WRPs(&aa64dfr1) == 0U) {
+		num_wrps = ID_AA64DFR0_EL1_get_WRPs(&aa64dfr0) + 1U;
+	} else {
+		num_wrps = ID_AA64DFR1_EL1_get_WRPs(&aa64dfr1) + 1U;
+	}
 
 	// Supported breakpoint and watchpoint counts must be correct
-	assert((ID_AA64DFR0_EL1_get_BRPs(&aa64dfr) + 1U) == CPU_DEBUG_BP_COUNT);
-	assert((ID_AA64DFR0_EL1_get_WRPs(&aa64dfr) + 1U) == CPU_DEBUG_WP_COUNT);
+	assert(num_brps == CPU_DEBUG_BP_COUNT);
+	assert(num_wrps == CPU_DEBUG_WP_COUNT);
 }
 
 void
