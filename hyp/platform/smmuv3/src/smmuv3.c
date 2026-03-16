@@ -913,7 +913,7 @@ smmuv3_init_queues(void) REQUIRE_SMMUV3_REGS_LOCK
 	smmu_v3.cmd_queue.head	  = 0U;
 	smmu_v3.cmd_queue.tail	  = 0U;
 	smmu_v3.cmd_queue.len	  = SMMU_V3_CMDQ_LEN;
-	smmu_v3.cmd_queue.log2len = SMMU_V3_QUEUE_SHIFT;
+	smmu_v3.cmd_queue.log2len = SMMU_V3_CMDQ_SHIFT;
 
 	// Set up the event queue
 	smmu_v3.event_queue.queue =
@@ -924,12 +924,12 @@ smmuv3_init_queues(void) REQUIRE_SMMUV3_REGS_LOCK
 	smmu_v3.event_queue.head     = 0U;
 	smmu_v3.event_queue.tail     = 0U;
 	smmu_v3.event_queue.len	     = SMMU_V3_EVENTQ_LEN;
-	smmu_v3.event_queue.log2len  = SMMU_V3_QUEUE_SHIFT;
+	smmu_v3.event_queue.log2len  = SMMU_V3_EVENTQ_SHIFT;
 	smmu_v3.event_queue.overflow = false;
 
 	// Command Queue
 	SMMU_V3_CMDQ_BASE_t cmdq_base = SMMU_V3_CMDQ_BASE_default();
-	SMMU_V3_CMDQ_BASE_set_LOG2SIZE(&cmdq_base, SMMU_V3_QUEUE_SHIFT);
+	SMMU_V3_CMDQ_BASE_set_LOG2SIZE(&cmdq_base, SMMU_V3_CMDQ_SHIFT);
 	SMMU_V3_CMDQ_BASE_set_ADDR(&cmdq_base,
 				   smmu_v3.cmd_queue.phys >>
 					   SMMU_V3_CMDQ_BASE_ADDR_SHIFT);
@@ -946,7 +946,7 @@ smmuv3_init_queues(void) REQUIRE_SMMUV3_REGS_LOCK
 
 	// Event Queue
 	SMMU_V3_EVENTQ_BASE_t eventq_base = SMMU_V3_EVENTQ_BASE_default();
-	SMMU_V3_EVENTQ_BASE_set_LOG2SIZE(&eventq_base, SMMU_V3_QUEUE_SHIFT);
+	SMMU_V3_EVENTQ_BASE_set_LOG2SIZE(&eventq_base, SMMU_V3_EVENTQ_SHIFT);
 	SMMU_V3_EVENTQ_BASE_set_ADDR(&eventq_base,
 				     smmu_v3.event_queue.phys >>
 					     SMMU_V3_EVENTQ_BASE_ADDR_SHIFT);

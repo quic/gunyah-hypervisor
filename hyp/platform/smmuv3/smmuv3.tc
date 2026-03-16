@@ -9,9 +9,10 @@
 // We can make it larger later. We chose this.
 // It needs to be less than the HW limit. On FVP the HW limit is 8k.
 // Needs to be a power of 2.
-define SMMU_V3_QUEUE_SHIFT constant uint8 = 7;
-define SMMU_V3_CMDQ_LEN constant uint8 = (1 << SMMU_V3_QUEUE_SHIFT);
-define SMMU_V3_EVENTQ_LEN constant uint8 = (1 << SMMU_V3_QUEUE_SHIFT);
+define SMMU_V3_CMDQ_SHIFT constant uint8 = 7;
+define SMMU_V3_EVENTQ_SHIFT constant uint8 = 7;
+define SMMU_V3_CMDQ_LEN constant uint8 = (1 << SMMU_V3_CMDQ_SHIFT);
+define SMMU_V3_EVENTQ_LEN constant uint8 = (1 << SMMU_V3_EVENTQ_SHIFT);
 define SMMU_V3_QUEUE_MIN_ALIGN constant uint8 = 32;
 
 // Stream table Split min/max - allowed values are 6,8,10
