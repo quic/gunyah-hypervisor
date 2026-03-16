@@ -142,6 +142,11 @@ smmuv3_handle_boot_cold_init(cpu_index_t boot_cpu_index)
 		atomic_load_relaxed(&smmu_v3.regs->smmu_page0.aidr);
 	assert(SMMU_V3_AIDR_get_ArchMajorRev(&aidr) == SMMU_V3_MAJOR_REV);
 	assert(SMMU_V3_AIDR_get_ArchMinorRev(&aidr) == SMMU_V3_MINOR_REV);
+
+	SMMU_V3_IDR1_t idr1 =
+		atomic_load_relaxed(&smmu_v3.regs->smmu_page0.idr1);
+	assert(SMMU_V3_IDR1_get_CMDQS(&idr1) >= SMMU_V3_CMDQ_SHIFT);
+	assert(SMMU_V3_IDR1_get_EVENTQS(&idr1) >= SMMU_V3_EVENTQ_SHIFT);
 	smmuv3_regs_unlock();
 
 	// Setup the stream ranges map.

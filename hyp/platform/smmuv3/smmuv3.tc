@@ -44,6 +44,7 @@ define smmu_v3_regs structure(aligned(SMMU_V3_PAGE_SIZE)) {
 // TCU page 0 registers
 define smmu_v3_page0 structure(aligned(SMMU_V3_PAGE_SIZE)) {
 	idr0		@ 0x0000	bitfield SMMU_V3_IDR0(atomic);
+	idr1		@ 0x0004	bitfield SMMU_V3_IDR1(atomic);
 	iidr		@ 0x0018	bitfield SMMU_V3_IIDR(atomic);
 	aidr		@ 0x001C	bitfield SMMU_V3_AIDR(atomic);
 
