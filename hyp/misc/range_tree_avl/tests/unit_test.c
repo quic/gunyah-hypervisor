@@ -24,37 +24,7 @@
 #include "helpers.h"
 #include "plookups.h"
 #include "stub.h"
-
-#define TEST_BEGIN(name)                                                       \
-	do {                                                                   \
-		test_failed = false;                                           \
-		printf("TEST: %s...\n", name);                                 \
-	} while (0)
-
-#define TEST_ASSERT(condition, message)                                        \
-	do {                                                                   \
-		if (condition) {                                               \
-			printf("✓ PASS: %s\n", message);                       \
-			++asserts_passed;                                      \
-		} else {                                                       \
-			printf("✗ FAIL: %s\n", message);                       \
-			++asserts_failed;                                      \
-			test_failed = true;                                    \
-		}                                                              \
-	} while (0)
-
-#define TEST_FAIL(message) TEST_ASSERT(false, message)
-
-#define TEST_END()                                                             \
-	do {                                                                   \
-		if (test_failed) {                                             \
-			printf("FAILED\n\n");                                  \
-			++tests_failed;                                        \
-		} else {                                                       \
-			printf("PASSED\n\n");                                  \
-			++tests_passed;                                        \
-		}                                                              \
-	} while (0)
+#include "unit_test_common.h"
 
 #define NR_MAX_NODES	 0xFFFFF
 #define NR_BASE_OFFSETS	 3
@@ -74,12 +44,6 @@ typedef struct plookups_args {
 	size_t		       size;
 	plookups_fail_counts_t counters;
 } plookups_args_t;
-
-static bool   test_failed    = false;
-static size_t tests_passed   = 0;
-static size_t tests_failed   = 0;
-static size_t asserts_passed = 0;
-static size_t asserts_failed = 0;
 
 void
 trigger_range_tree_release_node_event(range_tree_node_type_t type,
@@ -869,7 +833,7 @@ test_split_at_valid_point(void)
 int
 main(void)
 {
-	printf("=== Range Tree Unit Tests ===\n\n");
+	unit_test_prologue("Range Tree Unit Tests");
 
 	test_rotation_counters_increment();
 	test_parallel_lookup_during_left_or_right_rotation();
@@ -877,22 +841,5 @@ main(void)
 	test_split_at_invalid_point();
 	test_split_at_valid_point();
 
-	printf("=== Asserts Summary ===\n");
-	printf("Asserts passed: %zu\n", asserts_passed);
-	printf("Asserts failed: %zu\n", asserts_failed);
-	printf("Total:  %zu\n\n", asserts_passed + asserts_failed);
-
-	printf("=== Tests Summary ===\n");
-	printf("Tests passed: %zu\n", tests_passed);
-	printf("Tests failed: %zu\n", tests_failed);
-	printf("Total:  %zu\n\n", tests_passed + tests_failed);
-
-	if (asserts_failed == 0) {
-		printf("SUCCESS: All unit tests completed successfully!\n");
-		return EXIT_SUCCESS;
-	} else {
-		printf("FAILURE: %zu asserts(s) and %zu test(s) failed.\n",
-		       asserts_failed, tests_failed);
-		return EXIT_FAILURE;
-	}
+	return unit_test_epilogue();
 }

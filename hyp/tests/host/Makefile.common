@@ -1,0 +1,87 @@
+# Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Common Makefile fragment for host-based unit tests.
+#
+# Include this from a module-specific Makefile after setting:
+#   COMMON_TEST_DIR  - path to this directory (hyp/tests/host), relative to
+#                      the directory where make is invoked
+#   GUNYAH_BUILD     - path to the Gunyah build output directory (must contain
+#                      include/hyptypes.h and autogen/core/base/src/)
+#
+# Optional variables (set before including this file to customise the build):
+#   MODULE_INCLUDES  - additional -I flags for module-specific headers
+#   MODULE_DEFS      - additional -D flags for module-specific defines
+
+ARCH := $(shell uname -m)
+CC   := clang
+OPTFLAGS ?= -O1
+DBGFLAGS ?= -g
+
+# Resolve all paths to absolute so the Makefile works regardless of the
+# directory from which make is invoked.
+COMMON_TEST_DIR := $(abspath $(COMMON_TEST_DIR))
+GUNYAH_BUILD    := $(abspath $(GUNYAH_BUILD))
+HYP_ROOT        := $(abspath $(COMMON_TEST_DIR)/../..)
+
+COMMON_INCLUDES  := -I$(GUNYAH_BUILD)/include
+COMMON_INCLUDES  += -I$(GUNYAH_BUILD)/events/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/interfaces/base/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/interfaces/spinlock/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/interfaces/util/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/interfaces/platform/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/interfaces/rcu/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/arch/armv8/include
+COMMON_INCLUDES  += -I$(HYP_ROOT)/arch/generic/include
+COMMON_INCLUDES  += -I$(COMMON_TEST_DIR)
+COMMON_INCLUDES  += -imacros $(HYP_ROOT)/interfaces/util/include/attributes.h
+COMMON_INCLUDES  += -imacros $(HYP_ROOT)/core/spinlock_ticket/include/spinlock_attrs.h
+COMMON_INCLUDES  += -imacros $(HYP_ROOT)/core/preempt/include/preempt_attrs.h
+COMMON_INCLUDES  += -imacros $(HYP_ROOT)/interfaces/rcu/include/rcu_attrs.h
+
+COMMON_DEFS := -DHOST_TEST
+COMMON_DEFS += -DHYP_STANDALONE_TEST
+COMMON_DEFS += -DVERBOSE=1
+
+ifeq ($(ARCH),x86_64)
+	ARCH_FLAGS := --target=x86_64-linux-gnu -m64 -mcx16
+else ifeq ($(ARCH),aarch64)
+	ARCH_FLAGS := --target=aarch64-linux-gnu
+else
+	$(error Unsupported architecture: $(ARCH))
+endif
+
+CFLAGS := $(ARCH_FLAGS)
+CFLAGS += -std=gnu18
+CFLAGS += $(OPTFLAGS)
+CFLAGS += $(DBGFLAGS)
+CFLAGS += -Wall -Werror -Wno-gcc-compat -Wno-gnu-alignof-expression -Wthread-safety
+CFLAGS += -ffunction-sections -fdata-sections
+CFLAGS += -fsanitize=address -fno-omit-frame-pointer
+CFLAGS += $(COMMON_INCLUDES)
+CFLAGS += $(COMMON_DEFS)
+CFLAGS += $(MODULE_INCLUDES)
+CFLAGS += $(MODULE_DEFS)
+
+# C++ flags: same as CFLAGS but with the C standard replaced by C++17.
+CXXFLAGS := $(filter-out -std=gnu18,$(CFLAGS)) -std=gnu++17
+
+LDFLAGS := -lstdc++ -lpthread
+
+# Common source files providing stubs for hypervisor primitives
+# (spinlocks, RCU, panic), parallel-thread test utilities, and the
+# unit-test framework (counter definitions + epilogue function).
+COMMON_SRC := $(COMMON_TEST_DIR)/stub.c \
+              $(COMMON_TEST_DIR)/plookups.c \
+              $(COMMON_TEST_DIR)/mem_manager.cpp \
+              $(COMMON_TEST_DIR)/unit_test_common.c \
+              $(GUNYAH_BUILD)/autogen/core/base/src/accessors.c \
+              $(GUNYAH_BUILD)/autogen/core/base/src/hypresult.c
+COMMON_OBJ := $(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(COMMON_SRC)))
+
+.c.o:
+	$(CC) $(CFLAGS) -c $< -o $@
+
+.cpp.o:
+	$(CC) $(CXXFLAGS) -c $< -o $@

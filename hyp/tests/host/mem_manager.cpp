@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <map>

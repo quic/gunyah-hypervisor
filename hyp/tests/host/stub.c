@@ -17,28 +17,6 @@
 #include "mem_manager.h"
 #include "stub.h"
 
-// Assume test is for 64 bit
-// Fake physical memory region up to 48 bit, each time, the allocated physical
-// address will not return, so when it's used up all 48 bit physical memory,
-// allocation pmem will be failed
-#define MAX_PMEM_ADDR (0xFFFFFFFFFFFF)
-
-// assume test is for 4K
-#define P4K_SHIFT (12)
-#define P4K_MASK  ((1 << 12) - 1)
-
-#define CUR_MASK  P4K_MASK
-#define CUR_SHIFT P4K_SHIFT
-#define CUR_PG_SZ (1 << CUR_SHIFT)
-
-#define ROUND_UP_SZ(sz) ((sz + CUR_PG_SZ - 1) & (~CUR_MASK))
-
-#define MAX_NR_SPINLOCKS 8
-
-pthread_spinlock_t pthread_spinlocks[MAX_NR_SPINLOCKS];
-spinlock_t	  *gunyah_spinlocks[MAX_NR_SPINLOCKS];
-size_t		   nr_spinlocks;
-
 #if !defined(NDEBUG)
 noreturn void
 assert_failed(const char *file, int line, const char *func, const char *err)
@@ -58,6 +36,10 @@ panic(const char *msg)
 	exit(-1);
 }
 
+// =========================================================================
+// RCU handling stubs
+// =========================================================================
+
 void
 rcu_read_start(void) LOCK_IMPL
 {
@@ -67,6 +49,14 @@ void
 rcu_read_finish(void) LOCK_IMPL
 {
 }
+
+// =========================================================================
+// Spinlock handling stubs
+// =========================================================================
+
+pthread_spinlock_t pthread_spinlocks[MAX_NR_SPINLOCKS];
+spinlock_t	  *gunyah_spinlocks[MAX_NR_SPINLOCKS];
+size_t		   nr_spinlocks;
 
 static int
 spinlocks_find_index(spinlock_t *spinlocks[], size_t spinlocks_size,
@@ -101,7 +91,7 @@ spinlock_init(spinlock_t *spinlock)
 }
 
 void
-spinlock_acquire(spinlock_t *spinlock)
+spinlock_acquire(spinlock_t *spinlock) LOCK_IMPL
 {
 	if (spinlock == NULL) {
 		panic("NULL spinlock in acquire");
@@ -117,13 +107,13 @@ spinlock_acquire(spinlock_t *spinlock)
 }
 
 void
-spinlock_acquire_nopreempt(spinlock_t *spinlock)
+spinlock_acquire_nopreempt(spinlock_t *spinlock) LOCK_IMPL
 {
 	spinlock_acquire(spinlock);
 }
 
 void
-spinlock_release(spinlock_t *spinlock)
+spinlock_release(spinlock_t *spinlock) LOCK_IMPL
 {
 	if (spinlock == NULL) {
 		panic("NULL spinlock in release");
@@ -139,7 +129,7 @@ spinlock_release(spinlock_t *spinlock)
 }
 
 void
-spinlock_release_nopreempt(spinlock_t *spinlock)
+spinlock_release_nopreempt(spinlock_t *spinlock) LOCK_IMPL
 {
 	spinlock_release(spinlock);
 }
