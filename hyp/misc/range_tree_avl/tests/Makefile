@@ -4,6 +4,8 @@
 
 ARCH=$(shell uname -m)
 CC=clang
+OPTFLAGS ?= -O1
+DBGFLAGS ?= -g
 
 GENERAL_INCLUDES=-I../../../interfaces/range_tree/include
 GENERAL_INCLUDES+=-I$(GUNYAH_BUILD)/include
@@ -33,7 +35,9 @@ else ifeq ($(ARCH),aarch64)
 else
 	$(error Unsupported architecture: $(ARCH))
 endif
-CFLAGS+=-std=gnu18 -O1 -g
+CFLAGS+=-std=gnu18
+CFLAGS+=$(OPTFLAGS)
+CFLAGS+=$(DBGFLAGS)
 CFLAGS+=-Wall -Werror -Wno-gcc-compat -Wno-gnu-alignof-expression
 CFLAGS+=-ffunction-sections -fdata-sections
 CFLAGS+=-fsanitize=address -fno-omit-frame-pointer
