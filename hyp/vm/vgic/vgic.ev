@@ -101,6 +101,8 @@ subscribe vdevice_access_fixed_addr
 	// device-kind tracking for vdevices
 	priority 1
 
+subscribe vdevice_trigger_msi[VDEVICE_TYPE_VGIC_GICD](vdevice, offset, value)
+
 subscribe vcpu_trap_sysreg_read
 
 subscribe vcpu_trap_sysreg_write

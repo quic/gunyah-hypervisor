@@ -1746,6 +1746,29 @@ vgic_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 	return ret;
 }
 
+error_t
+vgic_handle_vdevice_trigger_msi(vdevice_t *vdevice, size_t offset,
+				uint32_t message)
+{
+	assert(vdevice != NULL);
+	vic_t *vic = vic_container_of_gicd_device(vdevice);
+
+	error_t ret;
+
+	if (offset == offsetof(gicd_t, setspi_nsr)) {
+		vgic_gicd_change_irq_pending(
+			vic,
+			GICD_CLRSPI_SETSPI_NSR_SR_get_INTID(
+				&GICD_CLRSPI_SETSPI_NSR_SR_cast(message)),
+			true, true);
+		ret = OK;
+	} else {
+		ret = ERROR_ADDR_INVALID;
+	}
+
+	return ret;
+}
+
 #if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
 error_t
 vic_dispatch_msi(vic_t *vic, vmaddr_t mailbox, uint32_t message,
