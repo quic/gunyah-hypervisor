@@ -99,12 +99,6 @@ vgic_handle_object_create_vic(vic_create_t vic_create)
 	// as the hardware
 	vic->mpidr_mapping = platform_cpu_get_mpidr_mapping();
 
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-	// If not configured otherwise, assume the GICD base address is the same
-	// as the physical GIC's
-	vic->gicd_base = PLATFORM_GICD_BASE;
-#endif
-
 	return OK;
 }
 
@@ -289,10 +283,6 @@ vgic_handle_addrspace_attach_vdevice(addrspace_t *addrspace,
 		if (err != OK) {
 			goto out_locked;
 		}
-
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-		vic_r.r->gicd_base = vbase;
-#endif
 	} else {
 		// Attaching GICR registers for a specific VCPU.
 		if (!vgic_gicr_attach_flags_is_clean(flags.vgic_gicr)) {
@@ -1181,9 +1171,6 @@ vgic_handle_rootvm_init_late(thread_t		  *root_thread,
 				  hyp_env->gicd_base, sizeof(gicd_t)) != OK) {
 		panic("vgic rootvm_init_late: unable to map GICD\n");
 	}
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-	root_vic->gicd_base = hyp_env->gicd_base;
-#endif
 
 	rcu_read_start();
 	for (index_t i = 0U; i < root_vic->gicr_count; i++) {

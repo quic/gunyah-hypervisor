@@ -131,29 +131,3 @@ vic_unbind(virq_source_t *source);
 void
 vic_unbind_sync(virq_source_t *source) EXCLUDE_RCU_READ
 EXCLUDE_PREEMPT_DISABLED;
-
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-// Dispatch a message-signalled interrupt sent by a virtual device.
-//
-// The mailbox argument is the address that the virtual device has been
-// programmed to write to. Typically the VIC will require this to be a specific
-// register address, and will return ERROR_ADDR_INVALID if it is anything else.
-//
-// The message argument is the data word that the virtual device has been
-// programmed to write to the mailbox address. Depending on the mailbox
-// semantics, this might be either an IRQ number, an event number that is
-// indirectly mapped to an IRQ number, or ignored.
-//
-// The device_id argument is a platform-specific identifier for the source
-// device, which would be signalled out of band by the bus controller on real
-// hardware. The VIC may either ignore it, or use it along with the message
-// word to map the MSI to an IRQ number.
-//
-// This function returns OK if the VIC has either delivered the MSI as an IRQ,
-// recorded the delivery of the MSI internally, or ignored the MSI to be
-// compatible with the emulated hardware behaviour. It may return any error code
-// if the MSI write should raise a fault.
-error_t
-vic_dispatch_msi(vic_t *vic, vmaddr_t mailbox, uint32_t message,
-		 index_t device_id);
-#endif // VIC_VIRTUAL_MSI

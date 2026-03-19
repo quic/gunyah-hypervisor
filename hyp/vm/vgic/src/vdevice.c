@@ -1768,26 +1768,3 @@ vgic_handle_vdevice_trigger_msi(vdevice_t *vdevice, size_t offset,
 
 	return ret;
 }
-
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-error_t
-vic_dispatch_msi(vic_t *vic, vmaddr_t mailbox, uint32_t message,
-		 index_t device_id)
-{
-	error_t err;
-
-	if (mailbox == (vic->gicd_base + offsetof(gicd_t, setspi_nsr))) {
-		(void)device_id;
-		vgic_gicd_change_irq_pending(
-			vic,
-			GICD_CLRSPI_SETSPI_NSR_SR_get_INTID(
-				&GICD_CLRSPI_SETSPI_NSR_SR_cast(message)),
-			true, true);
-		err = OK;
-	} else {
-		err = ERROR_ADDR_INVALID;
-	}
-
-	return err;
-}
-#endif

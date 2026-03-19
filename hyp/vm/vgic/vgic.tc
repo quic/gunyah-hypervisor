@@ -331,9 +331,6 @@ extend vic object {
 	// type is set to VDEVICE_TYPE_NONE, it has not been mapped. Mapping
 	// is protected by the gicd lock.
 	gicd_device		structure vdevice(contained);
-#if defined(VIC_VIRTUAL_MSI) && VIC_VIRTUAL_MSI
-	gicd_base		type vmaddr_t;
-#endif
 
 	// The current values of the virtual GICD_CTLR and GICD_STATUSR.
 	// Updates are serialised by gicd_lock, but GICD_CTLR is atomic so we
