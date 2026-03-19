@@ -16,6 +16,7 @@
 
 #include <events/vdevice.h>
 
+#include "event_handlers.h"
 #include "internal.h"
 
 vcpu_trap_result_t
@@ -102,5 +103,33 @@ vdevice_access_ipa(vmaddr_t ipa, size_t size, register_t *val, bool is_write)
 							      is_write);
 	}
 
+	return ret;
+}
+
+error_t
+vdevice_handle_addrspace_trigger_msi(addrspace_t *addrspace, vmaddr_t mailbox,
+				     uint32_t message, index_t device_id)
+{
+	error_t ret;
+
+	rcu_read_start();
+	range_tree_lookup_result_t lookup_ret = range_tree_lookup(
+		&addrspace->vdevice_tree, mailbox, sizeof(uint32_t));
+
+	if ((lookup_ret.node == NULL) ||
+	    (lookup_ret.size != sizeof(uint32_t))) {
+		ret = ERROR_ADDR_INVALID;
+		goto out;
+	}
+
+	vdevice_t *vdevice = vdevice_container_of_range(lookup_ret.node);
+	assert_debug(vdevice != NULL);
+
+	ret = trigger_vdevice_trigger_msi_event(vdevice->type, vdevice,
+						mailbox - vdevice->range.base,
+						message, device_id);
+
+out:
+	rcu_read_finish();
 	return ret;
 }

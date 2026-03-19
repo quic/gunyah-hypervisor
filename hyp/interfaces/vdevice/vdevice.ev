@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -19,3 +19,27 @@ selector_event vdevice_access
 	param value:		register_t *
 	param is_write:		bool
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
+
+// Simulate an MSI write to a registered vdevice at the given offset.
+//
+// This is a special case of vdevice_access, but is triggered and handled
+// separately from vdevice_access for three reasons:
+//
+// 1. It may be invoked by an untrusted VMM from userspace, and therefore must
+// ignore or reject any write that may affect the VM in any way other than
+// asserting an interrupt.
+//
+// 2. It is invoked from a virtual device operation, either internally in the
+// hypervisor or from the VMM via a hypercall, so its result is a regular
+// error value rather than a trap result. It will always either succeed or
+// fault, and cannot fall through to another handler or be retried.
+//
+// 3 Since only MSI accesses need to be handled, it can act as a fast path
+// for MSI delivery.
+selector_event vdevice_trigger_msi
+	selector type:		vdevice_type_t
+	param vdevice:		vdevice_t *
+	param offset:		size_t
+	param value:		uint32_t
+	param device_id:	index_t
+	return: error_t = ERROR_UNIMPLEMENTED

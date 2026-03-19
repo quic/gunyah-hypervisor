@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -8,3 +8,5 @@ subscribe object_create_addrspace
 	unwinder
 
 subscribe object_cleanup_addrspace(addrspace)
+
+subscribe addrspace_trigger_msi
