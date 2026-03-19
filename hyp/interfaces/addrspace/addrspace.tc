@@ -10,6 +10,7 @@ extend cap_rights_addrspace bitfield {
 	4	map_protected		bool;
 	5	modify_protected	bool;
 	6	add_info		bool;
+	7	trigger_msi		bool;
 };
 
 define addrspace_map_flags public bitfield<32> {

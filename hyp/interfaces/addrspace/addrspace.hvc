@@ -150,3 +150,13 @@ define addrspace_info_area_get_entry hypercall {
 	size		output size;
 	type		output bitfield addrspace_info_area_entry_type;
 };
+
+define addrspace_trigger_msi hypercall {
+	call_num	0x93;
+	addrspace	input type cap_id_t;
+	mailbox		input type vmaddr_t;
+	message		input uint32;
+	device_id	input type index_t;
+	res0		input uregister;
+	error		output enumeration error;
+};

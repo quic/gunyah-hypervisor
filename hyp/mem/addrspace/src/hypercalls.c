@@ -737,3 +737,31 @@ out_ref:
 out:
 	return err;
 }
+
+error_t
+hypercall_addrspace_trigger_msi(cap_id_t addrspace_cap, vmaddr_t mailbox,
+				uint32_t message, index_t device_id)
+{
+	error_t	  err;
+	cspace_t *cspace = cspace_get_self();
+
+	addrspace_ptr_result_t o = cspace_lookup_addrspace_any(
+		cspace, addrspace_cap, CAP_RIGHTS_ADDRSPACE_TRIGGER_MSI);
+	if (compiler_unexpected(o.e != OK)) {
+		err = o.e;
+		goto out;
+	}
+
+	addrspace_t *as = o.r;
+
+	// Note: we trigger the event directly here instead of calling the
+	// addrspace_trigger_msi() wrapper because the event does not trust its
+	// input, but the wrapper does: it will fall back to accessing memory
+	// if the event fails and the mailbox has a S2 mapping.
+	err = trigger_addrspace_trigger_msi_event(as, mailbox, message,
+						  device_id);
+
+	object_put_addrspace(as);
+out:
+	return err;
+}
