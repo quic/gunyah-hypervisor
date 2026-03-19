@@ -7,9 +7,9 @@
 
 #include <hypcontainers.h>
 
+#include <addrspace.h>
 #include <atomic.h>
 #include <util.h>
-#include <vic.h>
 #include <virq.h>
 #include <vpci.h>
 
@@ -204,10 +204,8 @@ vpci_dispatch_msi(vpci_function_t *function, vmaddr_t mailbox, uint32_t message)
 	assert(bus != NULL);
 	index_t device_id = vpci_msi_device_id(bus, device, function);
 
-	vic_t *vic = bus->vic;
-	assert(vic != NULL);
-
-	error_t err = vic_dispatch_msi(vic, mailbox, message, device_id);
+	error_t err = addrspace_trigger_msi(bus->addrspace, mailbox, message,
+					    device_id);
 	if (err != OK) {
 		vpci_error_from_requester(&bus->bridge_fn0, function, err);
 	}
