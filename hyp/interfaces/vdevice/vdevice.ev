@@ -4,6 +4,12 @@
 
 interface vdevice
 
+// Simulate a read from or write to a fixed vdevice at the given IPA.
+//
+// Any new handling of this event is deprecated. It should only be handled for
+// backwards compatibility with platform-specific VMs, which formerly assumed
+// certain virtual devices (e.g. the GIC) to be placed at an IPA matching the
+// PA of the underlying physical device.
 handled_event vdevice_access_fixed_addr
 	param ipa:		vmaddr_t
 	param access_size:	size_t
@@ -11,6 +17,13 @@ handled_event vdevice_access_fixed_addr
 	param is_write:		bool
 	return: vcpu_trap_result_t = VCPU_TRAP_RESULT_UNHANDLED
 
+// Simulate a read from or write to a registered vdevice at the given offset.
+//
+// A vdevice may be registered either for an IPA range with no S2 mapping,
+// or for a physical memory extent that is mapped read-only or no-access in
+// S2. In the former case, the offset is relative to the start of the IPA
+// range; in the latter case, it is relative to the base address of the memory
+// extent object.
 selector_event vdevice_access
 	selector type:		vdevice_type_t
 	param vdevice:		vdevice_t *
