@@ -222,3 +222,32 @@ addrspace_info_area_get_data_addr(addrspace_t *addrspace, size_t offset);
 void
 addrspace_enable_info_area(addrspace_info_area_entry_t	   *descriptor,
 			   addrspace_info_area_entry_type_t type);
+
+// Simulate a virtual MSI write.
+//
+// This is a 32-bit write of an arbitrary value to an arbitrary address in the
+// address space. It may be routed either to a virtual device, or to a real
+// mapping in the address space.
+//
+// Any write that would be permitted for a kernel mode access by a VCPU
+// attached to this address space may also be permitted by this function;
+// therefore, the caller must only pass an address that has been explicitly
+// programmed by a VCPU. For example, for a virtual PCIe endpoint, the address
+// must come from the endpoint's emulated MSI-X table.
+//
+// Note that event handlers and the hypercall of the same name only permit
+// writes that actually assert MSIs, not arbitrary writes. That restriction is
+// necessary to prevent an untrusted VMM interfering with a protected VM, but
+// cannot be applied to hypervisor-backed devices because certain kernel
+// drivers assume that MSIs can write to normal memory (notably the Linux
+// SMMUv3 driver). Support for writing to addresses other than MSI mailboxes
+// is implemented only in this function, which is not called by the hypercall.
+//
+// Some IRQ controllers allow MSI writes to be tagged with out-of-band data
+// identifying the source device; for example, this is supported by the GIC
+// ITS. The device_id parameter may be set to a value that is not controllable
+// by the VM, to emulate this behaviour. If no device ID is defined, it should
+// be set to ~0U.
+error_t
+addrspace_trigger_msi(addrspace_t *addrspace, vmaddr_t mailbox,
+		      uint32_t message, index_t device_id);

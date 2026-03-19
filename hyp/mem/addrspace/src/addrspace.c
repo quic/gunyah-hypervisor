@@ -43,6 +43,7 @@
 #include <asm/cpu.h>
 
 #include "event_handlers.h"
+#include "useraccess.h"
 
 // FIXME: This file contains architecture specific details and should be
 // refactored.
@@ -1144,3 +1145,32 @@ addrspace_handle_rcu_update(rcu_entry_t *entry)
 	return rcu_update_status_default();
 }
 #endif
+
+error_t
+addrspace_trigger_msi(addrspace_t *addrspace, vmaddr_t mailbox,
+		      uint32_t message, index_t device_id)
+{
+	error_t ret;
+
+	// First, attempt the MSI trigger fast path. This should only succeed
+	// if the write is to an MSI mailbox register.
+	if (trigger_addrspace_trigger_msi_event(addrspace, mailbox, message,
+						device_id) == OK) {
+		ret = OK;
+		goto out;
+	}
+
+	// At this point we could try a regular vdevice access, but we don't
+	// have a use case that requires it and the vdevice module does not
+	// expose the necessary API.
+	//
+	// Fall back to useraccess, to attempt to write the MSI to normal
+	// memory. Linux uses this in its SMMUv3 driver.
+	ret = useraccess_copy_to_guest_ipa(addrspace, mailbox, sizeof(uint32_t),
+					   &message, sizeof(message), false,
+					   false)
+		      .e;
+
+out:
+	return ret;
+}

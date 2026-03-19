@@ -40,3 +40,16 @@ handled_event addrspace_attach_vdevice
 	param size: size_t
 	param flags: addrspace_attach_vdevice_flags_t
 	return: error_t = ERROR_CSPACE_WRONG_OBJECT_TYPE
+
+// Simulate a virtual MSI write.
+//
+// Note that handlers for this event _must_ only handle writes to MSI mailbox
+// registers, not to other registers or normal memory. This event may be
+// triggered with an arbitrary mailbox address and message by any userspace
+// VMM that has the MSI_TRIGGER right on the address space.
+handled_event addrspace_trigger_msi
+	param addrspace: addrspace_t *
+	param mailbox: vmaddr_t
+	param message: uint32_t
+	param device_id: index_t
+	return: error_t = ERROR_UNIMPLEMENTED
