@@ -38,7 +38,7 @@ endif
 CFLAGS+=-std=gnu18
 CFLAGS+=$(OPTFLAGS)
 CFLAGS+=$(DBGFLAGS)
-CFLAGS+=-Wall -Werror -Wno-gcc-compat -Wno-gnu-alignof-expression
+CFLAGS+=-Wall -Werror -Wno-gcc-compat -Wno-gnu-alignof-expression -Wthread-safety
 CFLAGS+=-ffunction-sections -fdata-sections
 CFLAGS+=-fsanitize=address -fno-omit-frame-pointer
 CFLAGS+=$(GENERAL_INCLUDES)

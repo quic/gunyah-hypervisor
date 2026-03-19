@@ -137,7 +137,9 @@ run_init(const char *args)
 
 	node_array = calloc(node_count, sizeof(node_array[0]));
 	if (node_array == NULL) {
+		range_tree_lock(&tree);
 		range_tree_destroy(&tree, RANGE_TREE_NODE_TYPE_NONE);
+		range_tree_unlock(&tree);
 		return false;
 	}
 
@@ -157,7 +159,9 @@ run_insert(const char *args)
 	assert(node_index < node_count);
 	range_tree_node_t *node = &node_array[node_index];
 
+	range_tree_lock(&tree);
 	error_t err = range_tree_insert(&tree, node, base, size);
+	range_tree_unlock(&tree);
 	if (err != OK) {
 		if (expect_success) {
 			printf("insert failed: base(%#lx) size(%zu) -> err(%d)\n",
@@ -184,7 +188,9 @@ run_remove(const char *args)
 	assert(node_index < node_count);
 	range_tree_node_t *node = &node_array[node_index];
 
+	range_tree_lock(&tree);
 	error_t err = range_tree_remove(&tree, node);
+	range_tree_unlock(&tree);
 	if (err != OK) {
 		printf("remove failed: err(%d)\n", err);
 		return false;
@@ -203,8 +209,10 @@ run_lookup(const char *args)
 	sscanf(args, "%u %zx %zx %i", &action, &base, &expect_size,
 	       &expect_index);
 
+	rcu_read_start();
 	range_tree_lookup_result_t ret =
 		range_tree_lookup(&tree, base, SIZE_MAX);
+	rcu_read_finish();
 
 	if ((ret.node == NULL) && (expect_index != -1)) {
 		printf("lookup failed: base(%#lx), size %#zx -> NULL, size %#zx\n",
@@ -241,7 +249,9 @@ run_next_node(const char *args)
 
 	sscanf(args, "%u %zx %i", &action, &start, &expect_index);
 
+	rcu_read_start();
 	range_tree_node_t *ret = range_tree_next_node(&tree, start);
+	rcu_read_finish();
 
 	if ((ret == NULL) && (expect_index != -1)) {
 		printf("next_node failed: start(%#lx) -> NULL\n", start);
