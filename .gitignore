@@ -1,6 +1,7 @@
 # Ignore every file not explicitly included below
 *
 !*/
+/build*/
 
 # Build system configuration
 !*.conf
