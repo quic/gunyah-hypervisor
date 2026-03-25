@@ -46,7 +46,7 @@ CFLAGS+=$(GENERAL_DEFS)
 
 LDFLAGS=-lstdc++ -lpthread
 
-ROOTSRC=../src/range_tree_avl.c ./stub.c ./plookups.c \
+ROOTSRC=../src/range_tree_avl.c ./stub.c ./plookups.c ./helpers.c \
 	$(GUNYAH_BUILD)/autogen/core/base/src/accessors.c \
 	$(GUNYAH_BUILD)/autogen/core/base/src/hypresult.c
 ROOTOBJ=$(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(ROOTSRC)))
