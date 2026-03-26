@@ -1556,7 +1556,7 @@ vpm_system_wakeup(vpm_group_t *vpm_group)
 		err = ERROR_DENIED;
 		goto out;
 	}
-	wakeup_vcpu = object_get_thread_additional(wakeup_vcpu);
+	(void)object_get_thread_additional(wakeup_vcpu);
 	rcu_read_finish();
 
 	(void)scheduler_unblock(wakeup_vcpu,
