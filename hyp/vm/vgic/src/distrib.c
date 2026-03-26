@@ -60,7 +60,7 @@
 #include "gicv3_its.h"
 #include "internal.h"
 #include "useraccess.h"
-#include "vgic.h"
+#include "vgic_gicr.h"
 #include "vic_base.h"
 
 error_t

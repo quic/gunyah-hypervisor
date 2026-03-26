@@ -27,7 +27,7 @@
 #include "event_handlers.h"
 #include "gicv3.h"
 #include "internal.h"
-#include "vgic.h"
+#include "vgic_gicr.h"
 
 // Qualcomm's JEP106 identifier is 0x70, with no continuation bytes. This is
 // used in the virtual GICD_IIDR and GICR_IIDR.

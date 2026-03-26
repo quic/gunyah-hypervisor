@@ -18,7 +18,7 @@
 #include <util.h>
 
 #include "gicv3_its.h"
-#include "vgic.h"
+#include "vgic_gicr.h"
 #include "vgic_its_base.h"
 
 // Given a VLPI and the virtual RDbase it is targeted to, map a dummy physical
