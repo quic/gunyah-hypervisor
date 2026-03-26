@@ -20,7 +20,7 @@ vgic_its_copy_in_ctes(vgic_its_t *vgic_its)
 {
 	error_t err	  = ERROR_ADDR_INVALID;
 	size_t	page_size = gicv3_its_page_size(
-		 GITS_BASER_get_Page_Size(&vgic_its->collection_table_base));
+		GITS_BASER_get_Page_Size(&vgic_its->collection_table_base));
 	size_t size =
 		((size_t)GITS_BASER_get_Size(&vgic_its->collection_table_base) +
 		 1U) *
@@ -78,7 +78,7 @@ vgic_its_copy_out_ctes(vgic_its_t *vgic_its)
 {
 	error_t err	  = ERROR_ADDR_INVALID;
 	size_t	page_size = gicv3_its_page_size(
-		 GITS_BASER_get_Page_Size(&vgic_its->collection_table_base));
+		GITS_BASER_get_Page_Size(&vgic_its->collection_table_base));
 	size_t size =
 		((size_t)GITS_BASER_get_Size(&vgic_its->collection_table_base) +
 		 1U) *

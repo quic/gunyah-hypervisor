@@ -154,7 +154,7 @@ static const pgtable_level_info_t info_4k_granules[] = {
 	  .block_and_page_output_address_mask = 0UL,
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
 	  .addr_size		= 1UL << 39,
 	  .entry_cnt		= 1UL << 9,
 	  .level		= PGTABLE_LEVEL_0,
@@ -166,8 +166,8 @@ static const pgtable_level_info_t info_4k_granules[] = {
 	  .block_and_page_output_address_mask = segment_mask(47, 30),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
 	  .addr_size		= 1UL << 30,
 	  .entry_cnt		= 1UL << 9,
 	  .level		= PGTABLE_LEVEL_1,
@@ -179,8 +179,8 @@ static const pgtable_level_info_t info_4k_granules[] = {
 	  .block_and_page_output_address_mask = segment_mask(47, 21),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
 	  .addr_size		= 1UL << 21,
 	  .entry_cnt		= 1UL << 9,
 	  .level		= PGTABLE_LEVEL_2,

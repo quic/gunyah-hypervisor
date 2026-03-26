@@ -98,7 +98,7 @@ allocator_allocate_object(allocator_t *allocator, size_t size, size_t alignment,
 		uintptr_t base_addr    = (uintptr_t)heap->blocks[i].base;
 		uintptr_t aligned_addr = (base_addr + alignment - 1) &
 					 ~(alignment - 1);
-		size_t offset = aligned_addr - base_addr;
+		size_t	  offset       = aligned_addr - base_addr;
 
 		if (heap->blocks[i].size >= size + offset) {
 			// Allocate from this block

@@ -112,15 +112,15 @@ test_basic_insertion(void)
 	// Insert first range
 	uint64_t start_addr1 = (uint64_t)res1.r;
 	uint64_t end_addr1   = start_addr1 + 1023;
-	ret		     = memdb_insert(&partition, start_addr1, end_addr1,
-					    (uintptr_t)res1.r, MEMDB_TYPE_PARTITION);
+	ret = memdb_insert(&partition, start_addr1, end_addr1,
+			   (uintptr_t)res1.r, MEMDB_TYPE_PARTITION);
 	TEST_ASSERT(ret == 0, "First range insertion");
 
 	// Insert second range
 	uint64_t start_addr2 = (uint64_t)res2.r;
 	uint64_t end_addr2   = start_addr2 + 4095;
-	ret		     = memdb_insert(&partition, start_addr2, end_addr2,
-					    (uintptr_t)res2.r, MEMDB_TYPE_ALLOCATOR);
+	ret = memdb_insert(&partition, start_addr2, end_addr2,
+			   (uintptr_t)res2.r, MEMDB_TYPE_ALLOCATOR);
 	TEST_ASSERT(ret == 0, "Second range insertion");
 
 	free((void *)block);
@@ -230,7 +230,7 @@ test_lookup_operations(void)
 	// Allocate and update a sub-range
 	allocator_hint_t  hint = allocator_hint_default();
 	void_ptr_result_t res  = allocator_allocate_object(
-		 &partition.allocator, 4096, alignment, hint);
+		&partition.allocator, 4096, alignment, hint);
 	TEST_ASSERT(res.e == OK, "Object allocation for lookup test");
 
 	uint64_t update_start = (uint64_t)res.r;
@@ -299,7 +299,7 @@ test_contiguity_checking(void)
 	// Allocate and update a sub-range
 	allocator_hint_t  hint = allocator_hint_default();
 	void_ptr_result_t res  = allocator_allocate_object(
-		 &partition.allocator, 4096, alignment, hint);
+		&partition.allocator, 4096, alignment, hint);
 	TEST_ASSERT(res.e == OK, "Object allocation for contiguity test");
 
 	uint64_t update_start = (uint64_t)res.r;
@@ -375,7 +375,7 @@ test_memory_walk(void)
 	// Allocate and update a sub-range
 	allocator_hint_t  hint = allocator_hint_default();
 	void_ptr_result_t res  = allocator_allocate_object(
-		 &partition.allocator, 4096, alignment, hint);
+		&partition.allocator, 4096, alignment, hint);
 	TEST_ASSERT(res.e == OK, "Object allocation for walk test");
 
 	uint64_t update_start = (uint64_t)res.r;
@@ -443,7 +443,7 @@ test_error_conditions(void)
 	// Try to update with wrong previous owner - should fail
 	allocator_hint_t  hint = allocator_hint_default();
 	void_ptr_result_t res  = allocator_allocate_object(
-		 &partition.allocator, 4096, alignment, hint);
+		&partition.allocator, 4096, alignment, hint);
 	TEST_ASSERT(res.e == OK, "Object allocation for error test");
 
 	uint64_t update_start = (uint64_t)res.r;

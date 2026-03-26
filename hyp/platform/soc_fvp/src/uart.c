@@ -145,11 +145,11 @@ soc_fvp_uart_init(void)
 
 	// Map UART, so HYP can configure for PVM early use
 	pvm_uart = (fvp_uart_t *)pvm_range.r.base;
-	ret	 = pgtable_hyp_map(partition_get_private(), (uintptr_t)pvm_uart,
-				   PLATFORM_PVM_UART_SIZE, PLATFORM_PVM_UART_BASE,
-				   PGTABLE_HYP_MEMTYPE_NOSPEC_NOCOMBINE,
-				   PGTABLE_ACCESS_RW,
-				   VMSA_SHAREABILITY_NON_SHAREABLE);
+	ret = pgtable_hyp_map(partition_get_private(), (uintptr_t)pvm_uart,
+			      PLATFORM_PVM_UART_SIZE, PLATFORM_PVM_UART_BASE,
+			      PGTABLE_HYP_MEMTYPE_NOSPEC_NOCOMBINE,
+			      PGTABLE_ACCESS_RW,
+			      VMSA_SHAREABILITY_NON_SHAREABLE);
 	if (ret != OK) {
 		panic("uart: PVM Mapping failed.");
 	}

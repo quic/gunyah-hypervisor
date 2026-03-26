@@ -1757,7 +1757,7 @@ gicv3_handle_rootvm_init(partition_t *root_partition, cspace_t *root_cspace,
 		// Create a master cap for the gicv3_its
 		object_ptr_t	gicv3_its_optr = { .gicv3_its = its_r.r };
 		cap_id_result_t cid_r	       = cspace_create_master_cap(
-			 root_cspace, gicv3_its_optr, OBJECT_TYPE_GICV3_ITS);
+			root_cspace, gicv3_its_optr, OBJECT_TYPE_GICV3_ITS);
 		if (cid_r.e != OK) {
 			panic("Unable to create cap to gicv3_its");
 		}

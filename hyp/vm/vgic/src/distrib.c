@@ -645,7 +645,7 @@ vgic_handle_object_activate_thread(thread_t *thread)
 		scheduler_lock_nopreempt(thread);
 		cpu_index_t affinity = scheduler_get_affinity(thread);
 		MPIDR_EL1_t mpidr    = platform_cpu_index_to_mpidr(
-			   cpulocal_index_valid(affinity) ? affinity : 0U);
+			cpulocal_index_valid(affinity) ? affinity : 0U);
 		GICD_IROUTER_t phys_route = GICD_IROUTER_default();
 		GICD_IROUTER_set_IRM(&phys_route, false);
 		GICD_IROUTER_set_Aff0(&phys_route, MPIDR_EL1_get_Aff0(&mpidr));
@@ -1051,7 +1051,7 @@ vgic_handle_rootvm_create_hwirq(partition_t	 *root_partition,
 		// Create a master cap for the HWIRQ
 		object_ptr_t	hwirq_optr = { .hwirq = hwirq_r.r };
 		cap_id_result_t cid_r	   = cspace_create_master_cap(
-			     root_cspace, hwirq_optr, OBJECT_TYPE_HWIRQ);
+			root_cspace, hwirq_optr, OBJECT_TYPE_HWIRQ);
 		if (cid_r.e != OK) {
 			panic("Unable to create cap to HWIRQ");
 		}
@@ -1877,7 +1877,7 @@ vgic_gicd_set_irq_hardware_router(vic_t *vic, irq_t irq_num,
 				  index_t		route_index)
 {
 	virq_source_t *source = vgic_find_source(vic, NULL, irq_num);
-	bool	       is_hw  = (source != NULL) &&
+	bool is_hw = (source != NULL) &&
 		     (source->trigger == VIRQ_TRIGGER_VGIC_FORWARDED_SPI);
 	if (is_hw) {
 		GICD_IROUTER_t physical_router;
@@ -2103,11 +2103,11 @@ vgic_gicr_copy_in(addrspace_t *addrspace, uint8_t *hyp_table,
 	}
 
 	hyp_va = (NULL != hyp_table) ? &hyp_table[hyp_table_offset] : NULL;
-	err    = useraccess_copy_from_guest_ipa(addrspace, hyp_va,
-						hyp_table_size - hyp_table_offset,
-						vm_table_ipa + vm_table_offset,
-						vm_table_size - vm_table_offset,
-						false, false)
+	err = useraccess_copy_from_guest_ipa(addrspace, hyp_va,
+					     hyp_table_size - hyp_table_offset,
+					     vm_table_ipa + vm_table_offset,
+					     vm_table_size - vm_table_offset,
+					     false, false)
 		      .e;
 
 out:
@@ -2156,9 +2156,9 @@ vgic_gicr_copy_lpi_pending(vic_t *vic, thread_t *vcpu, vmaddr_t pendbase)
 	for (range_start = GIC_LPI_BASE;
 	     range_start < (max_lpi - VGIC_VLPI_ENTRY_RANGE_SIZE);
 	     range_start += VGIC_VLPI_ENTRY_RANGE_SIZE) {
-		uint8_t			   pend_buf[VGIC_VLPI_ENTRY_RANGE_SIZE /
-				    VGIC_LPI_PEND_LPIS_PER_BYTE];
-		index_t			   pend_index;
+		uint8_t pend_buf[VGIC_VLPI_ENTRY_RANGE_SIZE /
+				 VGIC_LPI_PEND_LPIS_PER_BYTE];
+		index_t pend_index;
 		range_tree_lookup_result_t vlpi_lookup_r;
 		vgic_vlpi_range_t	  *vlpi_range;
 		error_t			   err = OK;

@@ -106,9 +106,9 @@ irq_range_add_hwirq(irq_t base, count_t size)
 	}
 
 	size_t		  alloc_size = sizeof(irq_range_hwirq_t);
-	void_ptr_result_t ptr_r	     = partition_alloc(partition_get_private(),
-						       alloc_size,
-						       alignof(irq_range_hwirq_t));
+	void_ptr_result_t ptr_r = partition_alloc(partition_get_private(),
+						  alloc_size,
+						  alignof(irq_range_hwirq_t));
 	if (ptr_r.e != OK) {
 		ret = ptr_r.e;
 		goto out;

@@ -155,7 +155,7 @@ static const pgtable_level_info_t info_4k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = 0U,
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
 	  .addr_size		= util_bit(39),
 	  .entry_cnt		= (count_t)util_bit(9),
 	  .level		= PGTABLE_LEVEL_0,
@@ -188,8 +188,8 @@ static const pgtable_level_info_t info_4k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = segment_mask(47U, 21),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
 	  .addr_size		= util_bit(21),
 	  .entry_cnt		= (count_t)util_bit(9),
 	  .level		= PGTABLE_LEVEL_2,
@@ -238,7 +238,7 @@ static const pgtable_level_info_t info_16k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = 0U,
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
 	  .addr_size		= util_bit(47),
 	  .entry_cnt		= (count_t)util_bit(1),
 	  .level		= PGTABLE_LEVEL_0,
@@ -250,7 +250,7 @@ static const pgtable_level_info_t info_16k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = segment_mask(47U, 36),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK),
 	  .addr_size		= util_bit(36),
 	  .entry_cnt		= (count_t)util_bit(11),
 	  .level		= PGTABLE_LEVEL_1,
@@ -262,8 +262,8 @@ static const pgtable_level_info_t info_16k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = segment_mask(47U, 25),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
 	  .addr_size		= util_bit(25),
 	  .entry_cnt		= (count_t)util_bit(11),
 	  .level		= PGTABLE_LEVEL_2,
@@ -324,8 +324,8 @@ static const pgtable_level_info_t info_64k_granules[PGTABLE_LEVEL_NUM] = {
 	  .block_and_page_output_address_mask = segment_mask(47U, 29),
 	  .is_offset			      = false,
 	  .allowed_types		      = pgtable_entry_types_cast(
-		       PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
-		       PGTABLE_ENTRY_TYPES_BLOCK_MASK),
+		  PGTABLE_ENTRY_TYPES_NEXT_LEVEL_TABLE_MASK |
+		  PGTABLE_ENTRY_TYPES_BLOCK_MASK),
 	  .addr_size		= util_bit(29),
 	  .entry_cnt		= (count_t)util_bit(13),
 	  .level		= PGTABLE_LEVEL_2,
@@ -1733,9 +1733,9 @@ pgtable_maybe_update_access(pgtable_t *pgt,
 				       VMSA_STG2_LOWER_ATTRS_AF_MASK;
 	const uint64_t s1_lower_mask = VMSA_STG1_LOWER_ATTRS_AP_MASK |
 				       VMSA_STG1_LOWER_ATTRS_AF_MASK;
-	const uint64_t lower_mask = (margs->stage == PGTABLE_HYP_STAGE_1)
-					    ? s1_lower_mask
-					    : s2_lower_mask;
+	const uint64_t lower_mask    = (margs->stage == PGTABLE_HYP_STAGE_1)
+					       ? s1_lower_mask
+					       : s2_lower_mask;
 
 	const pgtable_level_info_t *cur_level_info = &level_conf[level];
 
@@ -2552,7 +2552,7 @@ pgtable_maybe_map_cont(pgtable_t *pgt, vmaddr_t virtual_address, size_t size,
 
 	paddr_t cont_phys_start = util_balign_down(margs->phys, cont_size);
 	bool	is_cont_aligned = (margs->phys - cont_phys_start) ==
-			       (virtual_address - cont_virt_start);
+				  (virtual_address - cont_virt_start);
 	if (!is_cont_aligned) {
 		goto out;
 	}

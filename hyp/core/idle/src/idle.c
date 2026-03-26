@@ -330,7 +330,7 @@ idle_wakeup(void)
 	// misrouted or spurious IRQs don't count.
 	ticks_t start_ticks = timer_get_current_timer_ticks();
 	ticks_t wait_ticks  = timer_convert_ns_to_ticks(
-		 (nanoseconds_t)PLATFORM_IDLE_WAKEUP_TIMEOUT_NS);
+		(nanoseconds_t)PLATFORM_IDLE_WAKEUP_TIMEOUT_NS);
 	ticks_t end_ticks = start_ticks + wait_ticks;
 	do {
 		if (idle_arch_wait_timeout(end_ticks)) {

@@ -36,12 +36,12 @@ virtio_virtq_read_desc_chain(virtio_iommu_t *virtio_iommu, index_t qnum,
 
 		virtio_virtq_desc_t *desc_entry = &ret.entries[ret.count];
 		error_t		     err = useraccess_copy_from_guest_ipa(
-					   virtio_iommu->viommu.addrspace,
-					   desc_entry, sizeof(*desc_entry),
-					   q->desc + (sizeof(virtio_virtq_desc_t) *
-						      desc_entry_idx),
-					   sizeof(virtio_virtq_desc_t), false, false)
-				      .e;
+						   virtio_iommu->viommu.addrspace,
+						   desc_entry, sizeof(*desc_entry),
+						   q->desc + (sizeof(virtio_virtq_desc_t) *
+							      desc_entry_idx),
+						   sizeof(virtio_virtq_desc_t), false, false)
+						   .e;
 		if (err != OK) {
 			TRACE(DEBUG, INFO, "user access fail {:d} err={:d}}",
 			      __LINE__, (register_t)err);
@@ -163,11 +163,11 @@ virtio_virtq_write_reply(virtio_iommu_t *virtio_iommu, index_t qnum,
 	// node info
 	vmaddr_t ring_addr = q->dev + sizeof(virtio_virtq_used_t) +
 			     (sizeof(virtio_virtq_used_elem_t) * uidx);
-	error_t err = useraccess_copy_to_guest_ipa(
-			      virtio_iommu->viommu.addrspace, ring_addr,
-			      sizeof(used_entry), &used_entry,
-			      sizeof(used_entry), false, false)
-			      .e;
+	error_t	 err	   = useraccess_copy_to_guest_ipa(
+				     virtio_iommu->viommu.addrspace, ring_addr,
+				     sizeof(used_entry), &used_entry,
+				     sizeof(used_entry), false, false)
+				     .e;
 	if (err != OK) {
 		TRACE(DEBUG, INFO, "user access fail {:d} err={:d}", __LINE__,
 		      (register_t)err);

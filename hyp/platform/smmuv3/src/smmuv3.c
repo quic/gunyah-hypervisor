@@ -341,22 +341,22 @@ smmuv3_init_interrupts(void) REQUIRE_SMMUV3_REGS_LOCK
 
 	hwirq_ptr_result_t hwirq_ptr_ret;
 	hwirq_create_t	   params[] = {
-		    {
-			    .irq    = PLATFORM_SMMU_V3_TCU1_PMU_IRQ,
-			    .action = HWIRQ_ACTION_SMMU_V3_TCU_PMU,
-		    },
-		    {
-			    .irq    = PLATFORM_SMMU_V3_TCU1_EVENTQ_IRQ,
-			    .action = HWIRQ_ACTION_SMMU_V3_TCU_EVENTQ,
-		    },
-		    {
-			    .irq    = PLATFORM_SMMU_V3_TCU1_CMDSYNC_IRQ,
-			    .action = HWIRQ_ACTION_SMMU_V3_TCU_CMDSYNC,
-		    },
-		    {
-			    .irq    = PLATFORM_SMMU_V3_TCU1_GLOBAL_IRQ,
-			    .action = HWIRQ_ACTION_SMMU_V3_TCU_GLOBAL,
-		    }
+		{
+			.irq	= PLATFORM_SMMU_V3_TCU1_PMU_IRQ,
+			.action = HWIRQ_ACTION_SMMU_V3_TCU_PMU,
+		},
+		{
+			.irq	= PLATFORM_SMMU_V3_TCU1_EVENTQ_IRQ,
+			.action = HWIRQ_ACTION_SMMU_V3_TCU_EVENTQ,
+		},
+		{
+			.irq	= PLATFORM_SMMU_V3_TCU1_CMDSYNC_IRQ,
+			.action = HWIRQ_ACTION_SMMU_V3_TCU_CMDSYNC,
+		},
+		{
+			.irq	= PLATFORM_SMMU_V3_TCU1_GLOBAL_IRQ,
+			.action = HWIRQ_ACTION_SMMU_V3_TCU_GLOBAL,
+		}
 	};
 
 	for (index_t irq = 0; irq < PLATFORM_SMMU_V3_NUM_TCU_IRQS; irq++) {
@@ -1043,7 +1043,7 @@ smmuv3_init_stream_table(void) REQUIRE_SMMUV3_REGS_LOCK
 	smmu_v3.stream_table.l1size = (uint32_t)l1_size;
 	smmu_v3.stream_table.table  = (vmaddr_t)ptr_r.r;
 	smmu_v3.stream_table.phys   = partition_virt_to_phys(
-		  partition_get_private(), (uintptr_t)smmu_v3.stream_table.table);
+		partition_get_private(), (uintptr_t)smmu_v3.stream_table.table);
 
 	SMMU_V3_STRTAB_BASE_t base = SMMU_V3_STRTAB_BASE_default();
 	SMMU_V3_STRTAB_BASE_set_RA(&base, true);

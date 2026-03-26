@@ -659,9 +659,9 @@ gicd_vdevice_enabler_e_write(vic_t *vic, size_t offset, register_t val,
 			     bool set)
 {
 	// 32-bit registers, 32-bit access only
-	index_t	 n    = (index_t)((offset - (set ? offsetof(gicd_t, isenabler_e)
-						 : offsetof(gicd_t, icenabler_e))) /
-				  sizeof(uint32_t));
+	index_t n = (index_t)((offset - (set ? offsetof(gicd_t, isenabler_e)
+					     : offsetof(gicd_t, icenabler_e))) /
+			      sizeof(uint32_t));
 	uint32_t bits = (uint32_t)val;
 	if (n >= (VGIC_SPI_EXT_NUM / 32U)) {
 		bits = 0U;
@@ -679,9 +679,9 @@ static void
 gicd_vdevice_pendr_e_write(vic_t *vic, size_t offset, register_t val, bool set)
 {
 	// 32-bit registers, 32-bit access only
-	index_t	 n    = (index_t)((offset - (set ? offsetof(gicd_t, ispendr_e)
-						 : offsetof(gicd_t, icpendr_e))) /
-				  sizeof(uint32_t));
+	index_t	 n = (index_t)((offset - (set ? offsetof(gicd_t, ispendr_e)
+					      : offsetof(gicd_t, icpendr_e))) /
+			       sizeof(uint32_t));
 	uint32_t bits = (uint32_t)val;
 	if (n >= (VGIC_SPI_EXT_NUM / 32U)) {
 		bits = 0U;
@@ -700,9 +700,9 @@ gicd_vdevice_activer_e_write(vic_t *vic, size_t offset, register_t val,
 			     bool set)
 {
 	// 32-bit registers, 32-bit access only
-	index_t	 n    = (index_t)((offset - (set ? offsetof(gicd_t, isactiver_e)
-						 : offsetof(gicd_t, icactiver_e))) /
-				  sizeof(uint32_t));
+	index_t n = (index_t)((offset - (set ? offsetof(gicd_t, isactiver_e)
+					     : offsetof(gicd_t, icactiver_e))) /
+			      sizeof(uint32_t));
 	uint32_t bits = (uint32_t)val;
 	if (n >= (VGIC_SPI_EXT_NUM / 32U)) {
 		bits = 0U;
@@ -832,9 +832,9 @@ gicd_vdevice_write(vic_t *vic, size_t offset, register_t val,
 			     OFS_GICD_IROUTER(GIC_SPI_NUM - 1)): {
 		// 64-bit registers with 64-bit access only
 
-		index_t spi = GIC_SPI_BASE +
-			      (index_t)((offset - OFS_GICD_IROUTER(0U)) /
-					sizeof(uint64_t));
+		index_t	       spi = GIC_SPI_BASE +
+				     (index_t)((offset - OFS_GICD_IROUTER(0U)) /
+					       sizeof(uint64_t));
 		GICD_IROUTER_t irouter = GICD_IROUTER_cast(val);
 		vgic_gicd_set_irq_router(vic, spi,
 					 GICD_IROUTER_get_Aff0(&irouter),
@@ -1729,8 +1729,8 @@ vgic_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 					  << GICR_STRIDE_SHIFT));
 				size_t offset = (size_t)(ipa - gicr_base);
 				ret	      = vgic_handle_gicr_access(
-					  vic, gicr_vcpu, offset, access_size,
-					  value, is_write, is_last);
+					vic, gicr_vcpu, offset, access_size,
+					value, is_write, is_last);
 			} else {
 				ret = VCPU_TRAP_RESULT_UNHANDLED;
 			}

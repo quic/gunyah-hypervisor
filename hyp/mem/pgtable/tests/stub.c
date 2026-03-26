@@ -66,7 +66,7 @@ partition_alloc(partition_t *partition, size_t bytes, size_t min_alignment)
 	// aligned start address first
 	orig_pmem_avail = pmem_avail;
 	pmem_avail	= (pmem_avail + min_alignment - 1) / min_alignment *
-		     min_alignment;
+			  min_alignment;
 
 	// create a page aligned address, and take it as physical address
 	paddr = pmem_avail;

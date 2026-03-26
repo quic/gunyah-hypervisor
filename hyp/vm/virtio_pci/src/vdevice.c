@@ -521,7 +521,7 @@ virtio_pci_write_queue(virtio_pci_t *pci, size_t offset, uint32_t val)
 		} else {
 			queue_info->size = util_min(val, max_r.r);
 			ret		 = size_result_ok(util_sizeof_member(
-				     virtio_pci_bar0_regs_t, queue_size));
+				virtio_pci_bar0_regs_t, queue_size));
 		}
 		break;
 	}

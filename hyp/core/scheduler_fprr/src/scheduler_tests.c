@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -252,7 +252,7 @@ tests_scheduler_start(void)
 		scheduler_lock_nopreempt(ret.r);
 		cpu_index_t affinity = (scheduler_get_affinity(ret.r) + 1U) %
 				       PLATFORM_MAX_CORES;
-		err = scheduler_set_affinity(ret.r, affinity);
+		err		     = scheduler_set_affinity(ret.r, affinity);
 		scheduler_unlock_nopreempt(ret.r);
 		assert((err == OK) || (err == ERROR_RETRY));
 	}

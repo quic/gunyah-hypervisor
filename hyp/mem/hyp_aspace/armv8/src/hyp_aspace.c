@@ -353,7 +353,7 @@ hyp_aspace_allocate(size_t min_size)
 
 	uintptr_t virt = hyp_aspace_alloc_base +
 			 ((uintptr_t)bit << HYP_ASPACE_ALLOCATE_BITS);
-	ret = virt_range_result_ok(
+	ret	       = virt_range_result_ok(
 		(virt_range_t){ .base = virt, .size = size });
 
 	partition_t *hyp_partition = partition_get_private();

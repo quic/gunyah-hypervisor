@@ -1699,9 +1699,9 @@ gicv3_irq_set_trigger_percpu(irq_t irq, irq_trigger_t trigger, cpu_index_t cpu)
 		// Read back the value in case it could not be changed
 		icfg = atomic_load_relaxed(&gicr->sgi.icfgr[1]);
 		ret  = irq_trigger_result_ok(
-			 bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
-				 ? IRQ_TRIGGER_EDGE_RISING
-				 : IRQ_TRIGGER_LEVEL_HIGH);
+			bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
+				? IRQ_TRIGGER_EDGE_RISING
+				: IRQ_TRIGGER_LEVEL_HIGH);
 
 		break;
 	}
@@ -1810,9 +1810,9 @@ gicv3_irq_set_trigger_shared(irq_t irq, irq_trigger_t trigger)
 		// Read back the value in case it could not be changed
 		icfg = atomic_load_relaxed(&gicd->icfgr[irq / 16U]);
 		ret  = irq_trigger_result_ok(
-			 bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
-				 ? IRQ_TRIGGER_EDGE_RISING
-				 : IRQ_TRIGGER_LEVEL_HIGH);
+			bitmap_isset(&icfg, ((irq % 16U) * 2U) + 1U)
+				? IRQ_TRIGGER_EDGE_RISING
+				: IRQ_TRIGGER_LEVEL_HIGH);
 
 		break;
 	}

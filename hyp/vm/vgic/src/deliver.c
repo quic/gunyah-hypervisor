@@ -603,8 +603,8 @@ vgic_sync_lr(vic_t *vic, thread_t *vcpu, vgic_lr_status_t *status,
 		ICH_LR_EL2_base_get_State(&status->lr.base);
 	bool lr_pending = (lr_state == ICH_LR_EL2_STATE_PENDING) ||
 			  (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
-	bool lr_active = (lr_state == ICH_LR_EL2_STATE_ACTIVE) ||
-			 (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
+	bool lr_active	= (lr_state == ICH_LR_EL2_STATE_ACTIVE) ||
+			  (lr_state == ICH_LR_EL2_STATE_PENDING_ACTIVE);
 
 	vgic_delivery_state_t new_dstate;
 	bool		      virq_pending;
@@ -1928,8 +1928,8 @@ vgic_reclaim_lr(vic_t *vic, thread_t *vcpu, index_t lr, bool reroute)
 	bool   lr_hw	 = ICH_LR_EL2_base_get_HW(&status->lr.base);
 	bool   lr_active = (ICH_LR_EL2_base_get_State(&status->lr.base) ==
 			    ICH_LR_EL2_STATE_ACTIVE) ||
-			 (ICH_LR_EL2_base_get_State(&status->lr.base) ==
-			  ICH_LR_EL2_STATE_PENDING_ACTIVE);
+			   (ICH_LR_EL2_base_get_State(&status->lr.base) ==
+			    ICH_LR_EL2_STATE_PENDING_ACTIVE);
 
 #if VGIC_HAS_LPI && GICV3_HAS_VLPI_V4_1
 	if (vic->vsgis_enabled &&

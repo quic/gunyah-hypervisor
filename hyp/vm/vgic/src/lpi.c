@@ -59,7 +59,7 @@ vgic_irq_range_add_vlpis(irq_t base, count_t size, thread_t *vcpu)
 
 	size_t		  alloc_size = sizeof(vgic_lpi_range_t);
 	void_ptr_result_t ptr_r	     = partition_alloc(
-		     partition_get_private(), alloc_size, alignof(vgic_lpi_range_t));
+		partition_get_private(), alloc_size, alignof(vgic_lpi_range_t));
 	if (ptr_r.e != OK) {
 		ret = vgic_lpi_range_ptr_result_error(ptr_r.e);
 		goto out;

@@ -882,7 +882,7 @@ ffa_memory_allocate_and_derive(addrspace_t *addrspace, memextent_t *owner_me,
 	share->access		 = access;
 	share->total_size_expect = (size_t)total_page_count
 				   << FFA_CONSTITUENT_MRD_PAGE_SHIFT;
-	share->attributes = attributes;
+	share->attributes	 = attributes;
 	share->need_check_attributes =
 		(trans_type == FFA_TRANS_TYPE_SHARE) ||
 		((trans_type == FFA_TRANS_TYPE_LEND) && (mad_count > 1U));
@@ -959,7 +959,7 @@ ffa_memory_construct(addrspace_t *addrspace, ffa_trans_type_t trans_type,
 
 	vmaddr_t vbase_0 = (vmaddr_t)constituent_mrd->address;
 	size_t	 vsize_0 = (size_t)constituent_mrd->page_count
-			 << FFA_CONSTITUENT_MRD_PAGE_SHIFT;
+			   << FFA_CONSTITUENT_MRD_PAGE_SHIFT;
 
 	memextent_t *owner_me =
 		ffa_memory_get_owner_me(addrspace, vbase_0, vsize_0);
@@ -1219,9 +1219,9 @@ ffa_memory_add_constituent_mrds(
 
 		vmaddr_t vbase_idx = (vmaddr_t)constituent_mrd[idx].address;
 		size_t	 vsize_idx = (size_t)constituent_mrd[idx].page_count
-				   << FFA_CONSTITUENT_MRD_PAGE_SHIFT;
-		vmaddr_t vbase = vbase_idx + offset;
-		size_t	 vsize = vsize_idx - offset;
+				     << FFA_CONSTITUENT_MRD_PAGE_SHIFT;
+		vmaddr_t vbase	   = vbase_idx + offset;
+		size_t	 vsize	   = vsize_idx - offset;
 
 		phys_range_t *added_range = &phys_range[phys_range_count];
 

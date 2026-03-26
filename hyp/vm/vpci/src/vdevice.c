@@ -787,7 +787,7 @@ vpci_vdevice_access_cam(vdevice_t *vdevice, size_t offset, size_t access_size,
 	} else {
 		size_t		  byte_offset = 0U;
 		register_result_t val_r	      = vpci_config_read(
-			      function, reg_offset + byte_offset, access_size);
+			function, reg_offset + byte_offset, access_size);
 		// The config access might have blocked, and has therefore
 		// dropped the RCU critical section. Re-acquire it.
 		// FIXME: QC Gunyah issue #252

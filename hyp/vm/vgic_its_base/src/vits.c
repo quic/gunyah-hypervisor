@@ -775,7 +775,7 @@ vgic_its_process_commands(vgic_its_t *vgic_its)
 		// Read the next command out of the queue
 		gic_its_cmd_t cmd;
 		paddr_t	      queue_base = GITS_CBASER_get_Physical_Address(
-			      &vgic_its->command_queue_base);
+			&vgic_its->command_queue_base);
 		size_t cmd_offset = read_index * sizeof(cmd);
 
 		assert(cmd_offset < queue_size);

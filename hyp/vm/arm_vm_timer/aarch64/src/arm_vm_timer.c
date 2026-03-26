@@ -208,14 +208,14 @@ arm_vm_timer_handle_boot_hypervisor_start(void)
 {
 	hwirq_ptr_result_t ret;
 	hwirq_create_t	   params[] = {
-		    {
-			    .irq    = PLATFORM_VM_ARCH_VIRTUAL_TIMER_IRQ,
-			    .action = HWIRQ_ACTION_VM_TIMER,
-		    },
-		    {
-			    .irq    = PLATFORM_VM_ARCH_PHYSICAL_TIMER_IRQ,
-			    .action = HWIRQ_ACTION_VM_TIMER,
-		    }
+		{
+			.irq	= PLATFORM_VM_ARCH_VIRTUAL_TIMER_IRQ,
+			.action = HWIRQ_ACTION_VM_TIMER,
+		},
+		{
+			.irq	= PLATFORM_VM_ARCH_PHYSICAL_TIMER_IRQ,
+			.action = HWIRQ_ACTION_VM_TIMER,
+		}
 	};
 
 	for (int tt = ENUM_ARM_VM_TIMER_TYPE_MIN_VALUE;

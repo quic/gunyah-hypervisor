@@ -510,7 +510,7 @@ memdb_update_table(paddr_t start, paddr_t end, memdb_entry_t old_entry,
 	// back the changes.
 	const index_t start_index = memdb_entry_index(start, entry_bits);
 	const index_t end_index	  = memdb_entry_index(end, entry_bits);
-	paddr_t	      table_start = start &
+	paddr_t table_start = start &
 			      ~util_mask(entry_bits + MEMDB_BITS_PER_LEVEL);
 
 	error_t err = OK;
@@ -872,8 +872,8 @@ memdb_lookup_bitmap(paddr_t addr, const memdb_level_bitmap_t *bitmap,
 	assert(entry_bits <= MEMDB_ROOT_ENTRY_BITS);
 	const index_t index	= memdb_entry_index(addr, entry_bits);
 	index_t	      object_id = (index_t)bitmap_atomic_extract(
-		      bitmap->bitmap, index * MEMDB_BITMAP_ID_BITS,
-		      MEMDB_BITMAP_ID_BITS, memory_order_relaxed);
+		bitmap->bitmap, index * MEMDB_BITMAP_ID_BITS,
+		MEMDB_BITMAP_ID_BITS, memory_order_relaxed);
 	const memdb_entry_t entry =
 		atomic_load_consume(&bitmap->objects[object_id]);
 

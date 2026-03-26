@@ -165,15 +165,15 @@ partition_standard_boot_create_root_partition(void)
 
 #if PLATFORM_HEAP_PRIVATE_SIZE < PLATFORM_RW_DATA_SIZE
 	// Add the remainder of the RW data to the root partition
-	size_t root_heap_size = (size_t)PLATFORM_RW_DATA_SIZE -
-				(size_t)PLATFORM_HEAP_PRIVATE_SIZE;
-	paddr_t root_phys = (phys_last + 1U) - root_heap_size;
-	bool	from_heap = false;
+	size_t	root_heap_size = (size_t)PLATFORM_RW_DATA_SIZE -
+				 (size_t)PLATFORM_HEAP_PRIVATE_SIZE;
+	paddr_t root_phys      = (phys_last + 1U) - root_heap_size;
+	bool	from_heap      = false;
 #else
 	// Allocate some minimal bootstrapping memory for the root partition
 	const size_t	  root_heap_size = PGTABLE_HYP_PAGE_SIZE;
 	void_ptr_result_t alloc_ret	 = partition_alloc(
-		     &partition_hyp, root_heap_size, PGTABLE_HYP_PAGE_SIZE);
+		&partition_hyp, root_heap_size, PGTABLE_HYP_PAGE_SIZE);
 	if (alloc_ret.e != OK) {
 		panic("partition_alloc for bootstrapping heap failed");
 	}

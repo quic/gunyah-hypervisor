@@ -443,9 +443,9 @@ watchdog_ms_since_last_pat(watchdog_t *wdt)
 	assert(wdt != NULL);
 
 	watchdog_queue_acquire_lock();
-	watchdog_abs_ticks_t now = platform_watchdog_get_last_pat() +
-				   platform_watchdog_get_counter();
-	watchdog_milliseconds_t ms = platform_watchdog_ticks_to_ms(
+	watchdog_abs_ticks_t	now = platform_watchdog_get_last_pat() +
+				      platform_watchdog_get_counter();
+	watchdog_milliseconds_t ms  = platform_watchdog_ticks_to_ms(
 		(watchdog_ticks_t)(now - wdt->last_pat));
 	watchdog_queue_release_lock();
 
@@ -819,7 +819,7 @@ watchdog_sync(void) REQUIRE_LOCK(watchdog_queue.lock) REQUIRE_PREEMPT_DISABLED
 {
 	watchdog_abs_ticks_t now = platform_watchdog_get_last_pat() +
 				   platform_watchdog_get_counter();
-	watchdog_t *wdt = watchdog_queue_head();
+	watchdog_t	    *wdt = watchdog_queue_head();
 
 	if (wdt == NULL) {
 		panic("WDT: Watchdog sync with an empty queue");

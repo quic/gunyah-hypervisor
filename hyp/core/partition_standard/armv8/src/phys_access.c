@@ -81,8 +81,8 @@ partition_phys_valid(paddr_t paddr, size_t size)
 	     check_pa += PGTABLE_HYP_PAGE_SIZE) {
 		paddr_t	    pa_lookup;
 		MAIR_ATTR_t memattr;
-		void	   *check_va = (void *)((uintptr_t)check_pa +
-						hyp_aspace_get_physaccess_offset());
+		void   *check_va = (void *)((uintptr_t)check_pa +
+					    hyp_aspace_get_physaccess_offset());
 		error_t err = hyp_aspace_va_to_pa_el2_read(check_va, &pa_lookup,
 							   &memattr, NULL);
 

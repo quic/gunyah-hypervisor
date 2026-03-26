@@ -563,10 +563,10 @@ rcu_bitmap_update(void)
 			// object.
 			rcu_entry_t *next = entry->next;
 			status		  = rcu_update_status_union(
-				   trigger_rcu_update_event(
-					   (rcu_update_class_t)update_class,
-					   entry),
-				   status);
+				trigger_rcu_update_event(
+					(rcu_update_class_t)update_class,
+					entry),
+				status);
 			entry = next;
 			update_count++;
 		}

@@ -343,8 +343,8 @@ vgic_its_base_handle_vdevice_access_fixed_addr(vmaddr_t ipa, size_t access_size,
 		vic_t  *vic	     = thread_get_self()->vgic_vic;
 		index_t vgic_its_num = (index_t)((ipa - PLATFORM_GITS_BASE) >>
 						 GITS_STRIDE_SHIFT);
-		size_t	offset	     = ipa - (size_t)PLATFORM_GITS_BASE -
-				((size_t)vgic_its_num << GITS_STRIDE_SHIFT);
+		size_t	offset = ipa - (size_t)PLATFORM_GITS_BASE -
+				 ((size_t)vgic_its_num << GITS_STRIDE_SHIFT);
 
 		if ((vic != NULL) && vic->allow_fixed_vmaddr) {
 			assert(vgic_its_num <

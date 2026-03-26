@@ -948,13 +948,13 @@ virtio_iommu_process_queue_notification(virtio_iommu_t *virtio_iommu,
 
 	virtio_virtq_avail_t avail = { 0 };
 	// Only copy up to the size negotiated
-	size_t avail_sz = sizeof(avail.flags) + sizeof(avail.idx) +
-			  (sizeof(avail.ring[0]) * q->size);
-	error_t err = useraccess_copy_from_guest_ipa(
-			      virtio_iommu->viommu.addrspace, &avail,
-			      sizeof(avail), virtio_iommu->queues[qnum].drv,
-			      avail_sz, false, false)
-			      .e;
+	size_t	avail_sz = sizeof(avail.flags) + sizeof(avail.idx) +
+			   (sizeof(avail.ring[0]) * q->size);
+	error_t err	 = useraccess_copy_from_guest_ipa(
+				   virtio_iommu->viommu.addrspace, &avail,
+				   sizeof(avail), virtio_iommu->queues[qnum].drv,
+				   avail_sz, false, false)
+				   .e;
 	if (err != OK) {
 		TRACE(DEBUG, INFO, "user access fail {:d} err={:d}}", __LINE__,
 		      (register_t)err);
@@ -1031,7 +1031,7 @@ virtio_iommu_send_queue_notification(virtio_iommu_t		*virtio_iommu,
 
 	virtio_virtq_avail_t avail = { 0 };
 	size_t avail_sz		   = sizeof(avail.flags) + sizeof(avail.idx) +
-			  (sizeof(avail.ring[0]) * q->size);
+				     (sizeof(avail.ring[0]) * q->size);
 	err = useraccess_copy_from_guest_ipa(virtio_iommu->viommu.addrspace,
 					     &avail, sizeof(avail),
 					     virtio_iommu->queues[qnum].drv,

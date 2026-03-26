@@ -1,4 +1,4 @@
-// © 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -34,7 +34,7 @@ virtio_input_handle_object_activate(virtio_backend_t *virtio_backend)
 	if (virtio_backend->virtio.device_type == VIRTIO_DEVICE_TYPE_INPUT) {
 		size_t		  alloc_size = sizeof(virtio_input_data_t);
 		void_ptr_result_t alloc_ret  = partition_alloc(
-			 partition, alloc_size, alignof(virtio_input_data_t));
+			partition, alloc_size, alignof(virtio_input_data_t));
 		if (alloc_ret.e != OK) {
 			ret = ERROR_NOMEM;
 			goto out;
@@ -207,7 +207,7 @@ virtio_input_sel_cfg_abs_info_write(const virtio_backend_t *virtio_backend,
 		// find the ev entry where this subsel entry is stored
 		uint32_t entry;
 		count_t	 absinfo_count = atomic_load_acquire(
-			 &virtio_backend->input_data->absinfo_count);
+			&virtio_backend->input_data->absinfo_count);
 
 		for (entry = 0U; entry < absinfo_count; entry++) {
 			if (virtio_backend->input_data->absinfo[entry].subsel ==
@@ -259,7 +259,7 @@ virtio_input_sel_cfg_ev_bits_write(const virtio_backend_t *virtio_backend,
 		// find the ev entry where this subsel entry is stored
 		uint32_t entry;
 		count_t	 ev_bits_count = atomic_load_acquire(
-			 &virtio_backend->input_data->ev_bits_count);
+			&virtio_backend->input_data->ev_bits_count);
 
 		for (entry = 0; entry < ev_bits_count; entry++) {
 			if (virtio_backend->input_data->ev_bits[entry].subsel ==

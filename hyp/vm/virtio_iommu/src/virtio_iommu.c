@@ -89,7 +89,7 @@ virtio_iommu_handle_object_activate_virtio_iommu(virtio_iommu_t *virtio_iommu)
 	uint32_t features;
 	features = (uint32_t)util_bit(VIRTIO_IOMMU_F_PROBE) |
 		   (uint32_t)util_bit(VIRTIO_IOMMU_F_ATTACH_TABLE);
-	err = virtio_set_dev_features(&virtio_iommu->virtio, 0U, features);
+	err	 = virtio_set_dev_features(&virtio_iommu->virtio, 0U, features);
 	if (err != OK) {
 		ret = err;
 		goto out_unlock;

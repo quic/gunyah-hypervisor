@@ -92,7 +92,7 @@ get_inserted_ranges(memdb_data_t *memdb_data, uintptr_t object,
 		// ranges are contiguous
 		paddr_t start_addr = memdb_data->ranges[i].base;
 		paddr_t end_addr   = memdb_data->ranges[i].base +
-				   memdb_data->ranges[i].size - 1U;
+				     memdb_data->ranges[i].size - 1U;
 
 		bool cont = memdb_is_ownership_contiguous(start_addr, end_addr,
 							  object, type);
@@ -134,7 +134,7 @@ is_range_in_memdb(memdb_data_t *memdb_data, paddr_t start_addr,
 	for (index_t i = 0; i < memdb_data->ranges_count; i++) {
 		paddr_t start = memdb_data->ranges[i].base;
 		paddr_t end   = memdb_data->ranges[i].base +
-			      memdb_data->ranges[i].size - 1U;
+				memdb_data->ranges[i].size - 1U;
 
 		if (((start <= start_addr) && (end >= start_addr)) ||
 		    ((start <= end_addr) && (end >= end_addr))) {
@@ -416,11 +416,11 @@ memdb_test_insert_update(memdb_data_t *test_data, paddr_t start, paddr_t end)
 	rcu_read_finish();
 
 	for (index_t i = 0; i < test_data->ranges_count; i++) {
-		paddr_t start_addr = test_data->ranges[i].base;
-		paddr_t end_addr   = test_data->ranges[i].base +
-				   test_data->ranges[i].size - 1U;
-		uintptr_t    obj  = test_data->ranges[i].obj;
-		memdb_type_t type = test_data->ranges[i].type;
+		paddr_t	     start_addr = test_data->ranges[i].base;
+		paddr_t	     end_addr	= test_data->ranges[i].base +
+					  test_data->ranges[i].size - 1U;
+		uintptr_t    obj	= test_data->ranges[i].obj;
+		memdb_type_t type	= test_data->ranges[i].type;
 
 		// Do not use MEMDB_TYPE_EXTENT for the tests since we are going
 		// to create a counter example with it.
@@ -738,11 +738,11 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 
 	// Update ownership
 	for (index_t i = 0; i < test_data->ranges_count; i++) {
-		paddr_t start_addr = test_data->ranges[i].base;
-		paddr_t end_addr   = test_data->ranges[i].base +
-				   test_data->ranges[i].size - 1U;
-		uintptr_t    obj  = test_data->ranges[i].obj;
-		memdb_type_t type = test_data->ranges[i].type;
+		paddr_t	     start_addr = test_data->ranges[i].base;
+		paddr_t	     end_addr	= test_data->ranges[i].base +
+					  test_data->ranges[i].size - 1U;
+		uintptr_t    obj	= test_data->ranges[i].obj;
+		memdb_type_t type	= test_data->ranges[i].type;
 
 		err = memdb_update(hyp_partition, start_addr, end_addr, obj,
 				   type, initial_obj, initial_type);
@@ -751,11 +751,11 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 
 	// Check it has been added correctly
 	for (index_t i = 0; i < test_data->ranges_count; i++) {
-		paddr_t start_addr = test_data->ranges[i].base;
-		paddr_t end_addr   = test_data->ranges[i].base +
-				   test_data->ranges[i].size - 1U;
-		uintptr_t    obj  = test_data->ranges[i].obj;
-		memdb_type_t type = test_data->ranges[i].type;
+		paddr_t	     start_addr = test_data->ranges[i].base;
+		paddr_t	     end_addr	= test_data->ranges[i].base +
+					  test_data->ranges[i].size - 1U;
+		uintptr_t    obj	= test_data->ranges[i].obj;
+		memdb_type_t type	= test_data->ranges[i].type;
 
 		rcu_read_start();
 		res = memdb_lookup(start_addr);
@@ -775,11 +775,11 @@ memdb_test_update(memdb_data_t *test_data, paddr_t start, paddr_t end,
 
 	// Rollback ownership
 	for (index_t i = 0; i < test_data->ranges_count; i++) {
-		paddr_t start_addr = test_data->ranges[i].base;
-		paddr_t end_addr   = test_data->ranges[i].base +
-				   test_data->ranges[i].size - 1U;
-		uintptr_t    obj  = test_data->ranges[i].obj;
-		memdb_type_t type = test_data->ranges[i].type;
+		paddr_t	     start_addr = test_data->ranges[i].base;
+		paddr_t	     end_addr	= test_data->ranges[i].base +
+					  test_data->ranges[i].size - 1U;
+		uintptr_t    obj	= test_data->ranges[i].obj;
+		memdb_type_t type	= test_data->ranges[i].type;
 
 		err = memdb_update(hyp_partition, start_addr, end_addr,
 				   initial_obj, initial_type, obj, type);

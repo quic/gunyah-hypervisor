@@ -79,8 +79,8 @@ virtio_mmio_handle_virtio_startup(virtio_t *virtio)
 	// handle accesses to read-only mappings. The management VM is expected
 	// to map this read-only somewhere in the guest's address space.
 	virtio_mmio->vdevice.type = VDEVICE_TYPE_VIRTIO_MMIO;
-	ret			  = vdevice_attach_phys(&virtio_mmio->vdevice,
-							virtio->config_cache_me);
+	ret = vdevice_attach_phys(&virtio_mmio->vdevice,
+				  virtio->config_cache_me);
 	if (ret != OK) {
 		TRACE(ERROR, INFO,
 		      "virtio_startup mmio: failed vdevice_attach_phys: {:d}",

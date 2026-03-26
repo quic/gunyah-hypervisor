@@ -63,8 +63,8 @@ static uint32_t etm_cprgctlr[PLATFORM_MAX_CORES];
 		.reg_offset  = offsetof(etm_t, name),                          \
 		.access_size = util_sizeof_member(etm_t, name[0]),             \
 		.count	     = util_sizeof_member(etm_t, name) /               \
-			 util_sizeof_member(etm_t, name[0]),                   \
-		.stride = util_sizeof_member(etm_t, name[0]),                  \
+			       util_sizeof_member(etm_t, name[0]),             \
+		.stride	     = util_sizeof_member(etm_t, name[0]),             \
 	}
 
 #define ETM_REGISTER_SPARSE_ARRAY(name)                                        \
@@ -72,8 +72,8 @@ static uint32_t etm_cprgctlr[PLATFORM_MAX_CORES];
 		.reg_offset  = offsetof(etm_t, name),                          \
 		.access_size = util_sizeof_member(etm_t, name[0].value),       \
 		.count	     = util_sizeof_member(etm_t, name) /               \
-			 util_sizeof_member(etm_t, name[0]),                   \
-		.stride = util_sizeof_member(etm_t, name[0]),                  \
+			       util_sizeof_member(etm_t, name[0]),             \
+		.stride	     = util_sizeof_member(etm_t, name[0]),             \
 	}
 
 // NOTE: registers are saved in the context memory region based on their

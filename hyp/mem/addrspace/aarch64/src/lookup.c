@@ -126,8 +126,8 @@ addrspace_va_to_pa_noretry(gvaddr_t addr, bool write) REQUIRE_RCU_READ
 		// PAR_EL1 does not report the page size and always includes
 		// bits 52:12 of the output PA, regardless of the applicable
 		// page and granule sizes, so this is always 4K at most.
-		size_t offset = (size_t)addr &
-				util_mask(PAR_EL1_F0_PA_PRESHIFT);
+		size_t	offset	    = (size_t)addr &
+				      util_mask(PAR_EL1_F0_PA_PRESHIFT);
 		paddr_t pa	    = PAR_EL1_F0_get_PA(&par.f0) + offset;
 		size_t	mapped_size = util_bit(PAR_EL1_F0_PA_PRESHIFT) - offset;
 

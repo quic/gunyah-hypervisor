@@ -1,4 +1,4 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -687,8 +687,8 @@ check_type(const char *fmt, fmt_info_t *info)
 {
 	const char	 stopper[] = { 'b', 'd', 'o', 'x', 's' };
 	const var_type_t output[]  = {
-		 VAR_TYPE_BIN,	   VAR_TYPE_DEC,    VAR_TYPE_OCTAL,
-		 VAR_TYPE_LOW_HEX, VAR_TYPE_STRING,
+		VAR_TYPE_BIN,	  VAR_TYPE_DEC,	   VAR_TYPE_OCTAL,
+		VAR_TYPE_LOW_HEX, VAR_TYPE_STRING,
 	};
 	const size_t len = util_array_size(stopper);
 	index_t	     i	 = strnidx(stopper, len, *fmt);

@@ -78,9 +78,9 @@ rcu_up_handle_scheduler_quiescent(bool *must_schedule)
 				// handler frees the object.
 				rcu_entry_t *next = entry->next;
 				status		  = rcu_update_status_union(
-					   trigger_rcu_update_event(update_class,
-									    entry),
-					   status);
+					trigger_rcu_update_event(update_class,
+								 entry),
+					status);
 				entry = next;
 			}
 		}

@@ -390,7 +390,7 @@ trace_standard_handle_trace_log(trace_id_t id, trace_action_t action,
 				   (action == TRACE_ACTION_TRACE_LOCAL) ||
 				   (action == TRACE_ACTION_TRACE_AND_LOG));
 	bool	   log_action	= ((action == TRACE_ACTION_LOG) ||
-			   (action == TRACE_ACTION_TRACE_AND_LOG));
+				   (action == TRACE_ACTION_TRACE_AND_LOG));
 	register_t class_flags	= trace_get_class_flags();
 	if (compiler_unexpected(
 		    !trace_action &&

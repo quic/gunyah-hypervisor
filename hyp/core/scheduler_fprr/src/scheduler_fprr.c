@@ -855,7 +855,7 @@ remove_thread_from_scheduler(thread_t *thread) REQUIRE_SCHEDULER_LOCK(thread)
 
 	cpu_index_t affinity	 = thread->scheduler_affinity;
 	bool	    was_yielding = atomic_exchange_explicit(
-		       &thread->scheduler_yielding, false, memory_order_relaxed);
+		&thread->scheduler_yielding, false, memory_order_relaxed);
 
 	if (cpulocal_index_valid(affinity)) {
 		assert(sched_state_get_queued(&thread->scheduler_state));

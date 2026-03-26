@@ -226,8 +226,8 @@ memdb_walk(uintptr_t object, memdb_type_t type, memdb_fnptr fn, void *arg)
 
 		if (memdb_entries[i].object == object &&
 		    memdb_entries[i].type == type) {
-			size_t size = memdb_entries[i].end_addr -
-				      memdb_entries[i].start_addr + 1;
+			size_t	size = memdb_entries[i].end_addr -
+				       memdb_entries[i].start_addr + 1;
 			error_t result =
 				fn(memdb_entries[i].start_addr, size, arg);
 			if (result != OK) {

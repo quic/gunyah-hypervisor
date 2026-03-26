@@ -80,9 +80,9 @@ platform_cpu_on(cpu_index_t cpu)
 	MPIDR_EL1_t mpidr  = platform_cpu_index_to_mpidr(cpu);
 	thread_t   *thread = idle_thread_for(cpu);
 	uintptr_t   entry_virt =
-		  CPULOCAL_BY_INDEX(cpu_started, cpu)
-			  ? (uintptr_t)&soc_qemu_entry_warm
-			  : (uintptr_t)&soc_qemu_entry_cold_secondary;
+		CPULOCAL_BY_INDEX(cpu_started, cpu)
+			? (uintptr_t)&soc_qemu_entry_warm
+			: (uintptr_t)&soc_qemu_entry_cold_secondary;
 	psci_mpidr_t psci_mpidr = psci_mpidr_default();
 	psci_mpidr_set_Aff0(&psci_mpidr, MPIDR_EL1_get_Aff0(&mpidr));
 	psci_mpidr_set_Aff1(&psci_mpidr, MPIDR_EL1_get_Aff1(&mpidr));

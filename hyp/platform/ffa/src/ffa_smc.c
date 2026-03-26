@@ -234,8 +234,8 @@ ffa_handle_call(void) EXCLUDE_PREEMPT_DISABLED
 	}
 
 	register_t ret[SMCCC_1_2_RETS] = { 0 };
-	bool	   is_ffa_version      = !is_smc64 &&
-			      (smccc_func == FFA_FUNCTION_FFA_VERSION);
+	bool	   is_ffa_version = !is_smc64 &&
+				    (smccc_func == FFA_FUNCTION_FFA_VERSION);
 
 	// No FF-A support in TZ?
 	if (!ffa_is_active()) {

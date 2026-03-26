@@ -152,7 +152,7 @@ inject_inst_data_abort(ESR_EL2_t esr_el2, esr_ec_t ec, iss_da_ia_fsc_t fsc,
 		if (SPSR_EL2_A64_get_M(&spsr_el2) == SPSR_64BIT_MODE_EL1H) {
 			VBAR_EL1_t vbar = register_VBAR_EL1_read();
 			uint64_t   pc	= ELR_EL2_get_ReturnAddress(
-				    &thread->vcpu_regs_gpr.pc);
+				&thread->vcpu_regs_gpr.pc);
 			uint64_t el1h_sync_vector =
 				VBAR_EL1_get_VectorBase(&vbar) + 0x200U;
 			if (util_balign_down(pc, 0x80U) == el1h_sync_vector) {

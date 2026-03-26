@@ -196,9 +196,9 @@ msgqueue_handle_object_activate_msgqueue(msgqueue_t *msgqueue)
 	// Message queue size consists of the message maximum size, a field to
 	// know the exact size of the message and how many messages can the
 	// queue contain.
-	size_t queue_size = (msgqueue->max_msg_size + sizeof(size_t)) *
-			    msgqueue->queue_depth;
-	partition_t *partition = msgqueue->header.partition;
+	size_t	     queue_size = (msgqueue->max_msg_size + sizeof(size_t)) *
+				  msgqueue->queue_depth;
+	partition_t *partition	= msgqueue->header.partition;
 
 	void_ptr_result_t res =
 		partition_alloc(partition, queue_size, alignof(size_t));

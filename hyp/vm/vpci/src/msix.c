@@ -326,8 +326,8 @@ vpci_msix_vector_write(vpci_function_t *function, vpci_msix_data_t *msix_data,
 	size_t written_size = 0U;
 
 	while (written_size < access_size) {
-		register_t write_val = data >>
-				       (util_width(uint8_t) * written_size);
+		register_t write_val  = data >>
+					(util_width(uint8_t) * written_size);
 		register_t write_size = access_size - written_size;
 
 		switch (offset + written_size) {

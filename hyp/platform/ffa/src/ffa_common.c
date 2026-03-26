@@ -426,8 +426,8 @@ ffa_call_handle_ffa_partition_info_get(const register_t (*args)[SMCCC_1_2_ARGS],
 	    ffa_rxtx_buffer_hyp_is_rx_owner(rxtx_buffer)) {
 		rx_valid = true;
 		succ	 = ffa_part_info_process_list_buf(
-			    &ffa_secure_components_list, all_components, uuid_lo,
-			    uuid_hi, &count, rxtx_buffer, count_only);
+			&ffa_secure_components_list, all_components, uuid_lo,
+			uuid_hi, &count, rxtx_buffer, count_only);
 		if (succ && !count_only && (count != 0U)) {
 			// Transfer the RX buffer ownership to the caller.
 			ffa_rxtx_buffer_set_hyp_is_rx_owner(rxtx_buffer, false);
