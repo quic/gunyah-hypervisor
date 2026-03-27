@@ -7,4 +7,30 @@ module arm_vm_spe
 #if defined(ARCH_ARM_FEAT_SPE)
 subscribe object_create_thread
 	handler arm_vm_spe_handle_object_create_thread(thread_create)
+
+subscribe vcpu_activate_thread
+	handler arm_vm_spe_handle_vcpu_activate_thread(thread)
+
+subscribe object_deactivate_thread
+	handler arm_vm_spe_handle_object_deactivate_thread(thread)
+
+subscribe vcpu_set_local_virq[VCPU_LOCAL_VIRQ_TYPE_SPE_BUFFER]
+	handler arm_vm_spe_handle_vcpu_set_local_virq(vcpu, virq)
+
+subscribe object_activate_thread
+	handler arm_vm_spe_handle_object_activate_thread(thread)
+	priority 100
+
+subscribe vcpu_save_state
+	handler arm_vm_spe_handle_vcpu_save_state()
+
+subscribe vcpu_load_state
+	handler arm_vm_spe_handle_vcpu_load_state()
+
+subscribe thread_context_switch_post
+	handler arm_vm_spe_handle_thread_context_switch_post()
+	require_preempt_disabled
+
+subscribe vcpu_disable_state
+	handler arm_vm_spe_handle_vcpu_disable_state()
 #endif

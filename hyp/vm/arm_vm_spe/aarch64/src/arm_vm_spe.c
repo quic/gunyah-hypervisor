@@ -9,8 +9,13 @@
 #include <hypregisters.h>
 #include <panic.h>
 
+#include <compiler.h>
+#include <cpulocal.h>
+#include <platform_irq.h>
 #include <thread.h>
 #include <vcpu.h>
+#include <vic.h>
+#include <virq.h>
 
 #include <asm/barrier.h>
 #include <asm/system_registers.h>
@@ -67,6 +72,207 @@ arm_vm_spe_handle_object_create_thread(thread_create_t thread_create)
 	}
 
 	return OK;
+}
+
+// SPE uses semi-lazy context switching:
+// - Traps enabled by default (MDCR_EL2.TPMS)
+// - On first access: load state, disable traps while SPE is enabled
+// - Traps remain disabled as long as SPE profiling is active (E0SPE or E1SPE)
+// - On context switch out: save state if traps were disabled
+// - On context switch in: check if actively profiling, load if needed
+// - When guest disables SPE: re-enable traps to avoid unnecessary saves
+//
+// This ensures complete profiling statistics are collected for the VCPU
+// while it has SPE enabled, not just for a single timeslice.
+//
+// Interrupt Handling: The PMBIRQ (Profiling Buffer Interrupt Request) is
+// forwarded to the guest as a virtual interrupt via virq_source.
+
+static bool
+arm_vm_spe_is_profiling_enabled(thread_t *thread)
+{
+	return (PMSCR_EL1_get_E0SPE(&thread->spe.spe_regs.pmscr_el1) ||
+		PMSCR_EL1_get_E1SPE(&thread->spe.spe_regs.pmscr_el1));
+}
+
+static bool
+arm_vm_spe_is_el1_trap_enabled(thread_t *thread)
+{
+	return MDCR_EL2_get_TPMS(&thread->vcpu_regs_el2.mdcr_el2);
+}
+
+// IMPORTANT: Keep TPMS and E2PB synchronized. When TPMS=1, E2PB must be
+// EL1_TRAP to trap buffer registers. When TPMS=0, E2PB must be EL1_NO_TRAP.
+static void
+arm_vm_spe_el1_trap_set_enable(thread_t *thread, bool enable)
+{
+	MDCR_EL2_set_TPMS(&thread->vcpu_regs_el2.mdcr_el2, enable);
+
+	if (enable) {
+		MDCR_EL2_set_E2PB(&thread->vcpu_regs_el2.mdcr_el2,
+				  MDCR_EL2_E2PB_EL1_TRAP);
+	} else {
+		MDCR_EL2_set_E2PB(&thread->vcpu_regs_el2.mdcr_el2,
+				  MDCR_EL2_E2PB_EL1_NO_TRAP);
+	}
+
+        register_MDCR_EL2_write(thread->vcpu_regs_el2.mdcr_el2);
+}
+
+static void
+arm_vm_spe_save_state(thread_t *thread)
+{
+	thread->spe.spe_regs.pmscr_el1 =
+		register_PMSCR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmsicr_el1 =
+		register_PMSICR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmsirr_el1 =
+		register_PMSIRR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmsfcr_el1 =
+		register_PMSFCR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmsevfr_el1 =
+		register_PMSEVFR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmslatfr_el1 =
+		register_PMSLATFR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmblimitr_el1 =
+		register_PMBLIMITR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmbptr_el1 =
+		register_PMBPTR_EL1_read_ordered(&asm_ordering);
+	thread->spe.spe_regs.pmbsr_el1 =
+		register_PMBSR_EL1_read_ordered(&asm_ordering);
+#if defined(ARCH_ARM_FEAT_SPEv1p2)
+	thread->spe.spe_regs.pmsnevfr_el1 =
+		register_PMSNEVFR_EL1_read_ordered(&asm_ordering);
+#endif
+}
+
+static void
+arm_vm_spe_load_state(thread_t *thread)
+{
+	register_PMSCR_EL1_write_ordered(thread->spe.spe_regs.pmscr_el1,
+					 &asm_ordering);
+	register_PMSICR_EL1_write_ordered(thread->spe.spe_regs.pmsicr_el1,
+					  &asm_ordering);
+	register_PMSIRR_EL1_write_ordered(thread->spe.spe_regs.pmsirr_el1,
+					  &asm_ordering);
+	register_PMSFCR_EL1_write_ordered(thread->spe.spe_regs.pmsfcr_el1,
+					  &asm_ordering);
+	register_PMSEVFR_EL1_write_ordered(thread->spe.spe_regs.pmsevfr_el1,
+					   &asm_ordering);
+	register_PMSLATFR_EL1_write_ordered(thread->spe.spe_regs.pmslatfr_el1,
+					    &asm_ordering);
+	register_PMBLIMITR_EL1_write_ordered(thread->spe.spe_regs.pmblimitr_el1,
+					     &asm_ordering);
+	register_PMBPTR_EL1_write_ordered(thread->spe.spe_regs.pmbptr_el1,
+					  &asm_ordering);
+	register_PMBSR_EL1_write_ordered(thread->spe.spe_regs.pmbsr_el1,
+					 &asm_ordering);
+#if defined(ARCH_ARM_FEAT_SPEv1p2)
+	register_PMSNEVFR_EL1_write_ordered(thread->spe.spe_regs.pmsnevfr_el1,
+					    &asm_ordering);
+#endif
+}
+
+bool
+arm_vm_spe_handle_vcpu_activate_thread(thread_t *thread)
+{
+	error_t ret;
+
+	assert_debug(vcpu_is_vcpu(thread));
+
+	ret = vic_bind_private_vcpu(&thread->spe.spe_virq_src, thread,
+				    thread->spe.spe_virq,
+				    VIRQ_TRIGGER_SPE_BUFFER);
+
+	return ret == OK;
+}
+
+void
+arm_vm_spe_handle_object_deactivate_thread(thread_t *thread)
+{
+	if (vcpu_is_vcpu(thread)) {
+		vic_unbind(&thread->spe.spe_virq_src);
+	}
+}
+
+error_t
+arm_vm_spe_handle_vcpu_set_local_virq(thread_t *vcpu, virq_t virq)
+{
+	vcpu->spe.spe_virq = virq;
+	return OK;
+}
+
+// IMPORTANT: Set E2PB to EL1_TRAP when TPMS=1 to ensure buffer register
+// writes also trap, preventing state loss.
+error_t
+arm_vm_spe_handle_object_activate_thread(thread_t *thread)
+{
+	MDCR_EL2_set_TPMS(&thread->vcpu_regs_el2.mdcr_el2, true);
+	MDCR_EL2_set_E2PB(&thread->vcpu_regs_el2.mdcr_el2,
+			  MDCR_EL2_E2PB_EL1_TRAP);
+
+	return OK;
+}
+
+void
+arm_vm_spe_handle_vcpu_save_state(void)
+{
+	thread_t *thread = thread_get_self();
+
+	if (compiler_unexpected(!arm_vm_spe_is_el1_trap_enabled(thread))) {
+		arm_vm_spe_save_state(thread);
+
+		if (!arm_vm_spe_is_profiling_enabled(thread)) {
+			arm_vm_spe_el1_trap_set_enable(thread, true);
+		}
+	}
+}
+
+void
+arm_vm_spe_handle_vcpu_load_state(void)
+{
+	thread_t *thread = thread_get_self();
+
+	if (compiler_unexpected(arm_vm_spe_is_profiling_enabled(thread))) {
+		arm_vm_spe_load_state(thread);
+	} else {
+		register_PMSCR_EL1_write_ordered(PMSCR_EL1_default(),
+						 &asm_ordering);
+	}
+}
+
+void
+arm_vm_spe_handle_thread_context_switch_post(void)
+{
+	thread_t *thread = thread_get_self();
+
+	if (compiler_expected(vcpu_is_vcpu(thread))) {
+		bool_result_t asserted = virq_query(&thread->spe.spe_virq_src);
+		if ((asserted.e == OK) && !asserted.r) {
+			platform_irq_deactivate_percpu(
+				PLATFORM_STATISTICAL_PROFILING_IRQ,
+				cpulocal_get_index());
+		}
+
+		// IMPORTANT: Keep TPMS and E2PB synchronized
+		if (arm_vm_spe_is_profiling_enabled(thread)) {
+			MDCR_EL2_set_TPMS(&thread->vcpu_regs_el2.mdcr_el2,
+					  false);
+			MDCR_EL2_set_E2PB(&thread->vcpu_regs_el2.mdcr_el2,
+					  MDCR_EL2_E2PB_EL1_NO_TRAP);
+		} else {
+			MDCR_EL2_set_TPMS(&thread->vcpu_regs_el2.mdcr_el2,
+					  true);
+			MDCR_EL2_set_E2PB(&thread->vcpu_regs_el2.mdcr_el2,
+					  MDCR_EL2_E2PB_EL1_TRAP);
+		}
+	}
+}
+
+void
+arm_vm_spe_handle_vcpu_disable_state(void)
+{
+	register_PMSCR_EL1_write_ordered(PMSCR_EL1_default(), &asm_ordering);
 }
 #else
 // Dummy declaration to avoid empty translation unit warning
