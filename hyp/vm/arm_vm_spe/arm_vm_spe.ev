@@ -33,4 +33,7 @@ subscribe thread_context_switch_post
 
 subscribe vcpu_disable_state
 	handler arm_vm_spe_handle_vcpu_disable_state()
+
+subscribe irq_received[HWIRQ_ACTION_SPE_BUFFER]
+	handler arm_vm_spe_handle_irq_received(hwirq)
 #endif

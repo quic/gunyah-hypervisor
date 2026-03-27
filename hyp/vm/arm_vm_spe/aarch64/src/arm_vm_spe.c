@@ -274,6 +274,26 @@ arm_vm_spe_handle_vcpu_disable_state(void)
 {
 	register_PMSCR_EL1_write_ordered(PMSCR_EL1_default(), &asm_ordering);
 }
+
+// Forward PMBIRQ to guest as virtual interrupt. The hypervisor doesn't
+// process the buffer - the guest is responsible for servicing it.
+
+bool
+arm_vm_spe_handle_irq_received(const hwirq_t *hwirq)
+{
+	bool ret = false;
+
+	if (hwirq->irq == PLATFORM_STATISTICAL_PROFILING_IRQ) {
+		thread_t *thread = thread_get_self();
+
+		if (vcpu_is_vcpu(thread)) {
+			(void)virq_assert(&thread->spe.spe_virq_src, false);
+			ret = true;
+		}
+	}
+
+	return ret;
+}
 #else
 // Dummy declaration to avoid empty translation unit warning
 typedef int arm_vm_spe_dummy_t;

@@ -13,4 +13,9 @@ extend vcpu_local_virq_type enumeration {
 extend virq_trigger enumeration {
 	spe_buffer;
 };
+
+// Phase 5: Add hardware interrupt action for SPE buffer interrupt
+extend hwirq_action enumeration {
+	spe_buffer;
+};
 #endif
