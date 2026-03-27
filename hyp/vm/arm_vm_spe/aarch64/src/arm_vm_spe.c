@@ -116,7 +116,7 @@ arm_vm_spe_el1_trap_set_enable(thread_t *thread, bool enable)
 				  MDCR_EL2_E2PB_EL1_NO_TRAP);
 	}
 
-        register_MDCR_EL2_write(thread->vcpu_regs_el2.mdcr_el2);
+	register_MDCR_EL2_write(thread->vcpu_regs_el2.mdcr_el2);
 }
 
 static void
@@ -290,6 +290,49 @@ arm_vm_spe_handle_irq_received(const hwirq_t *hwirq)
 			(void)virq_assert(&thread->spe.spe_virq_src, false);
 			ret = true;
 		}
+	}
+
+	return ret;
+}
+
+// Trap handler for semi-lazy context switching. On first SPE register access,
+// load VCPU state and disable traps while profiling is active. Handles all
+// SPE registers identically: load state and retry instruction.
+
+vcpu_trap_result_t
+arm_vm_spe_handle_vcpu_trap_sysreg_access(ESR_EL2_ISS_MSR_MRS_t iss)
+{
+	vcpu_trap_result_t ret	  = VCPU_TRAP_RESULT_UNHANDLED;
+	thread_t	  *thread = thread_get_self();
+
+	ESR_EL2_ISS_MSR_MRS_t temp_iss = iss;
+	ESR_EL2_ISS_MSR_MRS_set_Rt(&temp_iss, 0U);
+	ESR_EL2_ISS_MSR_MRS_set_Direction(&temp_iss, false);
+
+	switch (ESR_EL2_ISS_MSR_MRS_raw(temp_iss)) {
+	case ISS_MRS_MSR_PMSCR_EL1:
+	case ISS_MRS_MSR_PMSICR_EL1:
+	case ISS_MRS_MSR_PMSIDR_EL1:
+	case ISS_MRS_MSR_PMSIRR_EL1:
+	case ISS_MRS_MSR_PMSFCR_EL1:
+	case ISS_MRS_MSR_PMSEVFR_EL1:
+	case ISS_MRS_MSR_PMSLATFR_EL1:
+	case ISS_MRS_MSR_PMBLIMITR_EL1:
+	case ISS_MRS_MSR_PMBPTR_EL1:
+	case ISS_MRS_MSR_PMBSR_EL1:
+	case ISS_MRS_MSR_PMBIDR_EL1:
+#if defined(ARCH_ARM_FEAT_SPEv1p2)
+	case ISS_MRS_MSR_PMSNEVFR_EL1:
+#endif
+		ret = VCPU_TRAP_RESULT_RETRY;
+		break;
+	default:
+		break;
+	}
+
+	if (ret == VCPU_TRAP_RESULT_RETRY) {
+		arm_vm_spe_el1_trap_set_enable(thread, false);
+		arm_vm_spe_load_state(thread);
 	}
 
 	return ret;

@@ -8,4 +8,10 @@ module arm_vm_spe
 subscribe boot_cpu_warm_init
 	handler arm_vm_spe_handle_boot_cpu_warm_init()
 	require_preempt_disabled
+
+subscribe vcpu_trap_sysreg_read
+	handler arm_vm_spe_handle_vcpu_trap_sysreg_access(iss)
+
+subscribe vcpu_trap_sysreg_write
+	handler arm_vm_spe_handle_vcpu_trap_sysreg_access(iss)
 #endif

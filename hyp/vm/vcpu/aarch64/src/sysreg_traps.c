@@ -14,6 +14,7 @@
 #include <qcbor.h>
 #include <thread.h>
 #include <trace.h>
+#include <util.h>
 #include <vcpu.h>
 #if defined(ARCH_ARM_FEAT_MPAM)
 #include <arm_mpam.h>
@@ -981,7 +982,10 @@ sys_aa64dfr0_read(const thread_t *thread)
 	(void)thread;
 #endif
 
-#if defined(MODULE_SPE)
+#if defined(MODULE_VM_ARM_VM_SPE)
+	// SPE is always available to VMs when hardware supports it.
+	// PMSNEVFR_EL1 (SPEv1.2) writes are trapped via
+	// HDFGWTR_EL2.nPMSNEVFR_EL1 for semi-lazy context switching.
 	ID_AA64DFR0_EL1_copy_PMSVer(&dfr0, &hw_dfr0);
 #endif
 
