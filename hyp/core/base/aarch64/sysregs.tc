@@ -1085,8 +1085,14 @@ extend MDCR_EL2 bitfield {
 #endif
 
 #if defined(ARCH_ARM_FEAT_SPE)
+define mdcr_el2_e2pb enumeration(explicit) {
+	EL2		= 0b00;
+	EL1_TRAP	= 0b10;
+	EL1_NO_TRAP	= 0b11;
+};
+
 extend MDCR_EL2 bitfield {
-	13:12		E2PB		uint8;
+	13:12		E2PB		enumeration mdcr_el2_e2pb;
 	14		TPMS		bool;
 };
 #endif
@@ -1208,6 +1214,64 @@ define PMCR_EL0 bitfield<64> {
 #if defined(ARCH_ARM_FEAT_PMUv3p5)
 extend PMCR_EL0 bitfield {
 	7		LP		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SPE)
+define pmscr_el1_pct enumeration(explicit) {
+	VIRTUAL		= 0b00;
+	PHYSICAL	= 0b01;
+#if defined(ARCH_ARM_FEAT_ECV)
+	GUEST_PHYSICAL	= 0b11;
+#endif
+};
+
+define PMSCR_EL1 bitfield<64> {
+	0		E0SPE		bool;
+	1		E1SPE		bool;
+	2		unknown=0;
+	3		CX		bool;
+	4		PA		bool;
+	5		TS		bool;
+	7:6		PCT		enumeration pmscr_el1_pct;
+	others		unknown=0;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SPE_EXC)
+define pmscr_el1_ee enumeration(explicit) {
+	DISABLED	= 0b00;
+#if defined(ARCH_ARM_FEAT_NV)
+	NV_RESERVED_1	= 0b01;
+	NV_RESERVED_2	= 0b10;
+#endif
+	ENABLED		= 0b11;
+};
+
+extend PMSCR_EL1 bitfield {
+	9:8		EE		enumeration pmscr_el1_ee;
+	10		KE		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SPE_nVM)
+extend PMSCR_EL1 bitfield {
+	11		EnVM		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SPE)
+define PMSCR_EL2 bitfield<64> {
+	0		E0HSPE		bool;
+	1		E2SPE		bool;
+	others		unknown=0;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_SPE)
+define PMSIDR_EL1 bitfield<64> {
+	3		FnE		bool;
+	others		unknown=0;
 };
 #endif
 

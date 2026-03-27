@@ -1,0 +1,11 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module arm_vm_spe
+
+#if defined(ARCH_ARM_FEAT_SPE)
+subscribe boot_cpu_warm_init
+	handler arm_vm_spe_handle_boot_cpu_warm_init()
+	require_preempt_disabled
+#endif

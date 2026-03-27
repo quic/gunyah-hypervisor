@@ -1,0 +1,6 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+// SPE (Statistical Profiling Extension) type definitions
+// Phase 1: Minimal structure for module initialization

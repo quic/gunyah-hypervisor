@@ -62,6 +62,7 @@ arch_module armv8 vm/arm_vm_lor_null
 arch_module armv8 vm/arm_vm_mpam_direct
 arch_module armv8 vm/arm_vm_mte
 arch_module armv8 vm/arm_vm_pmu
+arch_module armv8 vm/arm_vm_spe
 arch_module armv8 vm/arm_vm_ras
 arch_module armv8 vm/arm_vm_smmuv2
 arch_module armv8 vm/arm_vm_timer
