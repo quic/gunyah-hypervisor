@@ -3,3 +3,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 module arm_vm_spe
+
+#if defined(ARCH_ARM_FEAT_SPE)
+subscribe object_create_thread
+	handler arm_vm_spe_handle_object_create_thread(thread_create)
+#endif

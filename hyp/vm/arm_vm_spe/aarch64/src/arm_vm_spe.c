@@ -9,6 +9,9 @@
 #include <hypregisters.h>
 #include <panic.h>
 
+#include <thread.h>
+#include <vcpu.h>
+
 #include <asm/barrier.h>
 #include <asm/system_registers.h>
 
@@ -48,6 +51,22 @@ arm_vm_spe_handle_boot_cpu_warm_init(void)
 	HDFGRTR_EL2_set_nPMSNEVFR_EL1(&hdfgrtr, true);
 	register_HDFGRTR_EL2_write(hdfgrtr);
 #endif
+}
+
+// Set default SPE interrupt number from platform configuration (typically
+// IRQ 21). Can be overridden via hypercall_vcpu_set_local_virq().
+
+error_t
+arm_vm_spe_handle_object_create_thread(thread_create_t thread_create)
+{
+	thread_t *thread = thread_create.thread;
+	assert_debug(thread != NULL);
+
+	if (vcpu_is_vcpu(thread)) {
+		thread->spe.spe_virq = PLATFORM_STATISTICAL_PROFILING_IRQ;
+	}
+
+	return OK;
 }
 #else
 // Dummy declaration to avoid empty translation unit warning
