@@ -18,29 +18,21 @@ AlignConsecutiveAssignments:
   AcrossEmptyLines: false
   AcrossComments:  false
   AlignCompound:   false
-  AlignFunctionPointers: false
   PadOperators:    true
 AlignConsecutiveBitFields:
   Enabled:         false
   AcrossEmptyLines: false
   AcrossComments:  false
-  AlignCompound:   false
-  AlignFunctionPointers: false
-  PadOperators:    true
 AlignConsecutiveDeclarations:
   Enabled:         true
   AcrossEmptyLines: false
   AcrossComments:  false
-  AlignCompound:   false
+  AlignFunctionDeclarations: true
   AlignFunctionPointers: false
-  PadOperators:    true
 AlignConsecutiveMacros:
   Enabled:         true
   AcrossEmptyLines: false
   AcrossComments:  false
-  AlignCompound:   false
-  AlignFunctionPointers: false
-  PadOperators:    true
 AlignConsecutiveShortCaseStatements:
   Enabled:         false
   AcrossEmptyLines: false
@@ -49,6 +41,7 @@ AlignConsecutiveShortCaseStatements:
 AlignEscapedNewlines: Right
 AlignOperands:   Align
 AlignTrailingComments:
+  AlignPPAndNotPP: false
   Kind:            Always
   OverEmptyLines:  0
 AllowAllArgumentsOnNextLine: true
@@ -63,7 +56,6 @@ AllowShortIfStatementsOnASingleLine: Never
 AllowShortLambdasOnASingleLine: None
 AllowShortLoopsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: None
-AlwaysBreakAfterReturnType: All
 AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: MultiLine
 AttributeMacros:
@@ -124,9 +116,11 @@ BraceWrapping:
   SplitEmptyNamespace: true
 BreakAdjacentStringLiterals: true
 BreakAfterAttributes: Leave
-BreakAfterJavaFieldAnnotations: false
+BreakAfterOpenBracketBracedList: true
+BreakAfterReturnType: All
 BreakArrays:     true
 BreakBeforeBinaryOperators: None
+BreakBeforeCloseBracketBracedList: true
 BreakBeforeConceptDeclarations: Always
 BreakBeforeBraces: Custom
 BreakBeforeInlineASMColon: OnlyMultiline
@@ -144,6 +138,7 @@ DerivePointerAlignment: false
 DisableFormat:   false
 EmptyLineAfterAccessModifier: Never
 EmptyLineBeforeAccessModifier: LogicalBlock
+EnumTrailingComma: Leave
 ExperimentalAutoDetectBinPacking: false
 FixNamespaceComments: true
 ForEachMacros:
@@ -208,12 +203,16 @@ IntegerLiteralSeparator:
   HexMinDigits:    0
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
-KeepEmptyLinesAtTheStartOfBlocks: false
-KeepEmptyLinesAtEOF: false
+KeepEmptyLines:
+  AtEndOfFile:     false
+  AtStartOfBlock:  false
+  AtStartOfFile:   false
+KeepFormFeed:    false
 LambdaBodyIndentation: Signature
 LineEnding:      LF
 MacroBlockBegin: '(^BITMAP_(ATOMIC_)?FOREACH_(SET|CLEAR)_BEGIN$)|(^LIST_FOREACH_CONTAINER_(CONSUME_)?BEGIN)'
 MacroBlockEnd:   '(^BITMAP_(ATOMIC_)?FOREACH_(SET|CLEAR)_END$)|(^LIST_FOREACH_CONTAINER_(CONSUME_)?END)'
+MainIncludeChar: Any
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCBinPackProtocolList: Auto
@@ -224,6 +223,7 @@ ObjCSpaceBeforeProtocolList: true
 PackConstructorInitializers: BinPack
 PenaltyBreakAssignment: 10
 PenaltyBreakBeforeFirstCallParameter: 30
+PenaltyBreakBeforeMemberAccess: 150
 PenaltyBreakComment: 10
 PenaltyBreakFirstLessLess: 0
 PenaltyBreakOpenParenthesis: 0
@@ -237,8 +237,9 @@ PointerAlignment: Right
 PPIndentWidth:   -1
 QualifierAlignment: Left
 ReferenceAlignment: Pointer
-ReflowComments:  true
+ReflowComments:  Always
 RemoveBracesLLVM: false
+RemoveEmptyLinesInUnwrappedLines: true
 RemoveParentheses: Leave
 RemoveSemicolon: false
 RequiresClausePosition: OwnLine
@@ -251,6 +252,7 @@ SortJavaStaticImport: Before
 SortUsingDeclarations: Never
 SpaceAfterCStyleCast: false
 SpaceAfterLogicalNot: false
+SpaceAfterOperatorKeyword: false
 SpaceAfterTemplateKeyword: true
 SpaceAroundPointerQualifiers: Default
 SpaceBeforeAssignmentOperators: true
@@ -266,6 +268,7 @@ SpaceBeforeParensOptions:
   AfterFunctionDefinitionName: false
   AfterFunctionDeclarationName: false
   AfterIfMacros:   true
+  AfterNot:        false
   AfterOverloadedOperator: false
   AfterPlacementOperator: true
   AfterRequiresInClause: false
@@ -273,7 +276,7 @@ SpaceBeforeParensOptions:
   BeforeNonEmptyParentheses: false
 SpaceBeforeRangeBasedForLoopColon: false
 SpaceBeforeSquareBrackets: false
-SpaceInEmptyBlock: true
+SpaceInEmptyBraces: Always
 SpacesBeforeTrailingComments: 1
 SpacesInAngles:  Never
 SpacesInContainerLiterals: false
