@@ -3,4 +3,34 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // SPE (Statistical Profiling Extension) AArch64-specific type definitions
-// Phase 1: Minimal structure for module initialization
+
+#if defined(ARCH_ARM_FEAT_SPE)
+// SPE register structure - only writable registers are saved
+// Read-only registers (PMSIDR_EL1, PMBIDR_EL1) are not saved as it is unnecessary
+define vcpu_spe_registers structure {
+	pmscr_el1	bitfield PMSCR_EL1;
+	pmsicr_el1	uint64;
+	pmsirr_el1	uint64;
+	pmsfcr_el1	uint64;
+	pmsevfr_el1	uint64;
+	pmslatfr_el1	uint64;
+	pmblimitr_el1	uint64;
+	pmbptr_el1	uint64;
+	pmbsr_el1	uint64;
+#if defined(ARCH_ARM_FEAT_SPEv1p2)
+	pmsnevfr_el1	uint64;
+#endif
+};
+
+// SPE state container with interrupt support
+define spe structure {
+	spe_regs	structure vcpu_spe_registers;
+	spe_virq_src	structure virq_source(contained);
+	spe_virq	type virq_t;
+};
+
+// Extend thread object with SPE state
+extend thread object {
+	spe		structure spe(contained);
+};
+#endif

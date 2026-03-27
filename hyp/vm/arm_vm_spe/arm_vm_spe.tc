@@ -3,4 +3,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // SPE (Statistical Profiling Extension) type definitions
-// Phase 1: Minimal structure for module initialization
+
+#if defined(ARCH_ARM_FEAT_SPE)
+// Phase 2: Add SPE buffer interrupt support
+extend vcpu_local_virq_type enumeration {
+	spe_buffer = 3;
+};
+
+extend virq_trigger enumeration {
+	spe_buffer;
+};
+#endif
