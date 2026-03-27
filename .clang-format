@@ -215,6 +215,11 @@ MacroBlockEnd:   '(^BITMAP_(ATOMIC_)?FOREACH_(SET|CLEAR)_END$)|(^LIST_FOREACH_CO
 MainIncludeChar: Any
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
+NumericLiteralCase:
+  ExponentLetter:  Lower
+  HexDigit:        Leave
+  Prefix:          Lower
+  Suffix:          Upper
 ObjCBinPackProtocolList: Auto
 ObjCBlockIndentWidth: 2
 ObjCBreakBeforeNestedBlockParam: true

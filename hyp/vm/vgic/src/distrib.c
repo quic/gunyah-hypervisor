@@ -2139,7 +2139,7 @@ vgic_gicr_update_lpi_pending(vgic_vlpi_range_t *vlpi_range, index_t pend_index,
 		_Atomic vgic_delivery_state_t *dstate =
 			&vlpi_range->dstates[state_index];
 		bool pending = (pend_mask &
-				(1u << ((VGIC_LPI_PEND_LPIS_PER_BYTE)-bit)));
+				(1U << ((VGIC_LPI_PEND_LPIS_PER_BYTE)-bit)));
 
 		(void)vgic_update_dstate_pending(dstate, pending);
 	}
@@ -2179,7 +2179,7 @@ vgic_gicr_copy_lpi_pending(vic_t *vic, thread_t *vcpu, vmaddr_t pendbase)
 		vlpi_range =
 			vgic_vlpi_range_container_of_node(vlpi_lookup_r.node);
 
-		err = vgic_gicr_copy_in(vcpu->addrspace, pend_buf, 0u,
+		err = vgic_gicr_copy_in(vcpu->addrspace, pend_buf, 0U,
 					sizeof(pend_buf), pendbase, offset,
 					sizeof(pend_buf));
 
@@ -2334,7 +2334,7 @@ vgic_gicr_copy_lpi_config_range(thread_t *vcpu, vmaddr_t propbase,
 	bool	sync_needed = false;
 	error_t err	    = OK;
 
-	err = vgic_gicr_copy_in(vcpu->addrspace, prop_buf, 0u, sizeof(prop_buf),
+	err = vgic_gicr_copy_in(vcpu->addrspace, prop_buf, 0U, sizeof(prop_buf),
 				propbase, offset, sizeof(prop_buf));
 
 	if (err != OK) {
@@ -2436,7 +2436,7 @@ vgic_gicr_copy_propbase_all(vic_t *vic, thread_t *gicr_vcpu,
 	assert(vm_table_size <= config_table_size);
 
 	error_t err = vgic_gicr_copy_in(gicr_vcpu->addrspace,
-					vic->vlpi_config_table, 0u,
+					vic->vlpi_config_table, 0U,
 					config_table_size, base, 0U,
 					vm_table_size);
 

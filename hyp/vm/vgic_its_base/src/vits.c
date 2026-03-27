@@ -379,7 +379,7 @@ vgic_its_base_handle_vic_bind_msi_source(vic_t *vic, cap_id_t msi_source_cap,
 	index_t	  index	 = vic_msi_source_config_get_index(&source_config);
 	uint64_t  res0	 = vic_msi_source_config_get_res0(&source_config);
 
-	if (res0 != 0u) {
+	if (res0 != 0U) {
 		err = ERROR_ARGUMENT_INVALID;
 		goto out;
 	}
@@ -1201,7 +1201,7 @@ vgic_its_bind_devices(vgic_its_t		      *vgic_its,
 		platform_msi_device_t	*device	   = &pits->devices[i];
 		platform_msi_device_id_t device_id = device->device_id;
 
-		if ((devices_found == 0u) && (device_id_start != device_id)) {
+		if ((devices_found == 0U) && (device_id_start != device_id)) {
 			continue;
 		}
 
@@ -1209,7 +1209,7 @@ vgic_its_bind_devices(vgic_its_t		      *vgic_its,
 		// that the devices in each MSI controller are stored
 		// consecutively and ordered by device ID, ascending. Do a
 		// sanity check to verify this assumption.
-		if ((devices_found > 0u) && (device_id != (last_id + 1u))) {
+		if ((devices_found > 0U) && (device_id != (last_id + 1U))) {
 			break;
 		}
 
@@ -1225,7 +1225,7 @@ vgic_its_bind_devices(vgic_its_t		      *vgic_its,
 		}
 
 		// If this is the first device, insert a new range_map entry.
-		if (devices_found == 0u) {
+		if (devices_found == 0U) {
 			range->device_index = i;
 		}
 

@@ -208,7 +208,7 @@ vgic_allocate_vlpi_dstate(thread_t *target_vcpu, virq_t vlpi)
 	spinlock_acquire(&target_vcpu->vgic_vlpi_lock);
 
 	vlpi_lookup_r =
-		range_tree_lookup(&target_vcpu->vgic_vlpi_tree, vlpi, 1u);
+		range_tree_lookup(&target_vcpu->vgic_vlpi_tree, vlpi, 1U);
 	if (NULL == vlpi_lookup_r.node) {
 		size_t		  alloc_size = sizeof(vgic_vlpi_range_t);
 		size_t		  size;
@@ -493,7 +493,7 @@ vgic_unmap_vlpi(thread_t *vcpu, irq_t vlpi)
 	}
 
 	bitmap_clear(lpi_range->used_masks, offset);
-	lpi_range->lpis[offset].vlpi = 0u;
+	lpi_range->lpis[offset].vlpi = 0U;
 	if (bitmap_empty(lpi_range->used_masks, VGIC_LPI_ENTRY_RANGE_SIZE)) {
 		// No more LPIs allocated in this range, release
 		// ownership.
