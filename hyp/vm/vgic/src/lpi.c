@@ -36,7 +36,7 @@
 #include "gicv3.h"
 #include "gicv3_its.h"
 #include "internal.h"
-#include "vgic.h"
+#include "vgic_gicr.h"
 
 #if VGIC_HAS_LPI && !GICV3_HAS_VLPI_V4_1
 static vgic_lpi_range_ptr_result_t

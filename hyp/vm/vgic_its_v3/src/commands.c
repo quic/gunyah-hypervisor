@@ -16,7 +16,7 @@
 #include <vgic_its.h>
 
 #include "gicv3_its.h"
-#include "vgic.h"
+#include "vgic_gicr.h"
 #include "vgic_its_base.h"
 
 // Given a virtual ITS device and event, read the virtual ITS tables to
