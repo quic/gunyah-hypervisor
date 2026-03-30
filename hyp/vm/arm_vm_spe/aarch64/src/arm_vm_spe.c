@@ -7,10 +7,14 @@
 #include <hyptypes.h>
 
 #include <hypregisters.h>
-#include <panic.h>
 
 #include <compiler.h>
 #include <cpulocal.h>
+#include <irq.h>
+#include <object.h>
+#include <panic.h>
+#include <partition.h>
+#include <partition_alloc.h>
 #include <platform_irq.h>
 #include <thread.h>
 #include <vcpu.h>
@@ -21,6 +25,9 @@
 #include <asm/system_registers.h>
 
 #include "event_handlers.h"
+
+// Global SPE HWIRQ handle
+static hwirq_t *spe_hwirq;
 
 // Initialize MDCR_EL2.E2PB to EL2 mode and disable EL2 SPE profiling to
 // prevent spurious interrupts before VCPUs are activated.
@@ -56,6 +63,36 @@ arm_vm_spe_handle_boot_cpu_warm_init(void)
 	HDFGRTR_EL2_set_nPMSNEVFR_EL1(&hdfgrtr, true);
 	register_HDFGRTR_EL2_write(hdfgrtr);
 #endif
+
+	if (spe_hwirq != NULL) {
+		irq_enable_local(spe_hwirq);
+	}
+}
+
+// Create and activate the SPE hardware interrupt (PMBIRQ).
+
+void
+arm_vm_spe_handle_boot_hypervisor_start(void)
+{
+	hwirq_create_t params = {
+		.irq	= PLATFORM_STATISTICAL_PROFILING_IRQ,
+		.action = HWIRQ_ACTION_SPE_BUFFER,
+	};
+
+	hwirq_ptr_result_t ret =
+		partition_allocate_hwirq(partition_get_private(), params);
+
+	if (ret.e != OK) {
+		panic("Failed to create SPE buffer IRQ");
+	}
+
+	if (object_activate_hwirq(ret.r) != OK) {
+		panic("Failed to activate SPE buffer IRQ");
+	}
+
+	spe_hwirq = ret.r;
+
+	irq_enable_local(spe_hwirq);
 }
 
 // Set default SPE interrupt number from platform configuration (typically
