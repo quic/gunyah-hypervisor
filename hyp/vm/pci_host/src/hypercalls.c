@@ -170,7 +170,7 @@ hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 		cspace, pci_host_cap, CAP_RIGHTS_PCI_HOST_OBJECT_ACTIVATE);
 	if (compiler_unexpected(pci_host_r.e != OK)) {
 		ret = pci_host_r.e;
-		goto out_pci_host_released;
+		goto out;
 	}
 
 	pci_host = pci_host_r.r;
@@ -179,13 +179,13 @@ hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 		cspace, mem_me_cap, CAP_RIGHTS_MEMEXTENT_MAP);
 	if (compiler_unexpected(mem_r.e != OK)) {
 		ret = mem_r.e;
-		goto out_pci_host_put;
+		goto out_pci_host_ref;
 	}
 
 	size_result_t mem_size_r = memextent_get_mapped_size(mem_r.r);
 	if (mem_size_r.e != OK) {
 		ret = mem_size_r.e;
-		goto out_pci_host_put;
+		goto out_memextent_ref;
 	}
 
 	size_result_t size_r = pci_host_aperture_check(
@@ -193,7 +193,7 @@ hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 		pci_host->pcie ? 12U : 8U);
 	if (size_r.e != OK) {
 		ret = size_r.e;
-		goto out_pci_host_put;
+		goto out_memextent_ref;
 	}
 
 	partition_t *partition = pci_host->header.partition;
@@ -203,7 +203,7 @@ hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 		partition, size, alignof(pci_host_aperture_data_t));
 	if (alloc_r.e != OK) {
 		ret = ERROR_NOMEM;
-		goto out_pci_host_put;
+		goto out_memextent_ref;
 	}
 
 	pci_host_aperture_data_t *d = (pci_host_aperture_data_t *)alloc_r.r;
@@ -219,17 +219,18 @@ hypercall_pci_host_add_aperture(cap_id_t pci_host_cap, cap_id_t mem_me_cap,
 	if (atomic_load_relaxed(&pci_host->header.state) != OBJECT_STATE_INIT) {
 		ret = ERROR_OBJECT_STATE;
 		partition_free(partition, d, sizeof(pci_host_aperture_data_t));
-		goto out_pci_host_ref;
+		goto out_unlock;
 	}
 
 	list_insert_at_tail(&pci_host->aperture_list, &d->list_node);
 	ret = OK;
-out_pci_host_ref:
+out_unlock:
 	spinlock_release(&pci_host->header.lock);
-out_pci_host_put:
+out_memextent_ref:
 	object_put_memextent(mem_r.r);
+out_pci_host_ref:
 	object_put_pci_host(pci_host);
-out_pci_host_released:
+out:
 	return ret;
 }
 
