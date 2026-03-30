@@ -1441,7 +1441,7 @@ graph.add_rule('gen_public_types',
 graph.add_target(guestapi_interface_types, 'gen_public_types',
                  types_pickle, ABI=abi_arch)
 
-graph.add_rule('gen_types_tmpl', '${TYPED} -a ${ABI} -f "${FORMATTER}" '
+graph.add_rule('gen_types_tmpl', '${TYPED} -a ${ABI} '
                '-d ${out}.d -t ${TEMPLATE} -p ${in} -o ${out}',
                depfile='${out}.d')
 
