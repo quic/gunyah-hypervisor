@@ -1,5 +1,6 @@
-// © 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
 define preempt_disabled global structure opaque_lock;
+define preempt_nmi_lock global structure opaque_lock;

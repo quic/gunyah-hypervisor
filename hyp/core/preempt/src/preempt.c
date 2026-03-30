@@ -32,6 +32,8 @@ static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_IN_INTERRUPT,
 	      "PREEMPT_BITS_IN_INTERRUPT invalid");
 static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_ABORT_KERNEL,
 	      "PREEMPT_BITS_ABORT_KERNEL invalid");
+static_assert(PREEMPT_BITS_COUNT_MAX < PREEMPT_BITS_IN_NMI,
+	      "PREEMPT_BITS_IN_NMI invalid");
 
 static const count_t preempt_cpu_init =
 	(count_t)util_bit((index_t)PREEMPT_BITS_CPU_INIT);
@@ -39,6 +41,8 @@ static const count_t preempt_in_interrupt =
 	(count_t)util_bit((index_t)PREEMPT_BITS_IN_INTERRUPT);
 static const count_t preempt_abort_kernel =
 	(count_t)util_bit((index_t)PREEMPT_BITS_ABORT_KERNEL);
+static const count_t preempt_in_nmi =
+	(count_t)util_bit((index_t)PREEMPT_BITS_IN_NMI);
 
 void
 preempt_handle_boot_cpu_early_init(void) LOCK_IMPL
@@ -161,6 +165,21 @@ preempt_abort_dispatch(void) LOCK_IMPL
 	preempt_disable_count &= ~preempt_in_interrupt;
 
 	return ret;
+}
+
+count_t
+preempt_enter_nmi(void) LOCK_IMPL
+{
+	count_t old	      = preempt_disable_count;
+	preempt_disable_count = preempt_in_nmi;
+	return old;
+}
+
+void
+preempt_exit_nmi(count_t restore) LOCK_IMPL
+{
+	assert(preempt_disable_count == preempt_in_nmi);
+	preempt_disable_count = restore;
 }
 
 bool

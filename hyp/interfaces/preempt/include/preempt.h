@@ -55,6 +55,16 @@ preempt_enable_in_irq(void) RELEASE_PREEMPT_DISABLED;
 bool
 preempt_abort_dispatch(void);
 
+// Enter 'NMI' handling mode.
+//
+// This function should be called as early as possible in an NMI handler.
+count_t
+preempt_enter_nmi(void) REQUIRE_PREEMPT_DISABLED ACQUIRE_PREEMPT_NMI;
+
+// Exit 'NMI' handling mode and restore the old preemption count.
+void
+preempt_exit_nmi(count_t restore) REQUIRE_PREEMPT_DISABLED RELEASE_PREEMPT_NMI;
+
 // Check whether preemption is pending for the calling thread.
 //
 // This may be called with preemption disabled, and may be called from an RCU
