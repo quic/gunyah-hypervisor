@@ -848,8 +848,9 @@ size_result_t
 addrspace_modify_pages(addrspace_t *addrspace, vmaddr_t vbase, size_t size,
 		       addrspace_modify_pages_flags_t flags)
 {
-	size_t	size_remaining = size;
-	error_t err;
+	size_t	      size_remaining = size;
+	error_t	      err;
+	size_result_t ret;
 
 	if ((size > 0U) && util_add_overflows(vbase, size - 1U)) {
 		err = ERROR_ADDR_OVERFLOW;
@@ -875,8 +876,6 @@ addrspace_modify_pages(addrspace_t *addrspace, vmaddr_t vbase, size_t size,
 
 	size_remaining -= modify_ret.r;
 	err = modify_ret.e;
-
-	size_result_t ret;
 out:
 	if (err == OK) {
 		assert(size_remaining == 0U);
