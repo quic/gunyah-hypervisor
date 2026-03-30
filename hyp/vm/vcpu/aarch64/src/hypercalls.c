@@ -460,8 +460,21 @@ hypercall_vcpu_set_local_virq(cap_id_t cap_id, vcpu_local_virq_type_t virq_type,
 
 	thread_t *vcpu = result.r;
 
-	ret = trigger_vcpu_set_local_virq_event(virq_type, vcpu, virq);
+	if (compiler_unexpected(!vcpu_is_vcpu(vcpu))) {
+		ret = ERROR_ARGUMENT_INVALID;
+		goto out_release_vcpu;
+	}
 
+	spinlock_acquire(&vcpu->header.lock);
+	object_state_t state = atomic_load_relaxed(&vcpu->header.state);
+	if (state == OBJECT_STATE_INIT) {
+		ret = trigger_vcpu_set_local_virq_event(virq_type, vcpu, virq);
+	} else {
+		ret = ERROR_OBJECT_STATE;
+	}
+	spinlock_release(&vcpu->header.lock);
+
+out_release_vcpu:
 	object_put_thread(vcpu);
 out:
 	return ret;
