@@ -15,6 +15,7 @@ Based on pgtable_hyp_testcase.py.
 import random
 import sys
 import queue
+from collections import Counter
 from transitions import Machine
 
 
@@ -72,6 +73,7 @@ class TestCase:
         self.allocations = []
 
         self.test_ops = queue.Queue()
+        self.op_counts = Counter()
         self.step_ops = [
             self.gen_insert_op,
             self.gen_remove_op,
@@ -82,6 +84,19 @@ class TestCase:
             self.gen_next_node_found_op,
             self.gen_next_node_missing_op,
         ]
+
+    def format_counts(self, title, counter):
+        lines = [f"# {title}"]
+        names = sorted(counter.keys())
+        width = max((len(name) for name in names), default=0)
+        for name in names:
+            lines.append(f"#\t{name:<{width}} : {counter[name]:d}")
+        total = sum(counter[name] for name in names)
+        lines.append(f"#\t{'total':<{width}} : {total:d}")
+        return "\n".join(lines)
+
+    def get_op_counts(self):
+        return self.format_counts("Operation counts:", self.op_counts)
 
     def alloc_range(self, r, pos):
         assert r.node_index is None
@@ -207,7 +222,9 @@ class TestCase:
             f"{self.next_node_op:d} {addr:#x} -1")
 
     def gen_step_ops(self):
-        random.choice(self.step_ops)()
+        op_fn = random.choice(self.step_ops)
+        op_fn()
+        self.op_counts[op_fn.__name__] += 1
 
     def run(self, max_steps, seed):
         self.node_count = 1000
@@ -245,6 +262,11 @@ def main():
 
     for op in m.run(opts.max_steps, opts.seed):
         print(op, file=opts.outfile)
+
+    op_counts = m.get_op_counts()
+    print(op_counts, file=opts.outfile)
+    if opts.outfile is not sys.stdout:
+        print(op_counts, file=sys.stdout)
 
 
 if __name__ == "__main__":
