@@ -4,6 +4,7 @@ This directory contains tests for the range tree AVL module.
 
 - `unit_test.c`: unit tests. Run on `aarch64` targets to verify correctness of
 lock-free code.
+- `random_test.c`: runs random operation sequences against the range tree.
 
 ## All Tests
 
@@ -42,4 +43,47 @@ From this directory:
 
 ```sh
 ./ut
+```
+
+## Random Test
+
+### Build Random Test
+
+From this directory:
+
+```sh
+make rt
+```
+
+### Generate Random Test Cases
+
+From this directory:
+
+```sh
+./range_tree_testcase.py -o testcases.txt
+```
+
+**Prerequisite:** the Python `transitions` module must be available.
+
+To generate a reproducible test case file with a specific random seed and number
+of operations:
+
+```sh
+./range_tree_testcase.py -o testcases.txt -s 1 -m 100000
+```
+
+Use the generated `testcases.txt` as input to `rt`.
+
+### Run Random Test
+
+From this directory:
+
+```sh
+./rt -f testcases.txt
+```
+
+To test parallel lookups during range tree updates run:
+
+```sh
+./rt -f testcases.txt -p
 ```
