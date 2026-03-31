@@ -25,9 +25,26 @@
 	msr	AP\k\()KeyHi_EL1, \kh
 .endm
 
+// Macro for saving the current key to the stack and loading the EL2 key
+.macro  vcpu_pauth_entry_key_sp k:req, sp_ofs:req, kp:req, \
+		tl:req, th:req, kl:req, kh:req
+	mrs	\tl, AP\k\()KeyLo_EL1
+	ldp	\kl, \kh, [\kp, pauth_\k\()_ofs]
+	mrs	\th, AP\k\()KeyHi_EL1
+	msr	AP\k\()KeyLo_EL1, \kl
+	stp	\tl, \th, [sp, \sp_ofs]
+	msr	AP\k\()KeyHi_EL1, \kh
+.endm
+
 // Macro for loading an EL1 key
 .macro  vcpu_pauth_exit_key k:req, tp:req, tl:req, th:req
 	ldp	\tl, \th, [\tp, vcpu_pauth_tp_pauth_ofs + pauth_\k\()_ofs]
+	msr	AP\k\()KeyLo_EL1, \tl
+	msr	AP\k\()KeyHi_EL1, \th
+.endm
+
+.macro  vcpu_pauth_exit_key_sp k:req, sp_ofs:req, tl:req, th:req
+	ldp	\tl, \th, [sp, \sp_ofs]
 	msr	AP\k\()KeyLo_EL1, \tl
 	msr	AP\k\()KeyHi_EL1, \th
 .endm
@@ -44,6 +61,15 @@
 #if defined(ARCH_ARM_FEAT_PAuth)
 	adrl	\kp, aarch64_pauth_keys
 	vcpu_pauth_entry_key IA, \tp, \kp, \tl, \th, \kl, \kh
+	isb
+#endif
+.endm
+
+.macro  vcpu_pauth_entry_thread_sp sp_ofs:req, kp:req, tl:req, th:req, kl:req, \
+		kh:req
+#if defined(ARCH_ARM_FEAT_PAuth)
+	adrl	\kp, aarch64_pauth_keys
+	vcpu_pauth_entry_key_sp IA, \sp_ofs, \kp, \tl, \th, \kl, \kh
 	isb
 #endif
 .endm
