@@ -59,8 +59,9 @@ class TestCase:
     check_op = 5
     next_node_op = 6
 
-    def __init__(self):
+    def __init__(self, debug=False):
         self.top = 1 << 64
+        self.debug = debug
 
         self.machine = Machine(
             model=self,
@@ -230,9 +231,9 @@ class TestCase:
         try:
             op_fn()
             self.op_counts[op_fn.__name__] += 1
-        except StateException:
+        except StateException as ex:
             self.err_counts[op_fn.__name__] += 1
-            raise
+            raise StateException(f"{op_fn.__name__}: {ex}") from ex
 
     def run(self, max_steps, seed):
         self.node_count = 1000
@@ -248,7 +249,9 @@ class TestCase:
                 step = step + 1
                 while not self.test_ops.empty():
                     yield self.test_ops.get()
-            except StateException:
+            except StateException as ex:
+                if self.debug:
+                    yield f"# StateException: {ex}"
                 pass
 
         self.destroy()
@@ -263,10 +266,11 @@ def main():
     parser.add_argument('-s', '--seed', type=int,
                         default=random.randrange(0, 1 << 64))
     parser.add_argument('-m', '--max-steps', type=int, default=(1 << 20))
+    parser.add_argument('-d', '--debug', action='store_true')
 
     opts = parser.parse_args()
 
-    m = TestCase()
+    m = TestCase(debug=opts.debug)
 
     for op in m.run(opts.max_steps, opts.seed):
         print(op, file=opts.outfile)
