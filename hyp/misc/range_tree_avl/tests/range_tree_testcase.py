@@ -74,6 +74,7 @@ class TestCase:
 
         self.test_ops = queue.Queue()
         self.op_counts = Counter()
+        self.err_counts = Counter()
         self.step_ops = [
             self.gen_insert_op,
             self.gen_remove_op,
@@ -97,6 +98,9 @@ class TestCase:
 
     def get_op_counts(self):
         return self.format_counts("Operation counts:", self.op_counts)
+
+    def get_err_counts(self):
+        return self.format_counts("StateException counts:", self.err_counts)
 
     def alloc_range(self, r, pos):
         assert r.node_index is None
@@ -223,8 +227,12 @@ class TestCase:
 
     def gen_step_ops(self):
         op_fn = random.choice(self.step_ops)
-        op_fn()
-        self.op_counts[op_fn.__name__] += 1
+        try:
+            op_fn()
+            self.op_counts[op_fn.__name__] += 1
+        except StateException:
+            self.err_counts[op_fn.__name__] += 1
+            raise
 
     def run(self, max_steps, seed):
         self.node_count = 1000
@@ -265,8 +273,11 @@ def main():
 
     op_counts = m.get_op_counts()
     print(op_counts, file=opts.outfile)
+    err_counts = m.get_err_counts()
+    print(err_counts, file=opts.outfile)
     if opts.outfile is not sys.stdout:
         print(op_counts, file=sys.stdout)
+        print(err_counts, file=sys.stdout)
 
 
 if __name__ == "__main__":
