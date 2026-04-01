@@ -219,7 +219,10 @@ arm_vm_mpam_direct_handle_vcpu_load_state(void)
 		register_MPAM0_EL1_write(thread->mpam.mpam_regs.mpam0_el1);
 		register_MPAM1_EL1_write(thread->mpam.mpam_regs.mpam1_el1);
 		register_MPAM2_EL2_write(thread->mpam.mpam_regs.mpam2_el2);
-		register_MPAMHCR_EL2_write(thread->mpam.mpam_regs.mpamhcr_el2);
+		if (mpam_has_hcr) {
+			register_MPAMHCR_EL2_write(
+				thread->mpam.mpam_regs.mpamhcr_el2);
+		}
 #if defined(ARCH_ARM_FEAT_SME)
 		if (vcpu_option_flags_get_sme_allowed(&thread->vcpu_options)) {
 			register_MPAMSM_EL1_write(
