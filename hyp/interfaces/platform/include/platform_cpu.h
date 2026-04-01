@@ -116,11 +116,6 @@ platform_cpu_mpidr_valid(MPIDR_EL1_t mpidr);
 core_id_t
 platform_cpu_get_coreid(MIDR_EL1_t midr);
 #endif
-
-#if defined(ARCH_ARM_FEAT_BTI)
-bool
-platform_cpu_bti_enabled(void);
-#endif
 #endif // ARCH_ARM
 
 uint32_t

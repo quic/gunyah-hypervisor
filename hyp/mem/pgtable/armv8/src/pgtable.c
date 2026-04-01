@@ -65,8 +65,6 @@
 #define TEST_EXPORTED static
 #endif
 
-#include <platform_cpu.h>
-
 #include <asm/cache.h>
 #include <asm/cpu.h>
 
@@ -1362,9 +1360,8 @@ map_stg1_access_to_attrs(pgtable_access_t	  access,
 #endif
 
 #if defined(ARCH_ARM_FEAT_BTI)
-	// Guard the executable pages only if requested from platform
-	vmsa_stg1_upper_attrs_set_GP(upper_attrs,
-				     (!xn && platform_cpu_bti_enabled()));
+	// Guard the executable pages
+	vmsa_stg1_upper_attrs_set_GP(upper_attrs, !xn);
 #endif
 }
 
