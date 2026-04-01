@@ -70,6 +70,10 @@ void
 vgic_handle_boot_hypervisor_start(void)
 {
 #if !defined(NDEBUG)
+	// Verify the LR count
+	ICH_VTR_EL2_t vtr = register_ICH_VTR_EL2_read();
+	assert(ICH_VTR_EL2_get_ListRegs(&vtr) == (CPU_GICH_LR_COUNT - 1));
+
 	register_t flags = 0U;
 	TRACE_SET_CLASS(flags, VGIC);
 #if defined(VERBOSE) && VERBOSE
