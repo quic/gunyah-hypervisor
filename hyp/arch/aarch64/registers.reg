@@ -365,10 +365,10 @@ APGAKeyLo_EL1 <uint64> rw
 #endif
 
 #if defined(ARCH_ARM_FEAT_MTE) && defined(INTERFACE_VCPU)
-GCR_EL1 wR
-RGSR_EL1 wR
-VHE(TFSR_EL1) wR
-TFSRE0_EL1 wR
+GCR_EL1 +mte wR
+RGSR_EL1 +mte wR
+VHE_E(TFSR_EL1, +mte) wR
+TFSRE0_EL1 +mte wR
 #endif
 
 #if defined(MODULE_CORE_DEBUG)
