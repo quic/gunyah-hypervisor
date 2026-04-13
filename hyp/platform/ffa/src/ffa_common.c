@@ -20,7 +20,7 @@
 #include <trace.h>
 #include <util.h>
 
-#include "ffa.h"
+#include "ffa_private.h"
 
 // Prepares w0-w1 for the 32-bit ERET conduit
 static void

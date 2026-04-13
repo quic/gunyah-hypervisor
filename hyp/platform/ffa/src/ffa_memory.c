@@ -36,7 +36,7 @@
 #include <asm/cpu.h>
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 static_assert(sizeof(ffa_memory_transaction_desc_t) == 48U, "struct size");
 

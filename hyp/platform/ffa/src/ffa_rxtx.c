@@ -31,7 +31,7 @@
 #include <util.h>
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 static_assert(HYP_FFA_PAGE_SIZE == 4096U,
 	      "FFA RXTX size must be 1 page whose size is 4096U");

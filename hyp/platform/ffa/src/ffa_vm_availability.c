@@ -23,7 +23,7 @@
 #include <util.h>
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 static uint64_t
 ffa_availability_msg(ffa_partition_id_t vm_part_id,

@@ -24,7 +24,7 @@
 #endif
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 static bool
 ffa_smccc_is_run(smccc_function_id_t fn_id)

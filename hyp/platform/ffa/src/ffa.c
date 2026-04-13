@@ -28,7 +28,7 @@
 #include <util.h>
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 #if ARCH_AARCH64_32BIT_EL1
 #error FF-A not implemented for AArch32 VMs

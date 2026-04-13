@@ -26,7 +26,7 @@
 #include <util.h>
 
 #include "event_handlers.h"
-#include "ffa.h"
+#include "ffa_private.h"
 
 static ffa_rxtx_features_buffer_info_t ffa_rxtx_features_buffer_info;
 static size_t			       ffa_rxtx_max_buffer_size;

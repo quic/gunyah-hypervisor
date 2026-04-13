@@ -8,7 +8,7 @@
 #include <thread.h>
 #include <util.h>
 
-#include "ffa.h"
+#include "ffa_private.h"
 
 // Direct messaging API
 
