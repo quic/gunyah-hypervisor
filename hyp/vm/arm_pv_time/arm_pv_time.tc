@@ -1,4 +1,4 @@
-// © 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -22,6 +22,14 @@ define arm_pv_time_self_block_state bitfield<64> {
 	// VCPU activation changes it to SCHEDULER_BLOCK_VCPU_OFF.
 	auto		block		enumeration scheduler_block;
 
+#if PLATFORM_ARCH_TIMER_FREQ > 1000000000
+	// 59-bits gives 18-years before overflow with a 1ns timer resolution
+	// We could drop the LSB, but its probably a config error to check first.
+#error Check if PLATFORM_ARCH_TIMER_FREQ config should be > 1GHz
+	// #define TICKS_LSB 1
+#else
+#define TICKS_LSB 0
+#endif
 	// Time at which the thread was last unblocked from a self-imposed
 	// block state (i.e. one in in which the thread voluntarily gave up
 	// the CPU and which should not be counted as stolen).
@@ -29,7 +37,7 @@ define arm_pv_time_self_block_state bitfield<64> {
 	// This is zero while the thread is in a self-imposed block state.
 	// The thread's initial block state (prior to first starting) is
 	// considered self-imposed for this purpose.
-	auto<60>	last_unblocked	type ticks_t;
+	63:5	last_unblocked	type ticks_t lsl(TICKS_LSB);
 };
 
 define arm_pv_time structure {
