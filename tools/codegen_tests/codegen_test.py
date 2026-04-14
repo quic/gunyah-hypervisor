@@ -275,17 +275,20 @@ class CodegenTester:
     def _init_settings(self):
         """Initialize all settings"""
         # Get toolchain path from environment variable
-        qcom_llvm = os.environ.get("QCOM_LLVM")
-        if qcom_llvm:
+        llvm = os.environ.get("LLVM")
+        if not llvm:
+            # Try QCOM_LLVM
+            llvm = os.environ.get("QCOM_LLVM")
+        if llvm:
             # Remove trailing slash if present
-            qcom_llvm = qcom_llvm.rstrip("/")
-            clang_path = f"{qcom_llvm}/bin/clang"
-            formatter_path = f"{qcom_llvm}/bin/clang-format"
+            llvm = llvm.rstrip("/")
+            clang_path = f"{llvm}/bin/clang"
+            formatter_path = f"{llvm}/bin/clang-format"
         else:
-            # Fallback to default paths if environment variable not set
-            clang_path = "/pkg/qct/software/llvm/release/arm/18.0.1/bin/clang"
+            # Fallback to default paths if environment variables not set
+            clang_path = "clang"
             formatter_path = (
-                "/pkg/qct/software/llvm/release/arm/18.0.1/bin/clang-format"
+                "clang-format"
             )
 
         self.complete_settings = {

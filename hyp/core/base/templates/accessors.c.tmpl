@@ -14,6 +14,18 @@
 \#include <panic.h>
 #end if
 
+#def bitshift_left(shift)
+#if shift != 0
+ << ${shift}U#slurp
+#end if
+#end def
+
+#def bitshift_right(shift)
+#if shift != 0
+ >> ${shift}U#slurp
+#end if
+#end def
+
 // Bitfield Accessors
 
 #for $definition in $definitions
@@ -35,7 +47,7 @@
 
 void
 ${type_name}_init(${type_name}_t *bit_field) {
-       *bit_field = ${type_name}_default();
+	*bit_field = ${type_name}_default();
 }
 
 #if $unit_cnt == 1
@@ -49,46 +61,46 @@ ${type_name}_raw(${type_name}_t bit_field) {
 ${type_name}_t
 ${type_name}_clean(${type_name}_t bit_field) {
 #if trivial
-       (void)bit_field;
+	(void)bit_field;
 #end if
-       return (${type_name}_t) { .bf = { #slurp
+	return (${type_name}_t) { .bf = { #slurp
 #for i in range($unit_cnt)
 #if $compare_masks[$i] != 0
 #set mask = hex($compare_masks[$i])
 #if $init_values[$i] != 0
 #set init = hex($init_values[$i])
 ## Keep any default values, only for `unknown = XX` fields
-               // (${init}U & ~${mask}U) |
-               ($unit_type)(${hex($init_values[$i] & ($compare_masks[$i] ^ unit_size_mask))}U) |
+${'\n\t'}// (${init}U & ~${mask}U) | ...
+	($unit_type)(${hex($init_values[$i] & ($compare_masks[$i] ^ unit_size_mask))}U) | #slurp
 #end if
-               (bit_field.bf[$i] & ${mask}U),
+(bit_field.bf[$i] & ${mask}U),#slurp
 #else
 #set init = hex($init_values[$i])
-               ${init},
+${init},#slurp
 #end if
 #end for
-       } };
+ } };
 }
 
 bool
 ${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2) {
 #if trivial
-       (void)b1;
-       (void)b2;
+	(void)b1;
+	(void)b2;
 #end if
-       return#slurp
+	return #slurp
 #set sep = ''
 #for i in range($unit_cnt)
 #if $compare_masks[$i] != 0
 #set mask = hex($compare_masks[$i])
-       $sep ((b1.bf[$i] & ${mask}U) == (b2.bf[$i] & ${mask}U))
-#set sep = '&&'
+${sep}((b1.bf[$i] & ${mask}U) == (b2.bf[$i] & ${mask}U))#slurp
+#set sep = ' &&\n\t\t'
 #end if
 #end for
 #if trivial
-       true
+true#slurp
 #end if
-       ;
+;
 }
 
 #if $definition.has_set_ops
@@ -105,7 +117,7 @@ ${type_name}_is_equal(${type_name}_t b1, ${type_name}_t b2) {
 bool
 ${type_name}_is_empty(${type_name}_t bit_field)
 {
-return#slurp
+	return#slurp
 #set $first = True
 #for $unit in range($unit_cnt)
 #if not $first
@@ -122,15 +134,12 @@ return#slurp
 bool
 ${type_name}_is_clean(${type_name}_t bit_field)
 {
-return#slurp
-#set $first = True
+	return #slurp
+#set sep = ''
 #for $unit in range($unit_cnt)
-#if not $first
- &&#slurp
-#end if
-#set $first = False
- ((bit_field.bf[$unit] & ${hex($compare_masks[$unit] ^ $unit_size_mask)}U) ==
-    ${hex($init_values[$i] & ~$compare_masks[$i])}U)#slurp
+${sep}((bit_field.bf[$unit] & ${hex($compare_masks[$unit] ^ $unit_size_mask)}U) == #slurp
+${hex($init_values[$i] & ~$compare_masks[$i])}U)#slurp
+#set sep = ' &&\n\t\t'
 #end for
 ;
 }
@@ -140,64 +149,64 @@ ${type_name}_t
 ${type_name}_union(${type_name}_t b1, ${type_name}_t b2)
 {
 #if bool_trivial
-       (void)b2;
+	(void)b2;
 #end if
-       return (${type_name}_t){ .bf = { #slurp
+	return (${type_name}_t){ .bf = {
 #for i in range($unit_cnt)
 #if $all_fields_boolean
-               b1.bf[$i] | b2.bf[$i],
+		b1.bf[$i] | b2.bf[$i],
 #elif $boolean_masks[$i] != 0
 #set mask = hex($boolean_masks[$i])
-               b1.bf[$i] | (b2.bf[$i] & ${mask}U),
+		b1.bf[$i] | (b2.bf[$i] & ${mask}U),
 #else
-               b1.bf[$i],
+		b1.bf[$i],
 #end if
 #end for
-       } };
+	} };
 }
 
 ${type_name}_t
 ${type_name}_intersection(${type_name}_t b1, ${type_name}_t b2)
 {
 #if bool_trivial
-       (void)b2;
+	(void)b2;
 #end if
-       return (${type_name}_t){ .bf = { #slurp
+	return (${type_name}_t){ .bf = {
 #for i in range($unit_cnt)
 #if $all_fields_boolean
-               b1.bf[$i] & b2.bf[$i],
+		b1.bf[$i] & b2.bf[$i],
 #elif $boolean_masks[$i] != 0
 #set mask = hex($boolean_masks[$i])
-               b1.bf[$i] & (b2.bf[$i] | ~($unit_type)${mask}U),
+		b1.bf[$i] & (b2.bf[$i] | ~($unit_type)${mask}U),
 #else
-               b1.bf[$i],
+		b1.bf[$i],
 #end if
 #end for
-       } };
+	} };
 }
 
 ${type_name}_t
 ${type_name}_inverse(${type_name}_t b)
 {
-       return (${type_name}_t){ .bf = { #slurp
+	return (${type_name}_t){ .bf = {
 #for i in range($unit_cnt)
 #if $all_fields_boolean
-               ($unit_type)~b.bf[$i],
+		($unit_type)~b.bf[$i],
 #elif $boolean_masks[$i] != 0
 #set mask = hex($boolean_masks[$i])
-               b.bf[$i] ^ ${mask}U,
+		b.bf[$i] ^ ${mask}U,
 #else
-               b.bf[$i],
+		b.bf[$i],
 #end if
 #end for
-       } };
+	} };
 }
 
 ${type_name}_t
 ${type_name}_difference(${type_name}_t b1, ${type_name}_t b2)
 {
-       ${type_name}_t not_b2 = ${type_name}_inverse(b2);
-       return ${type_name}_intersection(b1, not_b2);
+	${type_name}_t not_b2 = ${type_name}_inverse(b2);
+	return ${type_name}_intersection(b1, not_b2);
 }
 
 #if $abi.isa_name == 'aarch64' and $unit_cnt == 1
@@ -223,40 +232,40 @@ ${type_name}_difference(${type_name}_t b1, ${type_name}_t b2)
 #else
 #raise ValueError("Invalid unit_size")
 #end if
-        ${unit_type} ret_u;
-        switch(order) {
-        case memory_order_relaxed:
-                // ${unit_size}-bit atomic load and ${op}, relaxed order
-                __asm__ volatile ("ld${op}${s} %${w}2, %${w}0, %1"
-                        : "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
-                break;
-        case memory_order_acquire:
-        case memory_order_consume:
-                // ${unit_size}-bit atomic load and ${op}, acquire order
-                __asm__ volatile ("ld${op}a${s} %${w}2, %${w}0, %1"
-                        : "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
-                // Compiler acquire fence to prevent later stores migrating
-                // before the above atomic load
-                atomic_signal_fence(memory_order_acquire);
-                break;
-        case memory_order_release:
-                // Compiler release fence to prevent earlier accesses migrating
-                // after the below atomic load
-                atomic_signal_fence(memory_order_release);
-                // ${unit_size}-bit atomic load and ${op}, release order
-                __asm__ volatile ("ld${op}l${s} %${w}2, %${w}0, %1"
-                        : "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
-                break;
-        case memory_order_acq_rel:
-        case memory_order_seq_cst:
-        default:
-                // ${unit_size}-bit atomic load and ${op}, acquire and release
-                // order, with a full compiler barrier
-                __asm__ volatile ("ld${op}al${s} %${w}2, %${w}0, %1"
-                        : "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]) : "memory");
-                break;
-        }
-        return ${type_name}_cast(ret_u);
+	${unit_type} ret_u;
+	switch(order) {
+	case memory_order_relaxed:
+		// ${unit_size}-bit atomic load and ${op}, relaxed order
+		__asm__ volatile ("ld${op}${s} %${w}2, %${w}0, %1"
+			: "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
+		break;
+	case memory_order_acquire:
+	case memory_order_consume:
+		// ${unit_size}-bit atomic load and ${op}, acquire order
+		__asm__ volatile ("ld${op}a${s} %${w}2, %${w}0, %1"
+			: "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
+		// Compiler acquire fence to prevent later stores migrating
+		// before the above atomic load
+		atomic_signal_fence(memory_order_acquire);
+		break;
+	case memory_order_release:
+		// Compiler release fence to prevent earlier accesses migrating
+		// after the below atomic load
+		atomic_signal_fence(memory_order_release);
+		// ${unit_size}-bit atomic load and ${op}, release order
+		__asm__ volatile ("ld${op}l${s} %${w}2, %${w}0, %1"
+			: "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]));
+		break;
+	case memory_order_acq_rel:
+	case memory_order_seq_cst:
+	default:
+		// ${unit_size}-bit atomic load and ${op}, acquire and release
+		// order, with a full compiler barrier
+		__asm__ volatile ("ld${op}al${s} %${w}2, %${w}0, %1"
+			: "=r"(ret_u), "+Q"(*b1) : "r"(b2.bf[0]) : "memory");
+		break;
+	}
+	return ${type_name}_cast(ret_u);
 #end def
 #end if
 
@@ -268,20 +277,20 @@ ${type_name}_atomic_union(_Atomic ${type_name}_t *b1, ${type_name}_t b2, memory_
 ${atomic_fetch_op_bitmap($type_name, $unit_type, $unit_size, 'set')}
 \#else
 #end if
-       memory_order load_order =
-               (order == memory_order_acq_rel) ? memory_order_acquire :
-	       (order == memory_order_release) ? memory_order_relaxed :
-	       order;
+	memory_order load_order =
+		(order == memory_order_acq_rel) ? memory_order_acquire :
+		(order == memory_order_release) ? memory_order_relaxed :
+		order;
 
-       ${type_name}_t old_value = atomic_load_explicit(b1, load_order);
-       ${type_name}_t new_value;
+	${type_name}_t old_value = atomic_load_explicit(b1, load_order);
+	${type_name}_t new_value;
 
-       do {
-               new_value = ${type_name}_union(old_value, b2);
-       } while (!atomic_compare_exchange_weak_explicit(b1, &old_value,
-               new_value, order, load_order));
+	do {
+		new_value = ${type_name}_union(old_value, b2);
+	} while (!atomic_compare_exchange_weak_explicit(b1, &old_value,
+		 new_value, order, load_order));
 
-       return old_value;
+	return old_value;
 #if $abi.isa_name == 'aarch64' and $unit_cnt == 1
 \#endif
 #end if
@@ -292,24 +301,24 @@ ${type_name}_atomic_intersection(_Atomic ${type_name}_t *b1, ${type_name}_t b2, 
 {
 #if $abi.isa_name == 'aarch64' and $unit_cnt == 1
 \#if $atomic_use_asm
-       ${type_name}_t not_b2 = ${type_name}_inverse(b2);
-       return ${type_name}_atomic_difference(b1, not_b2, order);
+	${type_name}_t not_b2 = ${type_name}_inverse(b2);
+	return ${type_name}_atomic_difference(b1, not_b2, order);
 \#else
 #end if
-       memory_order load_order =
-               (order == memory_order_acq_rel) ? memory_order_acquire :
-	       (order == memory_order_release) ? memory_order_relaxed :
-	       order;
+	memory_order load_order =
+		(order == memory_order_acq_rel) ? memory_order_acquire :
+		(order == memory_order_release) ? memory_order_relaxed :
+		order;
 
-       ${type_name}_t old_value = atomic_load_explicit(b1, load_order);
-       ${type_name}_t new_value;
+	${type_name}_t old_value = atomic_load_explicit(b1, load_order);
+	${type_name}_t new_value;
 
-       do {
-               new_value = ${type_name}_intersection(old_value, b2);
-       } while (!atomic_compare_exchange_weak_explicit(b1, &old_value,
-               new_value, order, load_order));
+	do {
+		new_value = ${type_name}_intersection(old_value, b2);
+	} while (!atomic_compare_exchange_weak_explicit(b1, &old_value,
+		 new_value, order, load_order));
 
-       return old_value;
+	return old_value;
 #if $abi.isa_name == 'aarch64' and $unit_cnt == 1
 \#endif
 #end if
@@ -323,8 +332,8 @@ ${type_name}_atomic_difference(_Atomic ${type_name}_t *b1, ${type_name}_t b2, me
 ${atomic_fetch_op_bitmap($type_name, $unit_type, $unit_size, 'clr')}
 \#else
 #end if
-       ${type_name}_t not_b2 = ${type_name}_inverse(b2);
-       return ${type_name}_atomic_intersection(b1, not_b2, order);
+	${type_name}_t not_b2 = ${type_name}_inverse(b2);
+	return ${type_name}_atomic_intersection(b1, not_b2, order);
 #if $abi.isa_name == 'aarch64' and $unit_cnt == 1
 \#endif
 #end if
@@ -356,8 +365,8 @@ void ${dec.bf_type_name}_set_${dec.field_name}(${dec.bf_type_name}_t *bit_field,
 #set $m = (1 << $map.length) - 1
 #set unit = $map.mapped_bit // $dec.unit_size
 #set mapped_bit = $map.mapped_bit % $dec.unit_size
-    bf[$unit] &= (${dec.unit_type})${hex(((2 ** dec.unit_size) - 1) ^ (m << $mapped_bit))}U;
-    bf[$unit] |= ((${val_expr} >> ${map.field_bit}U) & (${dec.unit_type})${hex(m)}U) << ${mapped_bit}U;
+	bf[$unit] &= (${dec.unit_type})${hex(((2 ** dec.unit_size) - 1) ^ (m << $mapped_bit))}U;
+	bf[$unit] |= ((${val_expr}${bitshift_right(map.field_bit)}) & (${dec.unit_type})${hex(m)}U)${bitshift_left(mapped_bit)};
 #end for
 }
 
@@ -365,8 +374,8 @@ void ${dec.bf_type_name}_set_${dec.field_name}(${dec.bf_type_name}_t *bit_field,
 #if not $dec.is_writeonly:
 ${field_type_type_name}
 ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field) {
-    ${dec.unit_type} val = 0;
-    const ${dec.unit_type} *bf = (const ${dec.unit_type} *)&bit_field->bf[0];
+	${dec.unit_type} val = 0;
+	const ${dec.unit_type} *bf = (const ${dec.unit_type} *)&bit_field->bf[0];
 #set $bool_type = False
 #if not $dec.is_nested_bitfield
 #if ($field_type.basic_type.bitsize == 1) and ($field_type.basic_type.category == 'primitive')
@@ -378,23 +387,23 @@ ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field
 #set $m = (1 << $map.length) - 1
 #set unit = $map.mapped_bit // $dec.unit_size
 #set mapped_bit = $map.mapped_bit % $dec.unit_size
-     val |= ((bf[$unit] >> ${mapped_bit}U) & (${dec.unit_type})${hex(m)}U) << ${map.field_bit}U;
+	val |= ((bf[$unit]${bitshift_right(mapped_bit)}) & (${dec.unit_type})${hex(m)}U)${bitshift_left(map.field_bit)};
 #end for
 #if $dec.field_signed
 #set l=hex(1 << ($dec.field_length - 1)) + 'U'
-    val = (val ^ $l) - $l;
-    return (${field_type_type_name})val;
+	val = (val ^ $l) - $l;
+	return (${field_type_type_name})val;
 #else
 #if not $dec.is_nested_bitfield
 #if $bool_type
-    return val != (${dec.unit_type})0;
+	return val != (${dec.unit_type})0;
 #else if $field_type.is_pointer
-    return (${field_type_type_name})(uintptr_t)val;
+	return (${field_type_type_name})(uintptr_t)val;
 #else
-    return (${field_type_type_name})val;
+	return (${field_type_type_name})val;
 #end if
 #else
-    return ${field_type_name}_cast((${field_unit_type})val);
+	return ${field_type_name}_cast((${field_unit_type})val);
 #end if
 #end if
 }
@@ -402,17 +411,17 @@ ${dec.bf_type_name}_get_${dec.field_name}(const ${dec.bf_type_name}_t *bit_field
 #end if
 #if not $dec.is_writeonly and not $dec.is_const
 void ${dec.bf_type_name}_copy_${dec.field_name}(
-        ${dec.bf_type_name}_t *bit_field_dst,
-        const ${dec.bf_type_name}_t *bit_field_src)
+	${dec.bf_type_name}_t *bit_field_dst,
+	const ${dec.bf_type_name}_t *bit_field_src)
 {
-    ${dec.unit_type} *bf_dst = (${dec.unit_type} *)&bit_field_dst->bf[0];
-    const ${dec.unit_type} *bf_src = (const ${dec.unit_type} *)&bit_field_src->bf[0];
+	${dec.unit_type} *bf_dst = (${dec.unit_type} *)&bit_field_dst->bf[0];
+	const ${dec.unit_type} *bf_src = (const ${dec.unit_type} *)&bit_field_src->bf[0];
 #for $map in $dec.field_maps:
 #set mapped_bit = $map.mapped_bit % $dec.unit_size
 #set m = hex(((1 << $map.length) - 1) << $mapped_bit)
 #set unit = $map.mapped_bit // $dec.unit_size
-    bf_dst[$unit] &= ~($dec.unit_type)${m}U;
-    bf_dst[$unit] |= bf_src[$unit] & ($dec.unit_type)${m}U;
+	bf_dst[$unit] &= ~($dec.unit_type)${m}U;
+	bf_dst[$unit] |= bf_src[$unit] & ($dec.unit_type)${m}U;
 #end for
 }
 

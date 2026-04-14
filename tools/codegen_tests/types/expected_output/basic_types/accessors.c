@@ -45,7 +45,7 @@ StructBitField_set_test(StructBitField_t *bit_field, uint32_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffff00000000U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffU);
 }
 
 uint32_t
@@ -54,7 +54,7 @@ StructBitField_get_test(const StructBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffU);
 	return (uint32_t)val;
 }
 
@@ -73,7 +73,7 @@ StructBitField_set_test1(StructBitField_t *bit_field, uint16_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffff800ffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x7ffU) << 32U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x7ffU) << 32U;
 }
 
 uint16_t
@@ -82,7 +82,7 @@ StructBitField_get_test1(const StructBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU) << 0U;
+	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU);
 	return (uint16_t)val;
 }
 
@@ -101,7 +101,7 @@ StructBitField_set_test5(StructBitField_t *bit_field, uint8_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xf807ffffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 51U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 51U;
 }
 
 uint8_t
@@ -110,7 +110,7 @@ StructBitField_get_test5(const StructBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 51U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 51U) & (uint64_t)0xffU);
 	return (uint8_t)val;
 }
 
@@ -165,7 +165,7 @@ TEST_COMB_feat_var_VAR1_set_value(TEST_COMB_feat_var_VAR1_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -174,7 +174,7 @@ TEST_COMB_feat_var_VAR1_get_value(const TEST_COMB_feat_var_VAR1_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -230,7 +230,7 @@ TEST_COMB_feat_var_VAR2_set_value(TEST_COMB_feat_var_VAR2_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -239,7 +239,7 @@ TEST_COMB_feat_var_VAR2_get_value(const TEST_COMB_feat_var_VAR2_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -295,7 +295,7 @@ TEST_COMB_multi_over_VAR1_set_value(TEST_COMB_multi_over_VAR1_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -304,7 +304,7 @@ TEST_COMB_multi_over_VAR1_get_value(const TEST_COMB_multi_over_VAR1_t *bit_field
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -360,7 +360,7 @@ TEST_COMB_multi_over_VAR2_set_value(TEST_COMB_multi_over_VAR2_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -369,7 +369,7 @@ TEST_COMB_multi_over_VAR2_get_value(const TEST_COMB_multi_over_VAR2_t *bit_field
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -423,7 +423,7 @@ TEST_DEFAULT_feat_set_value(TEST_DEFAULT_feat_t *bit_field, uint64_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -432,7 +432,7 @@ TEST_DEFAULT_feat_get_value(const TEST_DEFAULT_feat_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -485,7 +485,7 @@ TEST_DEFAULT_plain_set_value(TEST_DEFAULT_plain_t *bit_field, uint64_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0x0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffffffffU);
 }
 
 uint64_t
@@ -494,7 +494,7 @@ TEST_DEFAULT_plain_get_value(const TEST_DEFAULT_plain_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -541,7 +541,7 @@ TestBitField_set_test(TestBitField_t *bit_field, uint32_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffff00000000U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffU);
 }
 
 uint32_t
@@ -550,7 +550,7 @@ TestBitField_get_test(const TestBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffU);
 	return (uint32_t)val;
 }
 
@@ -569,7 +569,7 @@ TestBitField_set_test1(TestBitField_t *bit_field, uint16_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffff800ffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x7ffU) << 32U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x7ffU) << 32U;
 }
 
 uint16_t
@@ -578,7 +578,7 @@ TestBitField_get_test1(const TestBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU) << 0U;
+	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU);
 	return (uint16_t)val;
 }
 
@@ -597,7 +597,7 @@ TestBitField_set_test5(TestBitField_t *bit_field, uint8_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfff807ffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 43U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 43U;
 }
 
 uint8_t
@@ -606,7 +606,7 @@ TestBitField_get_test5(const TestBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 43U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 43U) & (uint64_t)0xffU);
 	return (uint8_t)val;
 }
 
@@ -654,7 +654,7 @@ UBitField_set_test(UBitField_t *bit_field, uint32_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffff00000000U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffU);
 }
 
 uint32_t
@@ -663,7 +663,7 @@ UBitField_get_test(const UBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffffffffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffffffffU);
 	return (uint32_t)val;
 }
 
@@ -682,7 +682,7 @@ UBitField_set_test1(UBitField_t *bit_field, uint16_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffff800ffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x7ffU) << 32U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x7ffU) << 32U;
 }
 
 uint16_t
@@ -691,7 +691,7 @@ UBitField_get_test1(const UBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU) << 0U;
+	val |= ((bf[0] >> 32U) & (uint64_t)0x7ffU);
 	return (uint16_t)val;
 }
 
@@ -710,7 +710,7 @@ UBitField_set_test5(UBitField_t *bit_field, uint8_t val)
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xf807ffffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 51U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 51U;
 }
 
 uint8_t
@@ -719,7 +719,7 @@ UBitField_get_test5(const UBitField_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 51U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 51U) & (uint64_t)0xffU);
 	return (uint8_t)val;
 }
 
@@ -772,7 +772,7 @@ auto_layout_register_set_auto_field_5bit(auto_layout_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffffe0U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x1fU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x1fU);
 }
 
 uint8_t
@@ -781,7 +781,7 @@ auto_layout_register_get_auto_field_5bit(const auto_layout_register_t *bit_field
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0x1fU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0x1fU);
 	return (uint8_t)val;
 }
 
@@ -802,7 +802,7 @@ auto_layout_register_set_auto_field_enum(auto_layout_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff9fU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x3U) << 5U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x3U) << 5U;
 }
 
 color_code_t
@@ -811,7 +811,7 @@ auto_layout_register_get_auto_field_enum(const auto_layout_register_t *bit_field
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 5U) & (uint64_t)0x3U) << 0U;
+	val |= ((bf[0] >> 5U) & (uint64_t)0x3U);
 	return (color_code_t)val;
 }
 
@@ -832,7 +832,7 @@ auto_layout_register_set_replacement_field(auto_layout_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffff00ffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 8U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 8U;
 }
 
 uint16_t
@@ -842,7 +842,7 @@ auto_layout_register_get_replacement_field(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 8U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 8U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -863,7 +863,7 @@ auto_layout_register_set_additional_auto_field(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffff00ffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 16U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 16U;
 }
 
 uint8_t
@@ -873,7 +873,7 @@ auto_layout_register_get_additional_auto_field(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xffU);
 	return (uint8_t)val;
 }
 
@@ -905,7 +905,7 @@ initialization_register_clean(initialization_register_t bit_field)
 {
 	return (initialization_register_t){ .bf = {
 						    // (0x5555035555bead80U &
-						    // ~0xff0000ff0080U) |
+						    // ~0xff0000ff0080U) | ...
 						    (uint64_t)(0x555500555500ad00U) |
 							    (bit_field.bf[0] &
 							     0xff0000ff0080U),
@@ -931,7 +931,7 @@ initialization_register_set_magic_byte_b(initialization_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffff00ffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 8U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 8U;
 }
 
 uint16_t
@@ -941,7 +941,7 @@ initialization_register_get_magic_byte_c(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -951,7 +951,7 @@ initialization_register_set_reset_flag(initialization_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff7fU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x1U) << 7U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x1U) << 7U;
 }
 
 uint16_t
@@ -961,7 +961,7 @@ initialization_register_get_reset_flag(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 7U) & (uint64_t)0x1U) << 0U;
+	val |= ((bf[0] >> 7U) & (uint64_t)0x1U);
 	return (uint16_t)val;
 }
 
@@ -982,7 +982,7 @@ initialization_register_set_extended_config(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffff00ffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 40U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 40U;
 }
 
 uint16_t
@@ -992,7 +992,7 @@ initialization_register_get_extended_config(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 40U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 40U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1047,7 +1047,7 @@ interrupt_control_register_set_interrupt_id(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff00U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU);
 }
 
 color_code_t
@@ -1057,7 +1057,7 @@ interrupt_control_register_get_interrupt_id(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffU);
 	return (color_code_t)val;
 }
 
@@ -1078,7 +1078,7 @@ interrupt_control_register_set_priority_level(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffff00ffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 8U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 8U;
 }
 
 int16_t
@@ -1088,7 +1088,7 @@ interrupt_control_register_get_priority_level(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 8U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 8U) & (uint64_t)0xffU);
 	val = (val ^ 0x80U) - 0x80U;
 	return (int16_t)val;
 }
@@ -1111,7 +1111,7 @@ interrupt_control_register_get_handler_index(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1121,7 +1121,7 @@ interrupt_control_register_set_interrupt_flags(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffffff0ffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xfU) << 32U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xfU) << 32U;
 }
 
 uint16_t
@@ -1131,7 +1131,7 @@ interrupt_control_register_get_interrupt_flags(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 32U) & (uint64_t)0xfU) << 0U;
+	val |= ((bf[0] >> 32U) & (uint64_t)0xfU);
 	return (uint16_t)val;
 }
 
@@ -1187,7 +1187,7 @@ memory_config_register_set_base_address(memory_config_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff00U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU);
 }
 
 uint16_t
@@ -1197,7 +1197,7 @@ memory_config_register_get_base_address(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1219,7 +1219,7 @@ memory_config_register_get_read_only_id(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1229,7 +1229,7 @@ memory_config_register_set_extended_address(memory_config_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffU) << 24U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffU) << 24U;
 }
 
 uint64_t
@@ -1239,7 +1239,7 @@ memory_config_register_get_extended_address(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 24U) & (uint64_t)0xffffffffffU) << 0U;
+	val |= ((bf[0] >> 24U) & (uint64_t)0xffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -1295,7 +1295,7 @@ module_config_register_set_feature_flags(module_config_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffe0ffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x1fU) << 16U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x1fU) << 16U;
 }
 
 uint8_t
@@ -1305,7 +1305,7 @@ module_config_register_get_feature_flags(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0x1fU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0x1fU);
 	return (uint8_t)val;
 }
 
@@ -1326,7 +1326,7 @@ module_config_register_set_capability_bits(module_config_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffe00000001fffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffU) << 21U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffU) << 21U;
 }
 
 uint32_t
@@ -1336,7 +1336,7 @@ module_config_register_get_capability_bits(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 21U) & (uint64_t)0xffffffffU) << 0U;
+	val |= ((bf[0] >> 21U) & (uint64_t)0xffffffffU);
 	return (uint32_t)val;
 }
 
@@ -1357,7 +1357,7 @@ module_config_register_set_extended_module_id(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff00U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU);
 }
 
 uint16_t
@@ -1367,7 +1367,7 @@ module_config_register_get_extended_module_id(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1388,7 +1388,7 @@ module_config_register_set_module_version(module_config_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffff00ffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 8U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 8U;
 }
 
 uint16_t
@@ -1398,7 +1398,7 @@ module_config_register_get_module_version(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 8U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 8U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1419,7 +1419,7 @@ module_config_register_set_additional_capability(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xe01fffffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 53U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 53U;
 }
 
 uint8_t
@@ -1429,7 +1429,7 @@ module_config_register_get_additional_capability(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 53U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 53U) & (uint64_t)0xffU);
 	return (uint8_t)val;
 }
 
@@ -1485,7 +1485,7 @@ peripheral_control_register_set_peripheral_id(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff00U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU);
 }
 
 uint16_t
@@ -1495,7 +1495,7 @@ peripheral_control_register_get_peripheral_id(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1517,7 +1517,7 @@ peripheral_control_register_get_version(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1527,7 +1527,7 @@ peripheral_control_register_set_config_data(
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffffffffffU) << 24U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffffffffffU) << 24U;
 }
 
 uint64_t
@@ -1537,7 +1537,7 @@ peripheral_control_register_get_config_data(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 24U) & (uint64_t)0xffffffffffU) << 0U;
+	val |= ((bf[0] >> 24U) & (uint64_t)0xffffffffffU);
 	return (uint64_t)val;
 }
 
@@ -1569,7 +1569,7 @@ system_control_register_clean(system_control_register_t bit_field)
 {
 	return (system_control_register_t){ .bf = {
 						    // (0xa00000500U &
-						    // ~0x60f00ffffffffU) |
+						    // ~0x60f00ffffffffU) | ...
 						    (uint64_t)(0xa00000000U) |
 							    (bit_field.bf[0] &
 							     0x60f00ffffffffU),
@@ -1595,7 +1595,7 @@ system_control_register_set_device_id(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffffff00U;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 0U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU);
 }
 
 uint16_t
@@ -1604,7 +1604,7 @@ system_control_register_get_device_id(const system_control_register_t *bit_field
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 0U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0]) & (uint64_t)0xffU);
 	return (uint16_t)val;
 }
 
@@ -1625,7 +1625,7 @@ system_control_register_set_priority(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffffffff00ffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xffU) << 8U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xffU) << 8U;
 }
 
 int16_t
@@ -1634,7 +1634,7 @@ system_control_register_get_priority(const system_control_register_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 8U) & (uint64_t)0xffU) << 0U;
+	val |= ((bf[0] >> 8U) & (uint64_t)0xffU);
 	val = (val ^ 0x80U) - 0x80U;
 	return (int16_t)val;
 }
@@ -1656,7 +1656,7 @@ system_control_register_set_status_code(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffffffffff0ffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0xfU) << 16U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0xfU) << 16U;
 }
 
 int16_t
@@ -1666,7 +1666,7 @@ system_control_register_get_status_code(
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 16U) & (uint64_t)0xfU) << 0U;
+	val |= ((bf[0] >> 16U) & (uint64_t)0xfU);
 	val = (val ^ 0x8U) - 0x8U;
 	return (int16_t)val;
 }
@@ -1688,7 +1688,7 @@ system_control_register_set_flags(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffffffffc0fffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x3fU) << 20U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x3fU) << 20U;
 }
 
 uint8_t
@@ -1697,7 +1697,7 @@ system_control_register_get_flags(const system_control_register_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 20U) & (uint64_t)0x3fU) << 0U;
+	val |= ((bf[0] >> 20U) & (uint64_t)0x3fU);
 	return (uint8_t)val;
 }
 
@@ -1718,7 +1718,7 @@ system_control_register_set_mode(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xffffffff03ffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x3fU) << 26U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x3fU) << 26U;
 }
 
 uint8_t
@@ -1727,7 +1727,7 @@ system_control_register_get_mode(const system_control_register_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 26U) & (uint64_t)0x3fU) << 0U;
+	val |= ((bf[0] >> 26U) & (uint64_t)0x3fU);
 	return (uint8_t)val;
 }
 
@@ -1779,7 +1779,7 @@ system_control_register_set_enable(system_control_register_t *bit_field,
 	uint64_t  bool_val = val ? (uint64_t)1 : (uint64_t)0;
 	uint64_t *bf	   = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffeffffffffffffU;
-	bf[0] |= ((bool_val >> 0U) & (uint64_t)0x1U) << 48U;
+	bf[0] |= ((bool_val) & (uint64_t)0x1U) << 48U;
 }
 
 uint8_t
@@ -1788,7 +1788,7 @@ system_control_register_get_lock_bit(const system_control_register_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 49U) & (uint64_t)0x1U) << 0U;
+	val |= ((bf[0] >> 49U) & (uint64_t)0x1U);
 	return (uint8_t)val;
 }
 
@@ -1798,7 +1798,7 @@ system_control_register_set_sign_bit(system_control_register_t *bit_field,
 {
 	uint64_t *bf = &bit_field->bf[0];
 	bf[0] &= (uint64_t)0xfffbffffffffffffU;
-	bf[0] |= (((uint64_t)val >> 0U) & (uint64_t)0x1U) << 50U;
+	bf[0] |= (((uint64_t)val) & (uint64_t)0x1U) << 50U;
 }
 
 int8_t
@@ -1807,7 +1807,7 @@ system_control_register_get_sign_bit(const system_control_register_t *bit_field)
 	uint64_t	val = 0;
 	const uint64_t *bf  = (const uint64_t *)&bit_field->bf[0];
 
-	val |= ((bf[0] >> 50U) & (uint64_t)0x1U) << 0U;
+	val |= ((bf[0] >> 50U) & (uint64_t)0x1U);
 	val = (val ^ 0x1U) - 0x1U;
 	return (int8_t)val;
 }
