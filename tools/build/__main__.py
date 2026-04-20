@@ -265,6 +265,7 @@ def process_variant_conf(variant_key, conf, basename):
             elif words[0] == 'guestapi_only':
                 global guestapi_only
                 guestapi_only = True
+                add_global_define('CONFIG_GUESTAPI_ONLY=1')
             elif words[0] == 'quality_configs':
                 if quality_match(words[1]):
                     for c in map(var_subst, words[2:]):
@@ -339,7 +340,15 @@ def check_global_define(d):
         if seen_configs[define] == val:
             logger.warning("Duplicate configuration: %s", d)
         else:
-            logger.error("Conflicting configuration: %s and %s",
+            info = []
+            for variant_key in ('platform', 'featureset', 'quality'):
+                try:
+                    info.append('{:s}:{:s}'.format(variant_key,
+                                graph.get_env('VARIANT_' + variant_key)))
+                except KeyError:
+                    pass
+            logger.error("Conflicting configuration in [%s]: %s and %s",
+                         ' '.join(info),
                          '='.join([define, seen_configs[define]]), d)
             sys.exit(-1)
     seen_configs[define] = val
