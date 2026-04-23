@@ -32,3 +32,5 @@ define watchdog_bind_option_flags public bitfield<64> {
 	0	bite_virq	bool = 0;
 	others	unknown = 0;
 };
+
+define watchdog_milliseconds_t newtype uint64;

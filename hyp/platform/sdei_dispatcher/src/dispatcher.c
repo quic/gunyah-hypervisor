@@ -35,7 +35,9 @@
 #include <vcpu.h>
 #include <vgic.h>
 #include <virq.h>
+#if defined(INTERFACE_WATCHDOG)
 #include <watchdog.h>
+#endif
 
 #include <events/power.h>
 #include <events/sdei.h>
@@ -516,12 +518,18 @@ sdei_on_vm_grace_period_expiry(timer_t *timer)
 		goto out;
 	}
 
+#if defined(INTERFACE_WATCHDOG)
 	watchdog_t *wdt =
 		atomic_exchange_relaxed(&vic->sdei_vm_grace_wdt, NULL);
 	if (wdt != NULL) {
+// FIXME: QC Gunyah issue #XXX
+// Add an interface/watchdog API
+#if defined(MODULE_MISC_WATCHDOG)
 		(void)virq_assert(&wdt->bite_virq_src, false);
 		object_put_watchdog(wdt);
+#endif
 	}
+#endif
 
 	atomic_store_relaxed(&vic->sdei_vm_grace_active, false);
 out:
@@ -534,6 +542,7 @@ sdei_cancel_vm_grace_period(vic_t *vic)
 	bool cancelled =
 		atomic_exchange_relaxed(&vic->sdei_vm_grace_active, false);
 
+#if defined(INTERFACE_WATCHDOG)
 	if (cancelled) {
 		watchdog_t *wdt =
 			atomic_exchange_relaxed(&vic->sdei_vm_grace_wdt, NULL);
@@ -541,6 +550,7 @@ sdei_cancel_vm_grace_period(vic_t *vic)
 			object_put_watchdog(wdt);
 		}
 	}
+#endif
 
 	return cancelled;
 }
@@ -650,6 +660,7 @@ sdei_vm_update_busy_state(vic_t *vic, bool set_to_busy)
 	return ret;
 }
 
+#if defined(MODULE_MISC_WATCHDOG)
 static bool
 sdei_vm_is_busy(vic_t *vic) EXCLUDE_SPINLOCK(sdei_grace.busy_lock)
 {
@@ -659,6 +670,7 @@ sdei_vm_is_busy(vic_t *vic) EXCLUDE_SPINLOCK(sdei_grace.busy_lock)
 
 	return busy;
 }
+#endif
 
 static int64_t
 sdei_shared_event_routing_set(sdei_event_t *event, bool routing_mode,
@@ -1068,6 +1080,7 @@ sdei_dispatcher_handle_vcpu_activate_thread(thread_t	       *thread,
 
 	vcpu_option_flags_set_sdei_allowed(&thread->vcpu_options, true);
 
+#if defined(MODULE_VM_WATCHDOG)
 	if (thread->watchdog != NULL) {
 		vic_t *expected = NULL;
 
@@ -1078,6 +1091,7 @@ sdei_dispatcher_handle_vcpu_activate_thread(thread_t	       *thread,
 			(void)object_get_vic_additional(thread->vgic_vic);
 		}
 	}
+#endif
 
 	success = true;
 out:
@@ -2173,6 +2187,7 @@ sdei_dispatcher_virq_assert(const virq_source_t *source, vic_t *vic)
 	return (bool_result_t){ .r = true, .e = OK };
 }
 
+#if defined(MODULE_MISC_WATCHDOG)
 static void
 sdei_maybe_start_vm_grace_period_watchdog(watchdog_t *wdt, vic_t *vic)
 {
@@ -2192,12 +2207,14 @@ sdei_maybe_start_vm_grace_period_watchdog(watchdog_t *wdt, vic_t *vic)
 		object_get_watchdog_additional(wdt);
 	}
 }
+#endif
 
 bool
 sdei_dispatcher_handle_watchdog_non_hyp_bite(watchdog_t *wdt)
 {
 	bool handled;
 
+#if defined(MODULE_MISC_WATCHDOG)
 	if (watchdog_option_flags_get_critical_bite(&wdt->options)) {
 		if (sdei_is_busy(sdei_get_busy_state(), SDEI_BUSY_SELECT_ANY)) {
 			sdei_error_flags_t flags = sdei_error_flags_default();
@@ -2221,6 +2238,10 @@ sdei_dispatcher_handle_watchdog_non_hyp_bite(watchdog_t *wdt)
 			handled = false;
 		}
 	}
+#else
+	(void)wdt;
+	handled = false;
+#endif
 
 	return handled;
 }
