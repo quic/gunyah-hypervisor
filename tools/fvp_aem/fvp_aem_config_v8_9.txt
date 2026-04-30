@@ -1,0 +1,71 @@
+# FVP AEM configuration file for ARMv8.9
+
+bp.dram_size= 8
+cluster0.NUM_CORES= 4
+cluster1.NUM_CORES= 4
+
+pctl.startup= 0.0.0.0
+bp.secure_memory= 1
+bp.vis.rate_limit-enable= false
+bp.pl011_uart0.untimed_fifos= 1
+bp.pl011_uart0.unbuffered_output= 1
+bp.ve_sysregs.mmbSiteDefault= 0
+cluster0.has_arm_v8-9= 1
+cluster1.has_arm_v8-9= 1
+cluster0.has_branch_target_exception= 1
+cluster1.has_branch_target_exception= 1
+cluster0.memory_tagging_support_level= 4
+cluster1.memory_tagging_support_level= 4
+bp.dram_metadata.is_enabled= 1
+bp.ns_dram.fill1=0
+bp.ns_dram.fill2=0
+bp.s_dram.fill1=0
+bp.s_dram.fill2=0
+
+cluster0.cpu0.RVBAR= 0x4010000
+cluster0.cpu1.RVBAR= 0x4010000
+cluster0.cpu2.RVBAR= 0x4010000
+cluster0.cpu3.RVBAR= 0x4010000
+cluster1.cpu0.RVBAR= 0x4010000
+cluster1.cpu1.RVBAR= 0x4010000
+cluster1.cpu2.RVBAR= 0x4010000
+cluster1.cpu3.RVBAR= 0x4010000
+
+cluster0.cpu0.DCZID-log2-block-size= 4
+cluster0.cpu1.DCZID-log2-block-size= 4
+cluster0.cpu2.DCZID-log2-block-size= 4
+cluster0.cpu3.DCZID-log2-block-size= 4
+cluster1.cpu0.DCZID-log2-block-size= 4
+cluster1.cpu1.DCZID-log2-block-size= 4
+cluster1.cpu2.DCZID-log2-block-size= 4
+cluster1.cpu3.DCZID-log2-block-size= 4
+
+cluster0.has_rndr= 1
+cluster1.has_rndr= 1
+
+cluster0.has_mpam=1
+cluster1.has_mpam=1
+cluster0.mpam_frac=1
+cluster1.mpam_frac=1
+cluster0.mpam_max_pmg=127
+cluster1.mpam_max_pmg=127
+
+cluster0.has_amu= 1
+cluster1.has_amu= 1
+cluster0.amu_num_auxiliary_counters= 3
+cluster1.amu_num_auxiliary_counters= 3
+
+cluster0.pmb_idr_external_abort= 1
+cluster1.pmb_idr_external_abort= 1
+
+gic_distributor.IIDR= 0x43b
+gic_distributor.SPI-count= 988
+gic_distributor.ARE-fixed-to-one= 1
+
+cluster0.gicv3.extended-interrupt-range-support= 1
+cluster1.gicv3.extended-interrupt-range-support= 1
+gic_distributor.extended-ppi-count= 64
+gic_distributor.extended-spi-count= 511
+
+pci.pci_smmuv3.mmu.SMMU_AIDR= 1
+pci.pci_smmuv3.mmu.SMMU_IIDR= 0x43b
