@@ -1153,10 +1153,7 @@ sys_mmfr3_read(void)
 	register_t reg_val = 0ULL;
 	sysreg64_read(ID_MMFR3_EL1, reg_val);
 	ID_MMFR3_EL1_t mmfr1 = ID_MMFR3_EL1_cast(reg_val);
-#if defined(ARCH_ARM_FEAT_PAN3)
-	assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 3U);
-	ID_MMFR3_EL1_set_PAN(&mmfr1, 3U);
-#elif defined(ARCH_ARM_FEAT_PAN2) // now known as FEAT_PAN2
+#if defined(ARCH_ARM_FEAT_PAN2)
 	assert(ID_MMFR3_EL1_get_PAN(&mmfr1) >= 2U);
 	ID_MMFR3_EL1_set_PAN(&mmfr1, 2U);
 #elif defined(ARCH_ARM_FEAT_PAN)
