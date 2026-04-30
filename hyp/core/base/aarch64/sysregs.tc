@@ -1363,6 +1363,13 @@ extend SCTLR_EL1 bitfield {
 };
 #endif
 
+#if defined(ARCH_ARM_FEAT_NMI)
+extend SCTLR_EL1 bitfield {
+	61		NMI		bool;
+	62		SPINTMASK	bool;
+};
+#endif
+
 define SCTLR_EL2_VM bitfield<64> {
 	0		M		bool;
 	1		A		bool;
@@ -1492,6 +1499,17 @@ extend SCTLR_EL2_E2H_TGE bitfield {
 };
 #endif
 
+#if defined(ARCH_ARM_FEAT_NMI)
+extend SCTLR_EL2_VM bitfield {
+	61		NMI		bool;
+	62		SPINTMASK	bool;
+};
+extend SCTLR_EL2_E2H_TGE bitfield {
+	61		NMI		bool;
+	62		SPINTMASK	bool;
+};
+#endif
+
 #define SP(el)								\
 define SP_##el bitfield<64> {						\
 	63:0		Address		uint64;				\
@@ -1614,6 +1632,15 @@ extend SPSR_EL1_A64 bitfield {
 };
 extend SPSR_EL2_A64 bitfield {
 	25		TCO		bool;
+};
+#endif
+
+#if defined(ARCH_ARM_FEAT_NMI)
+extend SPSR_EL1_A64 bitfield {
+	13		ALLINT		bool;
+};
+extend SPSR_EL2_A64 bitfield {
+	13		ALLINT		bool;
 };
 #endif
 
