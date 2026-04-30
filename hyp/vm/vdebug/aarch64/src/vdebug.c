@@ -27,9 +27,9 @@ vdebug_handle_boot_cpu_cold_init(void)
 	ID_AA64DFR0_EL1_t aa64dfr0 = register_ID_AA64DFR0_EL1_read();
 	ID_AA64DFR1_EL1_t aa64dfr1 = register_ID_AA64DFR1_EL1_read();
 
-	// Debug version must be between ARMv8.0 (6) and ARMv8.4 (9)
+	// Debug version must be between ARMv8.0 (6) and ARMv8.9 (11)
 	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr0) >= 6U);
-	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr0) <= 9U);
+	assert(ID_AA64DFR0_EL1_get_DebugVer(&aa64dfr0) <= 11U);
 
 	uint8_t num_brps, num_wrps;
 
