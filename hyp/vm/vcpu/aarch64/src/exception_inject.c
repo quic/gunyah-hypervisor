@@ -73,7 +73,12 @@ exception_inject(ESR_EL1_t esr_el1)
 	SPSR_EL1_A64_t spsr_el1 = SPSR_EL1_A64_cast(SPSR_EL2_A64_raw(spsr_el2));
 	register_SPSR_EL1_A64_write(spsr_el1);
 
-	// Set mode to EL1H, mask AIF, clear IL and SS
+#if defined(ARCH_ARM_FEAT_SSBS) || defined(ARCH_ARM_FEAT_PAN) ||               \
+	defined(ARCH_ARM_FEAT_NMI)
+	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
+#endif
+
+	// Set mode to EL1H, mask DAIF, clear IL and SS
 	SPSR_EL2_A64_set_A(&spsr_el2, true);
 	SPSR_EL2_A64_set_I(&spsr_el2, true);
 	SPSR_EL2_A64_set_F(&spsr_el2, true);
@@ -81,26 +86,43 @@ exception_inject(ESR_EL1_t esr_el1)
 	SPSR_EL2_A64_set_IL(&spsr_el2, false);
 	SPSR_EL2_A64_set_SS(&spsr_el2, false);
 	SPSR_EL2_A64_set_M(&spsr_el2, SPSR_64BIT_MODE_EL1H);
-#if defined(ARCH_ARM_FEAT_SSBS) || defined(ARCH_ARM_FEAT_PAN)
-	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
-#if defined(ARCH_ARM_FEAT_SSBS)
-	SPSR_EL2_A64_set_SSBS(&spsr_el2, SCTLR_EL1_get_DSSBS(&sctlr_el1));
-#endif
+
+	// Set the other PSTATE bits as defined for EL1 exception entry
 #if defined(ARCH_ARM_FEAT_PAN)
 	if (!SCTLR_EL1_get_SPAN(&sctlr_el1)) {
 		SPSR_EL2_A64_set_PAN(&spsr_el2, true);
 	}
 #endif
-#endif
 #if defined(ARCH_ARM_FEAT_UAO)
 	SPSR_EL2_A64_set_UAO(&spsr_el2, false);
-#endif
-#if defined(ARCH_ARM_FEAT_MTE)
-	SPSR_EL2_A64_set_TCO(&spsr_el2, true);
 #endif
 #if defined(ARCH_ARM_FEAT_BTI)
 	SPSR_EL2_A64_set_BTYPE(&spsr_el2, 0);
 #endif
+#if defined(ARCH_ARM_FEAT_MTE)
+	SPSR_EL2_A64_set_TCO(&spsr_el2, true);
+#endif
+#if defined(ARCH_ARM_FEAT_SSBS)
+	SPSR_EL2_A64_set_SSBS(&spsr_el2, SCTLR_EL1_get_DSSBS(&sctlr_el1));
+#endif
+#if defined(ARCH_ARM_FEAT_NMI)
+	SPSR_EL2_A64_set_ALLINT(&spsr_el2,
+				!SCTLR_EL1_get_SPINTMASK(&sctlr_el1));
+#endif
+#if defined(ARCH_ARM_FEAT_EBEP) || defined(ARCH_ARM_FEAT_SPE_EXC) ||           \
+	defined(ARCH_ARM_FEAT_TRBE_EXC)
+	SPSR_EL2_A64_set_PM(&spsr_el2, true);
+#endif
+#if defined(ARCH_ARM_FEAT_GCS)
+#error FEAT_GCS: PSTATE.EXLOCK not handled.
+#endif
+#if defined(ARCH_ARM_FEAT_SEBEP)
+	SPSR_EL2_A64_set_PPEND(&spsr_el2, false);
+#endif
+#if defined(ARCH_ARM_FEAT_PAuth_LR)
+	SPSR_EL2_A64_set_PACM(&spsr_el2, false);
+#endif
+
 	thread->vcpu_regs_gpr.spsr_el2.a64 = spsr_el2;
 
 	// Tell the guest where the exception came from
