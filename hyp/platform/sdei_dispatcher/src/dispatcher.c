@@ -1138,48 +1138,55 @@ sdei_dispatcher_handle_object_deactivate_watchdog(watchdog_t *watchdog)
 static SPSR_EL2_A64_t
 sdei_exit_to_user_deliver_event_prepare_spsr(SPSR_EL2_A64_t spsr)
 {
-	// Set DAIF = 0b1111, EL = EL1, nRW = 0, SP = 1.
+#if defined(ARCH_ARM_FEAT_SSBS) || defined(ARCH_ARM_FEAT_PAN) ||               \
+	defined(ARCH_ARM_FEAT_NMI)
+	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
+#endif
+
+	// Set mode to EL1H, mask DAIF, clear IL and SS
 	SPSR_EL2_A64_set_D(&spsr, true);
 	SPSR_EL2_A64_set_A(&spsr, true);
 	SPSR_EL2_A64_set_I(&spsr, true);
 	SPSR_EL2_A64_set_F(&spsr, true);
+	SPSR_EL2_A64_set_IL(&spsr, false);
+	SPSR_EL2_A64_set_SS(&spsr, false);
 	SPSR_EL2_A64_set_M(&spsr, SPSR_64BIT_MODE_EL1H);
 
 	// Set the other PSTATE bits as if an exception was taken to EL1.
-#if defined(ARCH_ARM_FEAT_GCS)
-#error SDEI: FEAT_GCS: PSTATE.EXLOCK not handled.
-#endif
-	SPSR_EL2_A64_set_SS(&spsr, false);
-#if defined(ARCH_ARM_FEAT_NMI)
-#error SDEI: FEAT_NMI: PSTATE.ALLINT not handled.
-#endif
-	SPSR_EL2_A64_set_IL(&spsr, false);
-#if defined(ARCH_ARM_FEAT_SSBS) || defined(ARCH_ARM_FEAT_PAN)
-	SCTLR_EL1_t sctlr_el1 = register_SCTLR_EL1_read();
-#endif
 #if defined(ARCH_ARM_FEAT_PAN)
 	if (!SCTLR_EL1_get_SPAN(&sctlr_el1)) {
-		SPSR_EL2_A64_set_PAN(&spsr, false);
+		SPSR_EL2_A64_set_PAN(&spsr, true);
 	}
 #endif
 #if defined(ARCH_ARM_FEAT_UAO)
 	SPSR_EL2_A64_set_UAO(&spsr, false);
 #endif
 #if defined(ARCH_ARM_FEAT_BTI)
-	SPSR_EL2_A64_set_BTYPE(&spsr, 0U);
-#endif
-#if defined(ARCH_ARM_FEAT_SSBS)
-	SPSR_EL2_A64_set_SSBS(&spsr, SCTLR_EL1_get_DSSBS(&sctlr_el1));
+	SPSR_EL2_A64_set_BTYPE(&spsr, 0);
 #endif
 #if defined(ARCH_ARM_FEAT_MTE)
 	SPSR_EL2_A64_set_TCO(&spsr, true);
 #endif
-#if defined(ARCH_ARM_FEAT_EBEP)
-#error SDEI: FEAT_EBEP: PSTATE.PM not handled.
+#if defined(ARCH_ARM_FEAT_SSBS)
+	SPSR_EL2_A64_set_SSBS(&spsr, SCTLR_EL1_get_DSSBS(&sctlr_el1));
+#endif
+#if defined(ARCH_ARM_FEAT_NMI)
+	SPSR_EL2_A64_set_ALLINT(&spsr, !SCTLR_EL1_get_SPINTMASK(&sctlr_el1));
+#endif
+#if defined(ARCH_ARM_FEAT_EBEP) || defined(ARCH_ARM_FEAT_SPE_EXC) ||           \
+	defined(ARCH_ARM_FEAT_TRBE_EXC)
+	SPSR_EL2_A64_set_PM(&spsr, true);
+#endif
+#if defined(ARCH_ARM_FEAT_GCS)
+#error FEAT_GCS: PSTATE.EXLOCK not handled.
 #endif
 #if defined(ARCH_ARM_FEAT_SEBEP)
-#error SDEI: FEAT_SEBEP: PSTATE.PPEND not handled.
+	SPSR_EL2_A64_set_PPEND(&spsr, false);
 #endif
+#if defined(ARCH_ARM_FEAT_PAuth_LR)
+	SPSR_EL2_A64_set_PACM(&spsr, false);
+#endif
+
 	return spsr;
 }
 
