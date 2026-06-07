@@ -1,0 +1,9 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define	kernel_protect_function	enumeration(explicit) {
+		PROTECT_MILESTONE = 95;
+		PROTECT_ASSETS = 96;
+		PROTECT_MILESTONE_COMPACT = 97;
+};

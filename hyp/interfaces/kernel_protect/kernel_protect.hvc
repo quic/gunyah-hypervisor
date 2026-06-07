@@ -1,0 +1,14 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define addrspace_protect_vm_assets hypercall {
+	call_num			0x94;
+	addrspace			input type cap_id_t;
+	memextent_ro			input type cap_id_t;
+	memextent_rw			input type cap_id_t;
+	memextent_rx			input type cap_id_t;
+	memextent_rwx			input type cap_id_t;
+	res0				input uregister;
+	error				output enumeration error;
+};

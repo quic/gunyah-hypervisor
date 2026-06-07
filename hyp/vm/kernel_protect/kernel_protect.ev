@@ -1,0 +1,36 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+module kernel_protect
+
+#include <smccc.ev.h>
+#include "kernel_protect.h"
+
+KP_FUNCTION_PERVM(PROTECT_MILESTONE, arm_el1_kernel_asset_info, arg1, arg2, arg3, ret0)
+KP_FUNCTION_PERVM(PROTECT_MILESTONE_COMPACT, arm_el1_kernel_asset_info_compact, arg1, arg2, arg3, ret0)
+KP_FUNCTION_PERVM(PROTECT_ASSETS, enable_vm_protection, arg1, ret0)
+
+
+#if	defined(KERNEL_PROTECT_RAW_ADDR_FAULT)
+subscribe vcpu_trap_data_abort_guest
+	handler kernel_protect_handle_vcpu_trap_data_abort_guest(esr, ipa, far)
+	priority 45
+#endif
+
+subscribe vdevice_access[VDEVICE_TYPE_VKERNEL_ASSET_RO]
+	handler kernel_protect_handle_vdevice_access_ro
+	require_rcu_read
+
+subscribe vdevice_access[VDEVICE_TYPE_VKERNEL_ASSET_RX]
+	handler kernel_protect_handle_vdevice_access_rx
+	require_rcu_read
+
+subscribe vdevice_access[VDEVICE_TYPE_VKERNEL_ASSET_RW]
+	handler kernel_protect_handle_vdevice_access_rw
+	require_rcu_read
+
+subscribe object_cleanup_addrspace
+
+subscribe object_activate_addrspace
+

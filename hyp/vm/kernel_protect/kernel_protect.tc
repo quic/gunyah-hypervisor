@@ -1,0 +1,65 @@
+// Copyright © Qualcomm Technologies, Inc. and/or its subsidiaries.
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+define KP_MAGIC_VERSION constant uint32 = 0xf1000;
+
+define kp_mem_info structure {
+	memext_rx_region		pointer object memextent;
+	memext_ro_region		pointer object memextent;
+	memext_rw_region		pointer object memextent;
+	memext_rwx_region		pointer object memextent;
+	rx_mem_intent_vdev		structure vdevice(contained);
+	ro_mem_intent_vdev		structure vdevice(contained);
+	rw_mem_intent_vdev		structure vdevice(contained);
+};
+
+
+//Each segment QRKS Payload
+define asset_info structure(packed) {
+	region_type			uint64;
+	mem_area_base			type paddr_t;
+	mem_area_size			size;
+};
+
+//Main asset structure for each region of EL1 kernel
+define kernel_asset_info structure(packed) {
+	version			uint64;
+	num_sections		uint32;
+	section_info		array(5) structure asset_info;
+};
+
+
+#if defined(MODULE_VM_KERNEL_PROTECT)
+extend smccc_vendor_hyp_function enumeration {
+	KERNEL_PROTECT_FUNCTION_PROTECT_MILESTONE = 95;
+	KERNEL_PROTECT_FUNCTION_PROTECT_ASSETS = 96;
+	KERNEL_PROTECT_FUNCTION_PROTECT_MILESTONE_COMPACT = 97;
+};
+#endif
+
+extend addrspace object {
+	kp_asset_info		pointer structure kernel_asset_info;
+	kp_extent_info		pointer structure kp_mem_info;
+};
+
+define kernel_protect_region_type enumeration {
+	REGION_TEXT = 0x00;
+	REGION_RODATA = 0x01;
+	REGION_DATA = 0x02;
+	REGION_BSS = 0x03;
+	REGION_FIXMAP_TEXT_POKE0 = 0x04;
+	REGION_MAX = 0x05;
+};
+
+define kernel_protect_region_attr_type enumeration {
+	REGION_ATTR_RX = 0x01;
+	REGION_ATTR_RO = 0x02;
+	REGION_ATTR_RW = 0x03;
+};
+
+extend vdevice_type enumeration {
+	VKERNEL_ASSET_RO;
+	VKERNEL_ASSET_RX;
+	VKERNEL_ASSET_RW;
+};
