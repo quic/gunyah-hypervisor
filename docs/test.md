@@ -1,5 +1,9 @@
 # Testing Gunyah Hypervisor
 
+For the Arm FVP simulator (`platform=fvp-aem`), see
+[Running Gunyah on Arm FVP AEM](fvp.md). That workflow supports local headless
+validation without QEMU or Docker. The instructions below cover QEMU.
+
 We provide two ways of testing the hypervisor:
 1. [Using a Docker container](#using-a-docker-container)
 2. [Using local machine](#using-a-local-linux-machine)

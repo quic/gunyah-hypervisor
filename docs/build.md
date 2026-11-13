@@ -32,6 +32,9 @@ git clone https://github.com/quic/gunyah-c-runtime.git musl-c-runtime
 
 ## Build Configuration
 
+The Arm FVP Architecture Envelope Model uses `platform=fvp-aem`. See
+[the FVP build and boot workflow](fvp.md) for packaging and simulator commands.
+
 The build system has several configuration parameters that must be set:
 
 * `platform`: selects the target hardware platform
@@ -65,7 +68,7 @@ If `configure.py` is run from the top-level source directory, it will create a b
 
 For example, in each of the Gunyah Hypervisor, Resource Manager and Gunyah C Runtime source directories, run:
 ```sh
-./configure.py platform=qemu featureset=gunyah-rm-qemu quality=production
+./configure.py platform=qemu featureset=gunyah-baseline quality=production
 ```
 
 or to build all available configurations for the QEMU platform:
@@ -117,7 +120,7 @@ cd <path-to-gunyah-hypervisor-src>
 tools/elf/package_apps.py \
  -a <path-to-resource-manager-src>/build/resource-manager.strip \
  -r <path-to-c-runtime-src>/build/runtime.strip \
- <path-to-gunyah-hypervisor-src>/build/qemu/gunyah-rm-qemu/production/hyp.elf \
+ <path-to-gunyah-hypervisor-src>/build/production/qemu/gunyah-baseline/hyp.elf \
  -o <path-to-destination>/hypvm.elf
 ```
-> Note, you may wish to pick a different hypervisor `hyp.elf` from a different build variant (i.e. `build/qemu/gunyah-rm-qemu/debug/`).
+> Note, you may wish to pick a different hypervisor `hyp.elf` from a different build variant (i.e. `build/debug/qemu/gunyah-baseline/`).

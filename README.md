@@ -62,6 +62,9 @@ We have developed an initial port of Gunyah to the QEMU Arm System emulator.
 *Note QEMU v7+ is recommended*. Additional platforms are expected to be
 supported in future contributions.
 
+The Arm FVP Architecture Envelope Model is supported as `platform=fvp-aem`.
+See [FVP build and simulator instructions](docs/fvp.md).
+
 ## Getting Started
 - [Terminology](docs/terminology.md)
 - Other required Gunyah related repositories:

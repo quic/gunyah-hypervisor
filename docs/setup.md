@@ -18,20 +18,20 @@ git clone https://github.com/quic/gunyah-support-scripts.git
 ## Custom Dev Environment
 
 If you intend to setup your own development environment, you can follow the
-reference Docker setup on your development host. This process is not
-documented.
+reference Docker setup on your development host.
+
+For a local Arm FVP host setup and validation flow, see [fvp.md](fvp.md).
 
 ### Toolchain
 
-The Gunyah Hypervisor projects use the LLVM v15 toolchain, cross-compiled for
-AArch64 and musl libc. This is due to standalone application VMs (Resource
-Manager) are built with a runtime supporting the musl libc library.
+Use upstream LLVM 22.1.0 with AArch64 support and a musl libc sysroot for
+standalone application VMs such as the Resource Manager.
 
 ### Set up environment variables
 
 You must set the following environment variables:
 ```bash
-export LLVM=/path/to/llvm15/
+export LLVM=/path/to/llvm/22.1.0/
 ```
 > Note, when using the toolchain built with the provided script, point to the "llvm-musl-install" generated folder.
 > `export LLVM=/path/to/llvm-musl-install`

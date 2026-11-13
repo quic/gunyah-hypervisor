@@ -25,7 +25,7 @@ Your support is essential for keeping this project great and for making it bette
 Please follow the guidelines below to increase the likelihood and speed of your PR acceptance:
 - Follow the existing style in the file or folder where possible.
   * For Python we follow [pep8](https://www.python.org/dev/peps/pep-0008/)
-  * For C, a similar style to [Linux kernel coding style](https://www.kernel.org/doc/html/v4.10/process/coding-style.html), but we do encourage to use brances even for single statements. A definitive LLVM 12 `.clang-format` file is provided and used by CI style checkers. Please apply clang-format to your files by running this command:
+  * For C, a similar style to [Linux kernel coding style](https://www.kernel.org/doc/html/v4.10/process/coding-style.html), but we do encourage to use brances even for single statements. A definitive `.clang-format` file is provided and used by CI style checkers. Use clang-format from the LLVM 22.1.0 toolchain to apply it by running this command:
     ```
     git ls-files -- '*.[ch]' | xargs $LLVM/bin/clang-format --style=file -i
     ```
